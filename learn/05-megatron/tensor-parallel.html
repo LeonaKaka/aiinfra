@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 05.2：从 Y=XW 拆出 Megatron ColumnParallelLinear 与 RowParallelLinear，理解 Tensor Parallel 的 local GEMM、通信与源码映射。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>05.2 Tensor Parallel · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./megatron.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 05.2</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1–04.3 Distributed</a></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link current" href="./tensor-parallel.html">05.2 Tensor Parallel</a><span class="lesson-link locked">05.3 Sequence Parallel</span><span class="lesson-link locked">05.4 Pipeline Parallel</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Tensor Parallel</span></div>
+      <div class="lesson-kicker"><span>LESSON 05.2 · MEGATRON</span><span>约 70 min</span></div>
+      <h1>Tensor Parallel：把一个 Linear 真正拆到两张 GPU 上。</h1>
+      <p class="dek">这一课是整个 Megatron 部分最重要的地基。不要先背 <code>ColumnParallelLinear</code> 和 <code>RowParallelLinear</code> 两个类名。我们从最熟悉的 <code>Y = XW</code> 开始，自己推导：权重沿哪个维度切？每张 GPU 本地算什么？什么时候必须通信？最后你会发现 Megatron 的两个核心 Linear 类几乎就是这套推导的工程实现。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从 <code>[N,H] @ [H,4H]</code> 推导 Column Parallel 的 local shapes。</li><li>解释 Column Parallel 为什么可以暂时不 gather 输出。</li><li>从 <code>[N,4H] @ [4H,H]</code> 推导 Row Parallel 为什么需要把 partial outputs 相加。</li><li>理解 MLP 的 Column → Row 配对为什么能避免中间的 full all-gather。</li><li>把 QKV projection / attention output projection 映射到同一套 TP 模式。</li><li>打开 Megatron Core 文档时能看懂 <code>ColumnParallelLinear</code>、<code>RowParallelLinear</code> 的关键参数。</li></ul></div>
+
+      <section class="article-section" id="baseline">
+        <div class="section-no">01 · START FROM ONE LINEAR</div>
+        <h2>没有 TP 时，一个 Linear 是一次完整 GEMM。</h2>
+        <p>把 batch 和 sequence 先合并成 <code>N = B×S</code>，考虑 MLP 的第一个 Linear。为了图小一点，设 <code>H=8</code>，中间维度 <code>4H=32</code>：</p>
+        <div class="linear-split"><div><small>INPUT</small><b>X</b><code>[N, 8]</code></div><span>@</span><div><small>WEIGHT</small><b>W</b><code>[8, 32]</code></div></div>
+        <div class="shape-rule"><code>X [N,8]</code><span>@</span><code>W [8,32]</code><span>→</span><code>Y [N,32]</code></div>
+        <p>注意这里为了推导清楚，使用数学上常见的 <code>W=[in,out]</code> 记法。PyTorch <code>nn.Linear</code> 内部参数张量常存成 <code>[out,in]</code>，底层会做等价的转置乘法。Megatron 文档描述 <code>Y=XA+b</code> 时也是按输入维与输出维讨论切分。<strong>别让存储布局把数学切分方向搞混。</strong></p>
+      </section>
+
+      <section class="article-section" id="column">
+        <div class="section-no">02 · COLUMN PARALLEL</div>
+        <h2>第一种切法：沿输出特征切 W，让每张 GPU 负责一部分输出列。</h2>
+        <p>TP=2 时，把 <code>W [8,32]</code> 沿输出维切成两块：</p>
+        <div class="column-split"><small>W · OUTPUT DIMENSION SPLIT</small><div class="weight-grid"><span class="g0">GPU0</span><span class="g0">GPU0</span><span class="g1">GPU1</span><span class="g1">GPU1</span><span class="g0">W₀</span><span class="g0">[8,16]</span><span class="g1">W₁</span><span class="g1">[8,16]</span></div><div class="split-caption"><span>同一个 X 发给两个 TP ranks</span><span>每个 rank 只保存一半输出列</span></div></div>
+        <div class="tp-tiles"><div class="tp-tile"><small>TP RANK 0</small><b>Y₀ = X @ W₀</b><span><code>[N,8] @ [8,16] → [N,16]</code></span></div><div class="tp-tile"><small>TP RANK 1</small><b>Y₁ = X @ W₁</b><span><code>[N,8] @ [8,16] → [N,16]</code></span></div></div>
+        <p>把 <code>Y₀</code> 和 <code>Y₁</code> 沿最后一维拼起来，就等于原来的完整 <code>Y [N,32]</code>。所以最直观实现是：</p>
+        <div class="comm-path"><div><small>GPU0</small><b>Y₀ [N,16]</b></div><span>all-gather / concat</span><div><small>FULL</small><b>Y [N,32]</b></div><span>from</span><div><small>GPU1</small><b>Y₁ [N,16]</b></div></div>
+        <p>但是这里出现 TP 的第一个关键优化：<strong>如果下一层本来就能直接消费这个 partitioned Y，就没有必要现在把它 gather 成完整 tensor。</strong></p>
+      </section>
+
+      <section class="article-section" id="megatron-column">
+        <div class="section-no">03 · MEGATRON: COLUMNPARALLELLINEAR</div>
+        <h2>这正是 <code>ColumnParallelLinear</code> 的核心语义。</h2>
+        <div class="mini-code-map"><div class="mini-code-row"><code>ColumnParallelLinear</code><span>把 Linear 权重沿输出方向分片；每个 TP rank 生成一部分 output features。</span></div><div class="mini-code-row"><code>gather_output=False</code><span>保持输出分片，不立刻 all-gather；这是把后续 Row Parallel 接起来的关键。</span></div><div class="mini-code-row"><code>gather_output=True</code><span>需要完整输出时，可以把各 rank 的输出 gather 回来；但这会产生额外通信和显存。</span></div></div>
+        <p>NVIDIA 当前 Megatron Core API 文档仍然提供 <code>core.tensor_parallel.layers.ColumnParallelLinear</code>，并把它定义为 column-parallel linear layer。类里还有 bias、skip_bias_add、通信 overlap 相关参数；这些是工程细节，先不要一次全背。</p>
+        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html">Megatron Core · core.tensor_parallel.layers</a>。当前页面列出 <code>ColumnParallelLinear</code> 与 <code>RowParallelLinear</code> 两个核心类。</div>
+      </section>
+
+      <section class="article-section" id="row">
+        <div class="section-no">04 · ROW PARALLEL</div>
+        <h2>第二个 Linear 反过来：沿输入维切 W，并让每张 GPU 吃自己那份输入。</h2>
+        <p>MLP 第二个 Linear 把 <code>[N,32]</code> 压回 <code>[N,8]</code>。现在假设前一层的输出还保持 TP 分片：GPU0 有 <code>X₀=[N,16]</code>，GPU1 有 <code>X₁=[N,16]</code>。</p>
+        <div class="row-split"><small>W · INPUT DIMENSION SPLIT</small><div class="weight-grid"><span class="g0">W₀</span><span class="g0">[16,8]</span><span class="g1">W₁</span><span class="g1">[16,8]</span><span class="g0">input half</span><span class="g0">GPU0</span><span class="g1">input half</span><span class="g1">GPU1</span></div><div class="split-caption"><span>每个 rank 只看一半输入特征</span><span>每个 rank 都产生完整宽度的 partial output</span></div></div>
+        <div class="tp-tiles"><div class="tp-tile"><small>TP RANK 0</small><b>Z₀ = X₀ @ W₀</b><span><code>[N,16] @ [16,8] → [N,8]</code></span></div><div class="tp-tile"><small>TP RANK 1</small><b>Z₁ = X₁ @ W₁</b><span><code>[N,16] @ [16,8] → [N,8]</code></span></div></div>
+        <p>但是 <code>Z₀</code> 和 <code>Z₁</code> 都只是完整矩阵乘法结果的一部分贡献。因为完整输出满足：</p>
+        <div class="shape-hero compact-shape"><div class="shape-expression">Z = Z₀ + Z₁</div><div class="shape-legend"><div><b>rank 0</b><small>input shard 0 的贡献</small></div><div><b>rank 1</b><small>input shard 1 的贡献</small></div><div><b>sum</b><small>恢复完整数学结果</small></div></div></div>
+        <p>所以 forward 需要对 partial outputs 做求和归约。标准 TP 心智模型里，这就是一个 <strong>all-reduce</strong>。</p>
+        <div class="collective-badge">local partial outputs <strong>→ all-reduce SUM →</strong> full output on each TP rank</div>
+      </section>
+
+      <section class="article-section" id="pair">
+        <div class="section-no">05 · WHY COLUMN → ROW IS THE MAGIC PAIR</div>
+        <h2>前一层不 gather，后一层直接吃 shard，中间就省掉一次“拼完整”的通信。</h2>
+        <div class="comm-path"><div><small>COLUMN PARALLEL</small><b>local Y shard</b></div><span>no gather</span><div><small>ACTIVATION</small><b>local shard stays local</b></div><span>feed directly</span><div><small>ROW PARALLEL</small><b>local partial Z</b></div></div>
+        <p>最终只在 Row Parallel 结束时做归约，恢复完整输出。这种布局非常适合 Transformer MLP：</p>
+        <div class="shape-flow"><div><small>FC1 / UP</small><code>H → 4H · Column</code></div><span>→</span><div><small>ACTIVATION</small><code>partitioned 4H</code></div><span>→</span><div><small>FC2 / DOWN</small><code>4H → H · Row</code></div></div>
+        <p>这也是为什么理解 TP 不能只记“把矩阵切两半”。真正高效的设计会<strong>把相邻算子一起看</strong>，让一个算子的分片输出正好成为下一个算子的分片输入，从而少做一次 collective。</p>
+      </section>
+
+      <section class="article-section" id="attention">
+        <div class="section-no">06 · THE SAME IDEA INSIDE ATTENTION</div>
+        <h2>Attention 里也能找到同样的 Column → local attention → Row 结构。</h2>
+        <p>在典型 Megatron Transformer Attention 中，QKV projection 可以按输出/head 维度做 Tensor Parallel；每个 TP rank 负责一部分 query heads（以及与模型配置对应的 K/V 分片）。本地完成这部分 attention 后，output projection 再用 Row Parallel 合并各 shard 的贡献。</p>
+        <div class="shape-flow"><div><small>QKV PROJECTION</small><code>Column Parallel</code></div><span>→</span><div><small>ATTENTION</small><code>local heads / shards</code></div><span>→</span><div><small>OUTPUT PROJ</small><code>Row Parallel</code></div></div>
+        <div class="concept-note"><p><strong>GQA 会让 K/V head 的切分约束更复杂。</strong>不要从“Q heads 等分”直接推出任何模型都能任意 TP。实际要求取决于 query heads、KV heads、hidden size 和实现支持。</p></div>
+      </section>
+
+      <section class="article-section" id="communication">
+        <div class="section-no">07 · TP SAVES MEMORY, BUT CREATES A NEW TAX</div>
+        <h2>每张 GPU 的 Linear 变小了，但 collective 进入了 layer 的关键路径。</h2>
+        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>YOU GAIN</small><b>smaller local weights</b><span>每个 rank 只保存自己的权重 shard，单卡参数显存降低。</span></div><div class="parallel-axis dp"><small>YOU GAIN</small><b>smaller local GEMM</b><span>每张 GPU 只算一部分矩阵乘法，理想情况下计算被并行分摊。</span></div><div class="parallel-axis pp"><small>YOU PAY</small><b>communication</b><span>为了恢复正确的 layer 结果，需要 collective；TP 越大并不保证越快。</span></div></div>
+        <p>这正好把 04.3 的 NCCL/topology 接回来：TP 通信频率高，所以 TP group 通常应该优先放在高带宽、低延迟互连的近邻 GPU 上。跨慢网络盲目增大 TP，可能让 GPU 大量时间都在等通信。</p>
+      </section>
+
+      <section class="article-section" id="backward">
+        <div class="section-no">08 · BACKWARD ALSO COMMUNICATES</div>
+        <h2>刚才只画 forward，但训练中的 backward 也必须保持分片数学一致。</h2>
+        <p>不同 TP Linear 在 backward 会涉及 input-gradient / weight-gradient 的局部计算与必要通信。Megatron Core 的实现不是简单“forward all-reduce 一次就结束”；它还有 gradient accumulation、async communication、sequence parallel、communication overlap 等工程路径。</p>
+        <div class="concept-note"><p>初学阶段先把 forward 的两个切分推导牢。下一课 Sequence Parallel 会改变 activation 在 sequence 维的分布，并让某些 TP 通信从“复制完整 activation”进一步变成 reduce-scatter / all-gather 模式。</p></div>
+      </section>
+
+      <section class="article-section" id="source">
+        <div class="section-no">09 · OPEN THE REAL MEGATRON API</div>
+        <h2>现在类名已经不再是黑盒。</h2>
+        <div class="source-map"><div class="source-map-card"><small>FILE / MODULE</small><b>core.tensor_parallel.layers</b><code>megatron/core/tensor_parallel/layers.py</code><span>核心 Linear class 所在模块。</span></div><div class="source-map-card"><small>CLASS</small><b>ColumnParallelLinear</b><code>output dimension shard</code><span>关注 <code>gather_output</code>：输出是否保持 TP partition。</span></div><div class="source-map-card"><small>CLASS</small><b>RowParallelLinear</b><code>input dimension shard</code><span>关注 <code>input_is_parallel</code>：输入是不是已经由上一层切好了。</span></div><div class="source-map-card"><small>MAPPINGS</small><b>tensor_parallel.mappings</b><code>collective helpers</code><span>理解 copy/reduce/scatter/gather 在 autograd forward/backward 中怎样配对。</span></div></div>
+        <p>Megatron 的 API 文档对 <code>RowParallelLinear</code> 明确写着：权重沿第一维（输入维）并行，输入也沿对应维度切成 <code>X₁…Xₚ</code>。这就是我们刚才自己推导的 partial output sum。</p>
+        <div class="source-note">官方参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html">core.tensor_parallel.layers</a>；包结构参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.html">core.tensor_parallel</a>。</div>
+      </section>
+
+      <section class="article-section" id="mini">
+        <div class="section-no">10 · MINI-TP PSEUDOCODE</div>
+        <h2>把数学写成十几行伪代码，你就真正拥有这套模型了。</h2>
+        <div class="code-block"><div class="code-head"><span>python-like pseudocode</span><span>TP=2 · MLP forward</span></div><pre><code><span class="comment"># every TP rank sees the same X: [N, H]</span>
+
+<span class="comment"># FC1: output-dimension shard</span>
+W1_local = shard(W1, dim=<span class="num">output</span>)
+h_local = X @ W1_local
+h_local = gelu(h_local)
+
+<span class="comment"># FC2: input-dimension shard matches h_local</span>
+W2_local = shard(W2, dim=<span class="num">input</span>)
+y_partial = h_local @ W2_local
+
+<span class="comment"># sum contributions from all TP ranks</span>
+y = all_reduce_sum(y_partial)</code></pre></div>
+        <p>真实 Megatron 会处理 bias、autograd、RNG、Transformer Engine、FP8、async overlap、sequence parallel 等，但最核心的数据依赖仍然能还原成这几行。</p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.2</span></div><h2>不看答案，自己推一遍两张 GPU。</h2><div class="quiz-item"><div class="quiz-q">1. <code>W=[H,4H]</code> 做 Column Parallel，TP=2 后每张 GPU 的 local weight 是什么 shape？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">沿输出维切，所以每张是 <code>[H,2H]</code>。输入 X 可以保持完整，每张卡得到一半 output features。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 FC1 Column Parallel 后通常不急着 all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 FC2 可以用 Row Parallel，直接让每个 rank 消费自己那份中间特征 shard。这样中间无需恢复完整 4H activation，减少一次 collective 和显存复制。</div></div><div class="quiz-item"><div class="quiz-q">3. Row Parallel 为什么需要把各 rank 的 local output 相加，而不是拼接？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Row Parallel 是沿输入维拆矩阵乘法。完整点积/矩阵乘法等于各输入分片贡献的和，所以每个 rank 得到的是同一输出坐标的 partial contribution，需要 SUM reduction，而不是沿特征维 concat。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 05.3</small><br /><strong>Sequence Parallel：TP 之后，哪些 activation 其实还在每张卡重复保存？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#baseline">一个 Linear</a><a href="#column">Column Parallel</a><a href="#megatron-column">真实类名</a><a href="#row">Row Parallel</a><a href="#pair">Column → Row</a><a href="#attention">Attention</a><a href="#communication">通信代价</a><a href="#backward">Backward</a><a href="#source">源码映射</a><a href="#mini">Mini TP</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
