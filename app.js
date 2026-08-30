@@ -49,6 +49,7 @@ const lessonRoutes = {
   '02.3': 'learn/02-transformer/transformer-block.html',
   '03.1': 'learn/03-gpu-systems/gpu-mental-model.html',
   '03.2': 'learn/03-gpu-systems/gpu-memory.html',
+  '03.3': 'learn/03-gpu-systems/gpu-bottlenecks.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
