@@ -23,7 +23,7 @@
 
 ## Hands-on Labs
 
-当前有 13 个可运行实验：
+当前有 14 个可运行实验：
 
 - A1 Mini Megatron TP
 - A2 Mini TP Backward
@@ -38,6 +38,7 @@
 - B4 Layer-wise KV Streaming
 - B5 KV Handshake + Lifetime
 - B6 Registered Region Descriptor
+- B7 KV Lease / Expiry
 
 默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness，不把小 tensor / CPU timing 当真实 GPU、NIXL 或 RDMA benchmark。
 

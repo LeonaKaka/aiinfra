@@ -84,6 +84,12 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_registered_region_descri
 ```
 用一个底层 storage allocation 承载多个 layer KV views，分别计算 region offset、block length、block stride，再交换几何 metadata 并验证 block transfer。对应当前 vLLM NIXL `register_kv_caches()` 里“allocation registration 与 logical transfer regions 分开”的设计，但不模拟真实 `register_memory`、rkey、UCX 或 RDMA。
 
+### Lab B7 — KV Lease / Expiry
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_lease_expiry.py
+```
+用 deterministic virtual clock 跑两条资源生命周期：一个 request 通过 heartbeat 延长 lease 后正常 completion；另一个 request 完全失联，最终靠 expiry 回收。另用 toy generation ID 演示 stale heartbeat 不能续约已复用资源。该状态机教学 lifetime invariant，不宣称复刻当前 vLLM 的全部 lease 实现。
+
 ## Environment
 
 需要 Python 3.10+ 与带 `torch.distributed` 的 PyTorch。
@@ -98,4 +104,4 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_registered_region_descri
 2. **再 system semantics**：明确每个 rank 持有什么、哪个 collective/transfer 必须发生、什么时候必须等待。
 3. **最后 performance**：只有在 workload、backend、GPU topology 与 profiler 都明确时才解释 timing。
 
-下一阶段：在真实 GPU/NCCL 上验证 profiler overlap；Inference 软件线再补 lease / expiry 状态机，然后进入真实 NIXL/UCX/RDMA 硬件验证。
+软件实验主线到 B7 已闭合。下一阶段只做有证据的硬件验证：真实 GPU/NCCL profiler overlap，以及具备对应 NIC/driver/software stack 时的 NIXL/UCX/RDMA/GPUDirect 数据面。

@@ -21,9 +21,9 @@
 
     <section class="lab-section" id="allocation"><div class="lab-kicker">01 · ONE STORAGE, MULTIPLE REGIONS</div><h2>共享 storage 不意味着所有 layer 都是同一个 transfer region。</h2>
       <div class="command"><div class="command-head"><span>TEACHING LAYOUT</span><span>3 layers · 8 blocks</span></div><pre>one storage allocation
-┌─────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────┐
 │ layer 0 region │ layer 1 region │ layer 2 region   │
-└─────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────┘
       ↑                 ↑                 ↑
    offset 0          offset 4096       offset 8192
 
@@ -62,7 +62,7 @@ PASS</pre></div>
 
     <section class="lab-section" id="next"><div class="lab-kicker">06 · NEXT</div><h2>Inference 软件路径还剩最后一个控制面问题：lease / expiry。</h2><p>远端 block 不能无限期替你保留。下一步会把 <code>blocks_expiry_time</code>、heartbeat、lease extension 和“何时允许释放远端 KV”做成一个可运行状态机；之后没有真实 NIXL/RDMA 硬件时，就不再伪造数据面 benchmark。</p></section>
 
-    <nav class="lab-footer-nav"><a href="./mini-kv-handshake-lifetime.html">← Lab B5 · Handshake + Lifetime</a><a href="../source-map/index.html#vllm">进入 vLLM / NIXL Source Map →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-kv-handshake-lifetime.html">← Lab B5 · Handshake + Lifetime</a><a href="./mini-kv-lease-expiry.html">Lab B7 · Lease / Expiry →</a></nav>
   </main>
   <script src="../app.js"></script>
 </body>

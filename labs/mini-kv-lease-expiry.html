@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini KV Lease / Expiry：用可运行状态机理解远端 KV 为什么需要 lease、heartbeat、completion、expiry，以及跨进程时钟不能直接比较。" />
+  <title>Lab B7 · KV Lease / Expiry</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab B7</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>KV Lease / Expiry</span></div>
+    <div class="lab-kicker">LAB B7 · RELEASE WITHOUT CORRUPTION OR LEAKS</div>
+    <h1>远端 KV 释放太早会读坏。<br />永远不释放又会把显存慢慢吃光。</h1>
+    <p class="dek">B5 解决“transfer 没完成前不能复用 memory”，B6 解决“哪块 allocation / region 真正在被传”。最后还缺一个生产系统必须回答的问题：如果 Consumer 挂了、网络断了，Producer 难道永远把 blocks 钉住吗？Lease 给 memory lifetime 加上一个有期限的承诺；heartbeat 表示“我还需要它”，completion 表示“我已经用完”，expiry 则是失联后的 leak-safe fallback。</p>
+
+    <section class="lab-section" id="state"><div class="lab-kicker">01 · THE STATE MACHINE</div><h2>一块远端 KV 只有两条安全释放路径：明确完成，或者租约到期。</h2>
+      <div class="stage-flow">
+        <div class="stage-card infer"><small>PINNED</small><b>lease starts</b><span>Producer 暂时不能把这些 blocks 还给 allocator；同时记录一个 expiry deadline。</span></div>
+        <div class="stage-card comm"><small>ALIVE</small><b>heartbeat renews</b><span>Consumer 仍在使用远端 KV 时周期性续约，把安全窗口继续向后推。</span></div>
+        <div class="stage-card train"><small>RELEASE</small><b>complete OR expire</b><span>正常完成可以提前释放；失联时则等 deadline 到期后回收，避免永久泄漏。</span></div>
+      </div>
+      <p>这里最重要的不是某个固定 TTL 数字，而是不变量：<strong>在仍可能有合法远端读取时不能释放；在对端永久消失时又必须最终能够回收。</strong></p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">02 · RUN THE FAILURE PATH</div><h2>一个请求正常 heartbeat + completion；另一个请求完全失联，最后靠 expiry 回收。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_kv_lease_expiry.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified · virtual clock</span></div><pre>initial lease expiry          : 6.0
+heartbeat req501 @ t=3.0      : renewed -> 7.0
+stale generation heartbeat    : ignored
+completion req501 @ t=5.0     : release=completion
+silent req502 @ t=6.5         : release=expiry
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_kv_lease_expiry.py"><div><small>FULL SOURCE</small><b>打开 mini_kv_lease_expiry.py</b></div><span>→</span></a>
+      <div class="truth-note"><b>脚本使用 virtual clock，不是在 benchmark 30 秒超时。</b><p>为了让状态机瞬间、可重复地跑完，时间是人为推进的；6/1/4 的教学比例只是把当前源码审查时的 lease / heartbeat / extension 比例缩小展示。真实系统的默认值与实现以后都可能变化，不能把这个 toy 当协议规范。</p></div>
+    </section>
+
+    <section class="lab-section" id="stale"><div class="lab-kicker">03 · STALE MESSAGE</div><h2>旧请求的 heartbeat 不能把已经复用的新 memory 又“续活”。</h2>
+      <div class="source-bridge"><div><small>OLD OWNER</small><b>request 501 · generation 0</b><code>late heartbeat arrives</code></div><span>must not mutate →</span><div><small>CURRENT OWNER</small><b>generation 1</b><code>lease remains unchanged</code></div></div>
+      <p>脚本用 <code>generation</code> 显式演示这个 ABA-style 风险。<strong>generation 是教学字段，不是说当前 vLLM 就用同样的 generation protocol。</strong>真正要记住的是：异步系统里的 completion / heartbeat 必须绑定到正确的 request / block lifetime，迟到消息不能影响已经被重新分配的资源。</p>
+    </section>
+
+    <section class="lab-section" id="real"><div class="lab-kicker">04 · MAP TO CURRENT VLLM NIXL</div><h2>当前代码已经能找到这套 lifetime 机制的几个关键锚点。</h2>
+      <div class="result-grid"><div class="result-card"><small>LEASE</small><b>kv_lease_duration</b><span>当前 NIXL scheduler 默认读取 30 秒 lease，并把 heartbeat interval 设成 lease_duration // 6。</span></div><div class="result-card"><small>PIN</small><b>request_finished()</b><span>需要远端读取的 request 会延迟释放 blocks，并记录基于 <code>perf_counter()</code> 的 expiry deadline。</span></div><div class="result-card"><small>HEARTBEAT</small><b>heartbeat_by_engine</b><span>Scheduler 按 remote engine 聚合仍需续约的 request，并节流后把 heartbeat metadata 交给 worker。</span></div></div>
+      <p>正常 receive 完成后，scheduler 还会停止对应 request 的 heartbeat。换句话说，lease 不是“定时器小功能”，而是 request lifecycle、block allocator 与远端 transfer completion 之间的资源所有权协议。</p>
+    </section>
+
+    <section class="lab-section" id="clock"><div class="lab-kicker">05 · CLOCK DOMAIN TRAP</div><h2><code>perf_counter()</code> 是进程本地时钟，不能把另一个进程的 deadline 原样拿来比较。</h2>
+      <div class="command"><div class="command-head"><span>CURRENT SOURCE IDEA</span><span>control plane</span></div><pre>scheduler: stamp expiry in its perf_counter domain
+           + attach scheduler_clock
+
+handshake: estimate peer clock offset from round trip
+
+worker: rebase / reason about lifetime in its own clock domain</pre></div>
+      <p>这是一个非常典型的分布式坑：即使两个数都叫“seconds”，也不代表零点相同。当前 vLLM 的 connector metadata 明确携带 <code>scheduler_clock</code>，NIXL handshake 还会用往返时间估计 peer clock offset。B7 的 virtual clock 故意只有一个时间域，避免把这个工程问题藏在 toy 代码里。</p>
+    </section>
+
+    <section class="lab-section" id="close"><div class="lab-kicker">06 · INFERENCE SOFTWARE CAPSTONE</div><h2>到这里，KV Connector 的软件心智模型已经闭合。</h2>
+      <div class="check-list"><div>① Scheduler 决定远端 KV 是否可用、需要哪些 blocks。</div><div>② Block table / region descriptor 决定逻辑 KV 对应哪块可传输 memory。</div><div>③ Handshake 检查兼容性并交换远端 agent/layout 信息。</div><div>④ Async / layer-wise transfer 追踪“什么时候发起、什么时候真正需要”。</div><div>⑤ Completion + lease / heartbeat / expiry 决定“什么时候可以安全释放”。</div></div>
+      <p>再往后就不是继续发明 toy 协议，而是把同一套问题放到真实 NIXL / UCX / RDMA / GPUDirect 环境里验证 transport、带宽、并发与失败恢复。没有对应硬件时，网站会停在源码级解释，不伪造 benchmark。</p>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-registered-region-descriptor.html">← Lab B6 · Registered Region</a><a href="../source-map/index.html#vllm">进入 vLLM / NIXL Source Map →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
