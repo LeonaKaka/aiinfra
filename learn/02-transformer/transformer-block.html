@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 02.3：把 Attention、Norm、Residual 和 MLP 拼成完整 Transformer Block，并连接到 Megatron 的层级并行和 vLLM 推理执行。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>02.3 Transformer Block · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./transformer-block.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 02.3</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1 Tensor 到底是什么？</a><a class="lesson-link" href="../01-foundations/linear.html">01.2 Matrix multiply 与 Linear</a><a class="lesson-link" href="../01-foundations/training-loop.html">01.3 PyTorch 的最小训练循环</a><a class="lesson-link" href="../01-foundations/autograd-optimizer.html">01.4 autograd 与 optimizer</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="./attention.html">02.1 Attention 数据流</a><a class="lesson-link" href="./mha-gqa.html">02.2 MHA 与 GQA</a><a class="lesson-link current" href="./transformer-block.html">02.3 Transformer Block</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><span class="lesson-link locked">03.1 GPU 心智模型</span><span class="lesson-link locked">03.2 显存到底花在哪</span><span class="lesson-link locked">03.3 Compute / Memory / Communication</span></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><span class="lesson-link locked">Collectives 与 NCCL</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Transformer Block</span></div>
+      <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约 45 min</span></div>
+      <h1>Transformer Block：Attention、MLP、Residual、Norm 怎么拼起来？</h1>
+      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做归一化、残差连接和 MLP。把这些模块拼起来，你第一次能看见“一个 Transformer layer 到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张 GPU。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见 pre-norm decoder block 的完整数据流。</li><li>理解 Residual 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大 Linear，并能估算标准两层 MLP 的参数规模。</li><li>区分“一个 block 的 forward”和外层 training loop / optimizer。</li><li>指出 Tensor Parallel、Pipeline Parallel、KV Cache 分别会落在 block 的什么位置。</li></ul></div>
+
+      <section class="article-section" id="big-picture">
+        <div class="section-no">01 · THE WHOLE BLOCK</div>
+        <h2>先看全貌：一个常见现代 decoder block 有两条大分支。</h2>
+        <div class="block-diagram">
+          <div class="block-node input"><small>INPUT</small><b>x</b><code>[B,S,H]</code></div>
+          <div class="block-arrow">↓</div>
+          <div class="residual-stage"><div class="branch"><small>NORM 1</small><b>Norm(x)</b><span>→ Attention →</span><code>[B,S,H]</code></div><div class="skip"><small>RESIDUAL</small><b>x</b><span>───────────────┐</span></div><div class="add">＋ <strong>add</strong></div></div>
+          <div class="block-node"><small>HIDDEN</small><b>h</b><code>[B,S,H]</code></div>
+          <div class="block-arrow">↓</div>
+          <div class="residual-stage"><div class="branch"><small>NORM 2</small><b>Norm(h)</b><span>→ MLP →</span><code>[B,S,H]</code></div><div class="skip"><small>RESIDUAL</small><b>h</b><span>───────────────┐</span></div><div class="add">＋ <strong>add</strong></div></div>
+          <div class="block-node output"><small>OUTPUT</small><b>y</b><code>[B,S,H]</code></div>
+        </div>
+        <p>把它压成两行伪公式，就是：</p>
+        <div class="code-block"><div class="code-head"><span>pre-norm view</span><span>one block</span></div><pre><code>h = x + Attention(Norm(x))
+y = h + MLP(Norm(h))</code></pre></div>
+        <div class="concept-note"><p><strong>架构并不只有这一种。</strong>原始 Transformer 常被描述为 post-norm；很多现代 decoder LLM 使用 pre-norm，并且 Norm、MLP、Attention 细节也各有差异。我们先掌握共同的数据流，再学具体模型。</p></div>
+      </section>
+
+      <section class="article-section" id="residual">
+        <div class="section-no">02 · RESIDUAL CONNECTION</div>
+        <h2>为什么 Attention 和 MLP 最后都要回到 <code>[B,S,H]</code>？因为要和输入直接相加。</h2>
+        <div class="shape-rule"><code>x [B,S,H]</code><span>+</span><code>branch(x) [B,S,H]</code><span>→</span><code>output [B,S,H]</code></div>
+        <p>Residual connection 就是“保留原来的 x，再加上分支学到的新变化”。要逐元素相加，shape 必须一致。这也是上一课 MHA 最后需要 merge heads 并经过 output projection 回到 H 的原因之一。</p>
+        <div class="why-grid"><div class="why-card"><b>shape 稳定</b><p>每个 block 输入输出保持同样主形状，几十层可以直接堆起来。</p></div><div class="why-card"><b>信息直通</b><p>分支不必每层都重新创造全部表示，而是在已有表示上学习增量。</p></div><div class="why-card"><b>训练更稳</b><p>Residual 为深层网络提供更直接的信息与梯度路径，是深 Transformer 能训练起来的重要结构之一。</p></div></div>
+      </section>
+
+      <section class="article-section" id="norm">
+        <div class="section-no">03 · NORMALIZATION</div>
+        <h2>Norm 不负责“理解语言”，它主要让数值尺度更可控。</h2>
+        <p>你会在模型里看到 LayerNorm、RMSNorm 等。现在不用背公式，只要知道它们通常沿 hidden dimension 对每个 token 的向量做归一化/缩放相关操作，输出 shape 不变：</p>
+        <div class="shape-flow"><div><small>BEFORE NORM</small><code>[B,S,H]</code></div><span>→</span><div><small>NORMALIZE</small><code>per token hidden vector</code></div><span>→</span><div><small>AFTER NORM</small><code>[B,S,H]</code></div></div>
+        <p>现代 LLM 中 RMSNorm 很常见，但具体选择属于模型架构。对 Infra 来说，先记住两点：它是一个额外 kernel/算子；它不像大 Linear 那样有巨大 <code>H×H</code> 权重矩阵，却会参与每层的数据流和 kernel 调度。</p>
+      </section>
+
+      <section class="article-section" id="mlp">
+        <div class="section-no">04 · THE MLP BRANCH</div>
+        <h2>MLP 看起来叫“前馈网络”，本质上还是你已经学过的大 Linear。</h2>
+        <p>最经典的两层 MLP 可以先画成：</p>
+        <div class="mlp-diagram"><div><small>INPUT</small><code>H</code></div><span>Linear ↑</span><div class="wide"><small>INTERMEDIATE</small><code>4H</code></div><span>activation</span><div class="wide"><small>NONLINEAR</small><code>GELU / …</code></div><span>Linear ↓</span><div><small>OUTPUT</small><code>H</code></div></div>
+        <p>忽略 bias，如果 intermediate size 恰好是 <code>4H</code>：</p>
+        <div class="cost-panel"><div><small>UP PROJECTION</small><b>H × 4H = 4H² parameters</b></div><div><small>DOWN PROJECTION</small><b>4H × H = 4H² parameters</b></div><p>合计约 <strong>8H²</strong> 个权重。相比之下，普通 MHA 的 Q/K/V/O 四个 H×H 投影约是 4H²。这个粗算让你看到：MLP 往往是 block 里非常大的参数和 GEMM 来源。</p></div>
+        <div class="concept-note"><p><strong>但别把 4H 当铁律。</strong>现代 LLM 常使用 SwiGLU 等 gated MLP，intermediate size 和投影数量会不同。以后读具体模型源码，要以配置为准。</p></div>
+      </section>
+
+      <section class="article-section" id="code">
+        <div class="section-no">05 · A TINY BLOCK IN PYTORCH</div>
+        <h2>用一个最小类，把数据流真正写成代码。</h2>
+        <div class="code-block"><div class="code-head"><span>python</span><span>07_tiny_transformer_block.py</span></div><pre><code>import torch
+from torch import nn
+
+class TinyBlock(nn.Module):
+    def __init__(self, hidden=<span class="num">64</span>, heads=<span class="num">4</span>):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden)
+        self.attn = nn.MultiheadAttention(
+            hidden, heads, batch_first=True
+        )
+        self.norm2 = nn.LayerNorm(hidden)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden, <span class="num">4</span> * hidden),
+            nn.GELU(),
+            nn.Linear(<span class="num">4</span> * hidden, hidden),
+        )
+
+    def forward(self, x):
+        z = self.norm1(x)
+        attn_out, _ = self.attn(z, z, z, need_weights=False)
+        x = x + attn_out
+
+        z = self.norm2(x)
+        x = x + self.mlp(z)
+        return x
+
+x = torch.randn(<span class="num">2</span>, <span class="num">16</span>, <span class="num">64</span>)
+block = TinyBlock()
+y = block(x)
+print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
+        <p>这里用 PyTorch 的高级 <code>MultiheadAttention</code> 是因为上一课已经手写过 Attention shape；这一课重点是观察一个 block 如何组合子模块。真实 LLM 的 attention、mask、RoPE、RMSNorm、gated MLP 等会更具体。</p>
+      </section>
+
+      <section class="article-section" id="stack">
+        <div class="section-no">06 · FROM ONE BLOCK TO A MODEL</div>
+        <h2>大模型，就是把这种 block 重复很多层，再加上入口和出口。</h2>
+        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM HEAD</small><b>logits</b></div></div>
+        <p>所以以后看到“80-layer model”，不是 80 个完全不同的概念，而是同一种 block 结构使用不同参数重复 80 次。也因此，单层里一点点显存、通信或 kernel 调度浪费，乘上几十层后都会很明显。</p>
+      </section>
+
+      <section class="article-section" id="training">
+        <div class="section-no">07 · BLOCK VS TRAINING LOOP</div>
+        <h2>别把 forward 里的 block 和外面的 optimizer 混在一起。</h2>
+        <div class="compare-strip block-compare"><div><small>MODEL FORWARD</small><b>block(x)</b><span>Norm → Attention → Residual → Norm → MLP → Residual</span></div><div><small>TRAINING LOOP</small><b>loss.backward()</b><span>对所有 blocks 的参数沿计算图产生 gradients</span></div><div><small>OPTIMIZER</small><b>step()</b><span>在 forward/backward 之外更新所有可训练参数</span></div></div>
+        <p>这三个层级分清以后，读 Megatron 源码会轻松很多：model code 定义“算什么”，distributed/runtime code 决定“在哪张 GPU 算、怎么通信”，optimizer code 决定“参数怎么更新”。</p>
+      </section>
+
+      <section class="article-section" id="infra">
+        <div class="section-no">08 · INFRA MAP OF A BLOCK</div>
+        <h2>现在终于可以把 AI Infra 技术贴到 block 上。</h2>
+        <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>Tensor Parallel</b><span>切 QKV / output projection 权重与 heads</span></div><div><small>MLP LINEARS</small><b>Tensor Parallel</b><span>切 up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>Context Parallel</b><span>长序列跨 ranks 分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同 GPU stages 保存不同层</span></div><div><small>TRAINING STATES</small><b>Distributed Optimizer</b><span>分片 optimizer / parameter-related states</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史 K/V 跨 token 复用</span></div></div>
+        <p>这张图就是后面几大模块的导航。以后每学一个并行策略，我们都会回来问：它到底切的是 block 里的哪一块？</p>
+      </section>
+
+      <section class="article-section" id="prefill-decode">
+        <div class="section-no">09 · THE ROAD TO INFERENCE</div>
+        <h2>Prefill 和 Decode 都执行这些 blocks，但每一步的工作量结构不同。</h2>
+        <div class="prefill-decode"><div><small>PREFILL</small><b>一次送入很多 prompt tokens</b><span>大矩阵计算更充分；每层产生并保存 prompt 的 KV Cache。</span></div><div><small>DECODE</small><b>通常每条序列一次新增一个 token</b><span>每层复用历史 KV；小批量/低算术强度问题更突出。</span></div></div>
+        <p>这就是为什么同一个模型，训练 Infra 和推理 Infra 会长得很不一样。vLLM 章节会从这里继续：如何调度很多 request、管理 KV blocks、让 GPU 在 decode 阶段仍然高效。</p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>MODULE 02</span></div><h2>能把一个 block 画出来，Transformer 地基才算完成。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 Attention 分支输出通常要回到 <code>[B,S,H]</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为需要和 residual 路径上的输入逐元素相加；主 hidden shape 一致也让多个 blocks 可以连续堆叠。</div></div><div class="quiz-item"><div class="quiz-q">2. 标准两层 <code>H → 4H → H</code> MLP 忽略 bias 大约有多少权重？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>H×4H + 4H×H = 8H²</code>。这是一个教学估算，现代 gated MLP 的结构和 intermediate size 可能不同。</div></div><div class="quiz-item"><div class="quiz-q">3. Pipeline Parallel 和 Tensor Parallel 最直观的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在这里的第一层直觉是：Pipeline Parallel 更像把不同 Transformer layers 分给不同 stages；Tensor Parallel 则在同一层内部切分大 Linear / attention heads 等张量计算。后面会正式推导通信。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 03.1</small><br /><strong>GPU 心智模型：模型到底在 GPU 的哪里算、哪里存？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#big-picture">Block 全貌</a><a href="#residual">Residual</a><a href="#norm">Norm</a><a href="#mlp">MLP</a><a href="#code">Tiny Block</a><a href="#stack">堆成模型</a><a href="#training">和训练循环区别</a><a href="#infra">Infra 地图</a><a href="#prefill-decode">Prefill / Decode</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
