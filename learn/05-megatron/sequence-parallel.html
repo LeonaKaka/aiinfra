@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 05.3：理解 Megatron Sequence Parallel 为什么在 TP 之上继续切 sequence 维，如何用 all-gather 与 reduce-scatter 降低重复 activation 显存。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>05.3 Sequence Parallel · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./megatron.css" />
+  <link rel="stylesheet" href="./sequence-parallel.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 05.3</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1–04.3 Distributed</a></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link" href="./tensor-parallel.html">05.2 Tensor Parallel</a><a class="lesson-link current" href="./sequence-parallel.html">05.3 Sequence Parallel</a><span class="lesson-link locked">05.4 Pipeline Parallel</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Sequence Parallel</span></div>
+      <div class="lesson-kicker"><span>LESSON 05.3 · MEGATRON</span><span>约 60 min</span></div>
+      <h1>Sequence Parallel：TP 已经切了权重，为什么 activation 还会重复？</h1>
+      <p class="dek">上一课 Tensor Parallel 把大 Linear 切开了，但 Transformer 里并不是所有操作都天然沿 hidden/output 维切分。LayerNorm、dropout、residual 等区域如果仍让每个 TP rank 持有整段 sequence 的 activation，就会留下明显重复。Sequence Parallel 的核心就是：在这些区域里，把 sequence 维也分给 TP ranks。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 TP 不等于“所有 activation 自动除以 TP degree”。</li><li>理解 Sequence Parallel 主要在 TP group 内沿 sequence 维分片某些 activation。</li><li>看懂为什么一个 TP all-reduce 可以从概念上拆成 reduce-scatter + all-gather。</li><li>知道 LayerNorm / dropout / residual 为什么适合在 sequence shard 上本地计算。</li><li>区分 Sequence Parallel 和 Context Parallel：两者都切 sequence，但解决的问题不同。</li><li>打开 Megatron <code>tensor_parallel.mappings</code> 时能认出 gather / reduce-scatter 相关接口。</li></ul></div>
+
+      <section class="article-section" id="leftover">
+        <div class="section-no">01 · THE MEMORY LEFTOVER AFTER TP</div>
+        <h2>TP 把 Linear 切了，不代表整个 Transformer block 的每一块数据都切了。</h2>
+        <p>假设 TP=4。上一课里，FC1 / QKV 等权重和输出特征可以分到四个 ranks。但一些操作仍然需要处理 hidden size 为 H 的完整 token vectors，例如 LayerNorm、residual connection、dropout。</p>
+        <div class="replica-activation"><div><small>TP RANK 0</small><b>same activation</b><code>[S,B,H]</code></div><div><small>TP RANK 1</small><b>same activation</b><code>[S,B,H]</code></div><div><small>TP RANK 2</small><b>same activation</b><code>[S,B,H]</code></div><div><small>TP RANK 3</small><b>same activation</b><code>[S,B,H]</code></div></div>
+        <p>如果这整块 activation 在四张卡都复制一份，那么 TP 虽然省了参数和部分 GEMM，但这些“非 TP 区域”的 activation 显存并没有跟着降到四分之一。</p>
+        <div class="concept-note"><p><strong>Sequence Parallel 的出发点不是再切一遍模型权重。</strong>它主要是在 TP group 内减少这些重复 activation。</p></div>
+      </section>
+
+      <section class="article-section" id="shard">
+        <div class="section-no">02 · SHARD THE SEQUENCE DIMENSION</div>
+        <h2>既然每个 token 的 LayerNorm 可以独立做，那就让每张 GPU 只负责一段 tokens。</h2>
+        <p>设 sequence length <code>S=4096</code>、TP=4。Sequence Parallel 可以让四个 TP ranks 分别保存大约四分之一 sequence：</p>
+        <div class="sequence-strip"><div class="seq-shard"><small>RANK 0</small><b>tokens 0–1023</b><code>[S/4,B,H]</code></div><div class="seq-shard"><small>RANK 1</small><b>tokens 1024–2047</b><code>[S/4,B,H]</code></div><div class="seq-shard"><small>RANK 2</small><b>tokens 2048–3071</b><code>[S/4,B,H]</code></div><div class="seq-shard"><small>RANK 3</small><b>tokens 3072–4095</b><code>[S/4,B,H]</code></div></div>
+        <p>LayerNorm 是逐 token 处理 hidden dimension；dropout 和 residual 也可以对本地 sequence chunk 做。因此这些操作没必要每张卡都持有全部 S 个 tokens。</p>
+        <div class="memory-ratio"><div><small>WITHOUT SP</small><b>~ S × B × H</b><span>每个 TP rank 都保留完整 sequence activation。</span></div><i>→</i><div><small>WITH SP · TP=p</small><b>~ (S/p) × B × H</b><span>这类可 sequence-partition 的 activation 在每个 rank 上约缩小到 1/p。</span></div></div>
+        <p>这是一个心智模型，不代表 Transformer 训练总 activation 精确缩小到 <code>1/TP</code>；不同中间 tensor、attention backend、recompute 策略和 kernel 会影响实际峰值。</p>
+      </section>
+
+      <section class="article-section" id="communication">
+        <div class="section-no">03 · WHERE DOES THE FULL SEQUENCE COME BACK?</div>
+        <h2>进入某些 Tensor Parallel Linear 前，需要把 sequence shards 重新 gather。</h2>
+        <p>考虑一段典型流程。Sequence-parallel 区域里每个 rank 只有 <code>[S/p,B,H]</code>。当接下来进入需要 TP Linear 处理的区域时，可以先在 TP group 内 all-gather sequence shards，恢复每个 rank 所需的完整输入，然后做本地 weight shard GEMM。</p>
+        <div class="sp-flow"><div class="sp-stage sharded"><small>SP REGION</small><b>LayerNorm</b><code>[S/p,B,H]</code></div><span>all-gather →</span><div class="sp-stage full"><small>TP LINEAR INPUT</small><b>full sequence</b><code>[S,B,H]</code></div><span>local TP GEMM →</span><div class="sp-stage full"><small>ROW-PARALLEL PARTIAL</small><b>partial output</b><code>[S,B,H]</code></div><span>reduce-scatter →</span><div class="sp-stage sharded"><small>SP REGION</small><b>local sequence shard</b><code>[S/p,B,H]</code></div></div>
+        <p>这里最值得记的是结尾：上一课 Row Parallel 最直观的做法是 <strong>all-reduce</strong> partial outputs，让每个 TP rank 都拿到完整输出。Sequence Parallel 不需要每个 rank 都保留完整 sequence，于是可以直接做 <strong>reduce-scatter</strong>：既完成 SUM reduction，又把结果按 sequence 分给 ranks。</p>
+      </section>
+
+      <section class="article-section" id="same-traffic">
+        <div class="section-no">04 · ALL-REDUCE ≈ REDUCE-SCATTER + ALL-GATHER</div>
+        <h2>为什么 SP 能省 activation，又不会凭空多出一整轮通信？</h2>
+        <p>从 collective 语义上看，一个常见 ring all-reduce 本来就可以理解为两部分：</p>
+        <div class="comm-equation"><small>CONCEPTUAL DECOMPOSITION</small><b>all-reduce ≈ <span>reduce-scatter</span> + <span>all-gather</span></b></div>
+        <p>Sequence Parallel 做的事情，可以理解成把这两半通信“拉开”：Row Parallel 之后先 reduce-scatter，保持 sequence shard；中间在 shard 上做 LayerNorm/dropout/residual；直到下一次需要完整 sequence 输入时再 all-gather。</p>
+        <div class="lifetime-strip"><div><small>ROW PARALLEL</small><b>partial</b></div><div class="local"><small>REDUCE-SCATTER</small><b>local S/p</b></div><div class="local"><small>LN / DROPOUT / RESIDUAL</small><b>local S/p</b></div><div class="local"><small>ALL-GATHER</small><b>reconstruct</b></div><div><small>NEXT TP LINEAR</small><b>compute</b></div></div>
+        <p>因此经典 Sequence Parallel 设计的重点是：<strong>重排已有 TP 通信边界，让可分片区域的 activation 不再复制</strong>。实际通信时间是否完全等价，还会受到实现、消息大小、拓扑和 overlap 影响，不能只靠公式判断性能。</p>
+      </section>
+
+      <section class="article-section" id="backward">
+        <div class="section-no">05 · BACKWARD IS THE MIRROR IMAGE</div>
+        <h2>Forward 里 all-gather 的地方，Backward 往往会出现对应的 reduce-scatter。</h2>
+        <p>Megatron 的 tensor-parallel mappings 用 autograd Function 把 forward/backward 的 collective 配对。例如当前 API 中：</p>
+        <div class="mini-code-map"><div class="mini-code-row"><code>gather_from_sequence_parallel_region</code><span>Forward: all-gather；Backward: reduce-scatter。</span></div><div class="mini-code-row"><code>reduce_scatter_to_sequence_parallel_region</code><span>Forward: reduce-scatter；Backward: all-gather。</span></div><div class="mini-code-row"><code>scatter_to_sequence_parallel_region</code><span>Forward: split；Backward: all-gather。</span></div></div>
+        <p>这就是为什么读 Megatron 时不能只搜索 <code>dist.all_gather</code> 然后数调用次数。很多通信被包装在 autograd mapping 里，forward 和 backward 是成对设计的。</p>
+        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.mappings.html">Megatron Core · core.tensor_parallel.mappings</a>。当前文档明确列出 sequence-parallel gather / reduce-scatter 的 forward/backward 语义。</div>
+      </section>
+
+      <section class="article-section" id="layers">
+        <div class="section-no">06 · REAL LINEAR IMPLEMENTATION KNOWS ABOUT SP</div>
+        <h2>Sequence Parallel 不是外面套个 split 就完了，Linear 的 backward 也要配合。</h2>
+        <p>Megatron Core 当前 <code>LinearWithGradAccumulationAndAsyncCommunication</code> 文档里明确区分了普通 TP 与 sequence parallel：启用 sequence parallel 时，forward 输入会 all-gather，而 backward 的 input gradients 会 reduce-scatter；同时还能与 weight-gradient 计算做异步 overlap。</p>
+        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>FORWARD</small><b>activation all-gather</b><span>从 sequence shard 恢复 TP Linear 所需输入。</span></div><div class="parallel-axis dp"><small>BACKWARD</small><b>dgrad reduce-scatter</b><span>把 input-gradient reduction 与 sequence partition 一起完成。</span></div><div class="parallel-axis pp"><small>OPTIMIZATION</small><b>communication overlap</b><span>真实 Megatron 会尝试把 collective 与独立 GEMM 工作重叠，而不是串行等待。</span></div></div>
+        <div class="source-note">官方 API 参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html">core.tensor_parallel.layers</a>。其中 sequence_parallel 参数的说明直接写明 forward all-gather 与 backward reduce-scatter。</div>
+      </section>
+
+      <section class="article-section" id="sp-vs-cp">
+        <div class="section-no">07 · DO NOT CONFUSE SP WITH CONTEXT PARALLEL</div>
+        <h2>两者都“切 sequence”，但它们切到 Transformer 的不同深度。</h2>
+        <div class="sp-vs-cp"><div><small>SEQUENCE PARALLEL · SP</small><b>减少 TP 区域之间的 activation replication</b><span>主要让 LayerNorm、dropout、residual 等部分只处理本地 sequence shard；进入 TP Linear/attention 计算时会通过 gather 等方式满足数据需求。SP 通常依附于 TP group。</span></div><div><small>CONTEXT PARALLEL · CP</small><b>让 Attention 本身也跨 sequence shards 执行</b><span>用于长上下文，把 sequence 长度真正分到 CP ranks，并交换 K/V 等必要上下文；它直接改变 attention 的数据分布与通信。</span></div></div>
+        <p>所以 SP 不是“长上下文 attention 的最终方案”。它能省一部分 activation memory，但不会仅靠自己把 attention 的长序列问题彻底拆掉。后面的 CP 章节会专门处理这个问题。</p>
+      </section>
+
+      <section class="article-section" id="flag">
+        <div class="section-no">08 · WHAT THE FLAG MEANS</div>
+        <h2><code>--sequence-parallel</code> 不是一个孤立 feature，而是 TP 的搭档。</h2>
+        <div class="code-block"><div class="code-head"><span>shell</span><span>Megatron concept</span></div><pre><code>--tensor-model-parallel-size 4
+--sequence-parallel
+
+<span class="comment"># 直觉：</span>
+<span class="comment"># 1) weights / TP compute 沿 tensor dimensions shard</span>
+<span class="comment"># 2) selected activations between TP regions 沿 sequence shard</span></code></pre></div>
+        <p>NVIDIA 当前 Parallelism Guide 直接建议在使用 TP 时启用 Sequence Parallel，并把它的收益概括为：通过在 LayerNorm 与 Dropout 等位置对 sequence dimension 分片，减少 activation memory。</p>
+        <div class="source-note">官方指南：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html">Parallelism Strategies Guide</a>，其中 Sequence Parallel 部分建议在 TP 下启用 <code>--sequence-parallel</code>。</div>
+      </section>
+
+      <section class="article-section" id="mental">
+        <div class="section-no">09 · THE MENTAL MODEL TO KEEP</div>
+        <h2>TP 决定“hidden/features 怎么切”，SP 决定“这些间隙里的 tokens 怎么分着放”。</h2>
+        <div class="cost-panel"><div><small>TP REGION</small><b>大 Linear / Attention 内部：按 tensor dimensions 分工，做 local GEMM。</b></div><div><small>TRANSITION</small><b>reduce-scatter：完成 reduction，同时把 sequence 分回各 rank。</b></div><div><small>SP REGION</small><b>LayerNorm / dropout / residual：每个 rank 只处理自己的 S/p tokens。</b></div><div><small>NEXT TP REGION</small><b>all-gather：需要时再恢复完整 sequence 视图。</b></div></div>
+        <p>如果你把这四步画得出来，后面看到 <code>sequence_parallel=True</code>、<code>gather_from_sequence_parallel_region</code>、<code>reduce_scatter_to_sequence_parallel_region</code> 就不会再只是认单词。</p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.3</span></div><h2>确认你没有把 SP 当成“第二种 TP”。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 TP=4 后，LayerNorm activation 仍可能在四张卡重复？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 主要把 Linear/Attention 等 tensor computation 沿 feature/weight 维分片。LayerNorm、dropout、residual 这类非 TP 区域如果不做额外处理，仍可能让每个 TP rank 持有完整 sequence activation。</div></div><div class="quiz-item"><div class="quiz-q">2. Sequence Parallel 为什么常用 reduce-scatter，而不是 Row Parallel 后先 all-reduce 再手动 split？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">reduce-scatter 可以一次完成“把 partial outputs 求和”与“把结果按 sequence 分片”，避免先在每个 rank 物化完整结果再丢掉大部分。</div></div><div class="quiz-item"><div class="quiz-q">3. SP 和 CP 最关键的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">SP 主要减少 TP 区域之间 LayerNorm/dropout/residual 等 activation 的重复，进入 TP compute 时会 gather；CP 则让 Attention 本身也跨 sequence chunks 执行并交换上下文/KV，用于真正的长序列并行。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 05.4</small><br /><strong>Pipeline Parallel：把 Transformer layers 按深度分到不同 GPU。</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#leftover">TP 后还剩什么</a><a href="#shard">切 sequence</a><a href="#communication">AG / RS</a><a href="#same-traffic">通信为什么不白加</a><a href="#backward">Backward 映射</a><a href="#layers">真实 Linear</a><a href="#sp-vs-cp">SP vs CP</a><a href="#flag">--sequence-parallel</a><a href="#mental">心智模型</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
