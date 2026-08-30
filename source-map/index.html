@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra Source Map：按问题而不是按目录阅读 Megatron Core 与 vLLM 源码。" />
+  <title>Source Map · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="./reference.css" />
+</head>
+<body class="reference-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header">
+    <a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Source Map</small></span></a>
+    <nav class="site-nav"><a href="../index.html#roadmap">课程地图</a><a href="../labs/index.html">Labs</a></nav>
+  </header>
+
+  <main class="reference-shell">
+    <section class="reference-hero">
+      <div>
+        <div class="reference-kicker">SOURCE READING MAP</div>
+        <h1>不要从 repo 第一行<br />一路读到最后一行。</h1>
+        <p>工业级 AI Infra 仓库的目录结构是为维护代码设计的，不是为初学者教学设计的。这里把源码重新按“一个问题 → 一组关键文件 → 读时要盯什么”排列。先带着问题进去，读到答案就出来。</p>
+      </div>
+      <aside class="rule-card">
+        <small>ONE READING RULE</small>
+        <b>每次只回答 4 个问题。</b>
+        <span>① 数据现在在哪？ ② 这一层切了什么？ ③ 哪个 collective / transfer 发生？ ④ 为什么不这么做就会更慢或塞不下？</span>
+      </aside>
+    </section>
+
+    <section class="track" id="megatron">
+      <div class="track-head">
+        <div><small>TRACK A · TRAINING INFRA</small><h2>Megatron Core：从矩阵切分读到并行系统。</h2></div>
+        <p>先看 TP，再看 PP，再看 optimizer。不要一开始冲进 MoE、checkpoint 或各种 feature flag。</p>
+      </div>
+      <div class="source-list train-source">
+        <div class="source-row"><span class="order">01</span><div><b>Tensor Parallel layers</b><code>megatron/core/tensor_parallel/layers.py</code></div><p>找 ColumnParallelLinear / RowParallelLinear：权重在哪个维度切、输入是否 replicated、输出什么时候 reduce / gather。</p><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/layers.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">02</span><div><b>Tensor mappings</b><code>megatron/core/tensor_parallel/mappings.py</code></div><p>把“copy / scatter / gather / reduce / reduce-scatter”与 autograd 对应起来。这里是 TP 通信语义最集中的地方。</p><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">03</span><div><b>Pipeline schedules</b><code>megatron/core/pipeline_parallel/schedules.py</code></div><p>带着 microbatch、warmup、steady state、cooldown、1F1B 这些词去看。重点是“什么时候 forward / backward，谁在等谁”。</p><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">04</span><div><b>Pipeline P2P</b><code>megatron/core/pipeline_parallel/p2p_communication.py</code></div><p>看 stage 之间传的不是参数，而是 activation / gradient。把 send/recv 与 PP timeline 连起来。</p><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/p2p_communication.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">05</span><div><b>Distributed optimizer</b><code>megatron/core/optimizer/distrib_optimizer.py</code></div><p>先找 param / grad / optimizer state 的 buffer 与 range，再找 reduce-scatter / all-gather。不要从类继承关系开始啃。</p><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/distrib_optimizer.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">06</span><div><b>Parallel groups</b><code>megatron/core/parallel_state.py</code></div><p>当 TP/PP/DP/CP/EP 混起来时，用这个文件回答：这个 rank 属于哪些 process group，每个 group 的 world size / rank 是什么。</p><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py">打开源码 ↗</a></div>
+      </div>
+    </section>
+
+    <section class="track" id="vllm">
+      <div class="track-head">
+        <div><small>TRACK B · INFERENCE INFRA</small><h2>vLLM：从一个 request 追到 KV Connector。</h2></div>
+        <p>推荐按 request 生命周期读，而不是按 `vllm/` 目录树读。先 Scheduler / KV，再进入 worker，最后才到 Connector。</p>
+      </div>
+      <div class="source-list infer-source">
+        <div class="source-row"><span class="order">01</span><div><b>Engine core</b><code>vllm/v1/engine/core.py</code></div><p>先看一个 step 如何变成 schedule → execute_model → update_from_output。它是 request 生命周期的主干。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">02</span><div><b>Scheduler</b><code>vllm/v1/core/sched/scheduler.py</code></div><p>看 token budget、running / waiting、preemption，以及 remote KV 命中时 Scheduler 如何决定“算多少、从外部拿多少”。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">03</span><div><b>KV cache manager</b><code>vllm/v1/core/kv_cache_manager.py</code></div><p>理解 request 需要多少 blocks、哪些 prefix 已经算过、什么时候 allocate / free / truncate。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">04</span><div><b>Block pool + block table</b><code>vllm/v1/core/block_pool.py · vllm/v1/worker/block_table.py</code></div><p>把逻辑 token block 与物理 GPU KV slot 分开。prefix hash、ref count、free queue、slot mapping 都在这里落地。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">05</span><div><b>GPU model runner</b><code>vllm/v1/worker/gpu_model_runner.py</code></div><p>看 Scheduler 的输出怎样变成真正的 model input / attention metadata / KV 写入。控制面在这里进入数据面。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">06</span><div><b>KVConnector base</b><code>vllm/distributed/kv_transfer/kv_connector/v1/base.py</code></div><p>先只分成 Scheduler-side 与 Worker-side 两半：matched tokens / metadata / allocation 对应 load / save / completion。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/base.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">07</span><div><b>NIXL facade</b><code>.../kv_connector/v1/nixl/connector.py</code></div><p>先看它怎样把 base 接口转发给 scheduler / worker；这里反而不是最重的实现。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py">打开源码 ↗</a></div>
+        <div class="source-row"><span class="order">08</span><div><b>NIXL worker</b><code>.../kv_connector/v1/nixl/base_worker.py</code></div><p>最后再进真正重的部分：memory registration、remote agents、handshake、TP mapping、transfer handles、lease / completion。</p><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py">打开源码 ↗</a></div>
+      </div>
+    </section>
+
+    <section class="track" id="lens">
+      <div class="track-head"><div><small>READING LENS</small><h2>看到陌生类名时，先按这四类归档。</h2></div></div>
+      <div class="reading-lens">
+        <div><b>STATE</b><span>保存了什么长期状态？参数、KV blocks、request status、optimizer state，还是 topology metadata？</span></div>
+        <div><b>CONTROL</b><span>谁决定下一步做什么？Scheduler、pipeline schedule、router、allocator 都属于控制面。</span></div>
+        <div><b>DATA</b><span>真正的大 tensor 在哪里移动？GEMM 输入输出、activation、gradient、KV cache。</span></div>
+        <div><b>SYNC</b><span>哪里必须等待？collective、P2P、event、stream、future、barrier 都是关键性能边界。</span></div>
+      </div>
+      <div class="bridge-note"><div><small>COURSE</small><b>先建立心智模型</b><span>知道 shape、显存、collective、Prefill/Decode。</span></div><i>→</i><div><small>SOURCE</small><b>再验证真实实现</b><span>源码不是用来第一次认识概念，而是用来确认概念怎样落到工程约束。</span></div></div>
+    </section>
+
+    <footer class="reference-footer"><a href="../labs/index.html">← Hands-on Labs</a><a href="../glossary/index.html">Glossary →</a></footer>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

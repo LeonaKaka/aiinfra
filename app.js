@@ -15,23 +15,33 @@ function updateReadingProgress() {
   }
 }
 
+function addNavLink(nav, label, path) {
+  const exists = [...nav.querySelectorAll('a')].some(
+    (link) => link.textContent.trim().toLowerCase() === label.toLowerCase()
+  );
+  if (exists) return;
+  const link = document.createElement('a');
+  link.href = siteUrl(path);
+  link.textContent = label;
+  const cta = nav.querySelector('.nav-cta');
+  nav.insertBefore(link, cta || null);
+}
+
 window.addEventListener('scroll', updateReadingProgress, { passive: true });
 window.addEventListener('resize', updateReadingProgress);
 updateReadingProgress();
 
-// Keep the hands-on path visible from every page without duplicating header markup.
-document.querySelectorAll('.site-nav').forEach((nav) => {
-  const hasLabs = [...nav.querySelectorAll('a')].some(
-    (link) => link.textContent.trim().toLowerCase() === 'labs'
-  );
-  if (hasLabs) return;
-
-  const labsLink = document.createElement('a');
-  labsLink.href = siteUrl('labs/index.html');
-  labsLink.textContent = 'Labs';
-  const cta = nav.querySelector('.nav-cta');
-  nav.insertBefore(labsLink, cta || null);
-});
+// The homepage exposes the complete reference path. Lesson headers stay compact
+// and only receive the Labs shortcut so mobile navigation does not overflow.
+if (siteNav) {
+  addNavLink(siteNav, 'Source Map', 'source-map/index.html');
+  addNavLink(siteNav, 'Glossary', 'glossary/index.html');
+  addNavLink(siteNav, 'Labs', 'labs/index.html');
+} else {
+  document.querySelectorAll('.site-nav').forEach((nav) => {
+    addNavLink(nav, 'Labs', 'labs/index.html');
+  });
+}
 
 navToggle?.addEventListener('click', () => {
   const open = siteNav.classList.toggle('open');
