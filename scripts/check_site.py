@@ -4,10 +4,13 @@ from __future__ import annotations
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_SCHEMES = {"http", "https", "mailto", "tel", "data", "javascript"}
+CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
+CSS_IMPORT_RE = re.compile(r"@import\s+(['\"])(.*?)\1", re.IGNORECASE)
 
 
 class PageParser(HTMLParser):
@@ -64,8 +67,16 @@ def resolve_local(page: Path, raw: str) -> tuple[Path | None, str | None]:
     return target, fragment
 
 
+def css_refs(path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    refs = [match.group(2).strip() for match in CSS_URL_RE.finditer(text)]
+    refs.extend(match.group(2).strip() for match in CSS_IMPORT_RE.finditer(text))
+    return list(dict.fromkeys(refs))
+
+
 def main() -> int:
     html_files = sorted(ROOT.rglob("*.html"))
+    css_files = sorted(ROOT.rglob("*.css"))
     failures: list[str] = []
     cache: dict[Path, PageParser] = {}
 
@@ -103,7 +114,27 @@ def main() -> int:
                     target_parser = parse_page(target)
                     cache[target] = target_parser
                 if fragment not in set(target_parser.ids):
-                    failures.append(f"{rel}: missing fragment #{fragment} in {target.relative_to(ROOT)}")
+                    failures.append(
+                        f"{rel}: missing fragment #{fragment} in {target.relative_to(ROOT)}"
+                    )
+
+    # CSS imports and url(...) references are easy to break when lesson-specific
+    # stylesheets are split. Validate local dependencies as part of every push.
+    for css in css_files:
+        rel = css.relative_to(ROOT)
+        for raw in css_refs(css):
+            if not raw or raw.startswith("#"):
+                continue
+            target, _ = resolve_local(css.resolve(), raw)
+            if target is None:
+                continue
+            try:
+                target.relative_to(ROOT)
+            except ValueError:
+                failures.append(f"{rel}: CSS reference escapes site root: {raw}")
+                continue
+            if not target.exists():
+                failures.append(f"{rel}: missing local CSS asset/import: {raw}")
 
     if failures:
         print("Site checks failed:")
@@ -111,7 +142,10 @@ def main() -> int:
             print(f"  - {item}")
         return 1
 
-    print(f"Site checks passed: {len(html_files)} HTML pages; local refs and core reading metadata are valid.")
+    print(
+        f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files; "
+        "local refs/imports and core reading metadata are valid."
+    )
     return 0
 
 
