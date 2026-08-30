@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 05.4：理解 Megatron Pipeline Parallel 如何按模型深度切 Transformer layers，并用 microbatch、1F1B 与 interleaving 减少 pipeline bubble。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>05.4 Pipeline Parallel · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./megatron.css" />
+  <link rel="stylesheet" href="./pipeline-parallel.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 05.4</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1–04.3 Distributed</a></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link" href="./tensor-parallel.html">05.2 Tensor Parallel</a><a class="lesson-link" href="./sequence-parallel.html">05.3 Sequence Parallel</a><a class="lesson-link current" href="./pipeline-parallel.html">05.4 Pipeline Parallel</a><span class="lesson-link locked">05.5 Distributed Optimizer</span><span class="lesson-link locked">05.6 Context Parallel</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Pipeline Parallel</span></div>
+      <div class="lesson-kicker"><span>LESSON 05.4 · MEGATRON</span><span>约 70 min</span></div>
+      <h1>Pipeline Parallel：把 Transformer layers 按深度分到不同 GPU。</h1>
+      <p class="dek">Tensor Parallel 是“一个 layer 内大家一起算”，Pipeline Parallel 则换了一个维度：前几层放在 stage 0，中间几层放 stage 1，后几层继续往后。这样单张 GPU 不再保存整模型深度，但代价是 activation 必须沿 pipeline 向前传，gradient 又要沿 pipeline 向后传。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 PP 与 TP 的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个 pipeline stages。</li><li>理解 activation forward send 与 gradient backward send 的 P2P 数据流。</li><li>解释为什么不切 microbatch 会产生严重 pipeline bubble。</li><li>理解 1F1B 的 warmup / steady state / cooldown 三个阶段。</li><li>知道 Megatron 的 non-interleaved / interleaved pipeline schedules 对应哪些源码入口。</li></ul></div>
+
+      <section class="article-section" id="depth">
+        <div class="section-no">01 · SPLIT THE MODEL DEPTH</div>
+        <h2>24 层 Transformer，PP=4：每个 stage 先放 6 层。</h2>
+        <div class="layer-stack"><div class="s0"><small>STAGE 0</small><b>Layers 1–6</b></div><div class="s1"><small>STAGE 1</small><b>Layers 7–12</b></div><div class="s2"><small>STAGE 2</small><b>Layers 13–18</b></div><div class="s3"><small>STAGE 3</small><b>Layers 19–24</b></div></div>
+        <p>每个 stage 只保存自己负责的 Transformer layers 及相关参数/optimizer states/activations。这样模型深度带来的显存被分摊到多个 ranks。</p>
+        <div class="pipeline-line"><div class="pipeline-stage"><small>PP RANK 0</small><b>L1–L6</b><code>input → hidden₆</code></div><div class="pipeline-stage"><small>PP RANK 1</small><b>L7–L12</b><code>hidden₆ → hidden₁₂</code></div><div class="pipeline-stage"><small>PP RANK 2</small><b>L13–L18</b><code>hidden₁₂ → hidden₁₈</code></div><div class="pipeline-stage"><small>PP RANK 3</small><b>L19–L24</b><code>hidden₁₈ → logits/loss</code></div></div>
+        <p>和 TP 不同，PP stage 之间通常不是每一层做 all-reduce，而是在 stage 边界通过 point-to-point 通信传 activation。</p>
+      </section>
+
+      <section class="article-section" id="p2p">
+        <div class="section-no">02 · FORWARD SENDS ACTIVATIONS, BACKWARD SENDS GRADIENTS</div>
+        <h2>Pipeline 的接口就是 stage 边界那块 activation tensor。</h2>
+        <div class="p2p-pair"><div><small>FORWARD</small><b>Stage 0 → Stage 1</b><span>发送 stage 0 的输出 activation</span></div><span>activation →<br/>← dActivation</span><div><small>BACKWARD</small><b>Stage 1 → Stage 0</b><span>把对边界 activation 的 gradient 传回去</span></div></div>
+        <p>因此 PP 的核心通信 primitive 更接近 <code>send / recv</code>，而不是 TP 那种 layer-internal collective。Megatron Core 当前的 <code>P2PCommunicator</code> 就专门管理相邻 pipeline stages 的 tensor exchanges。</p>
+        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.pipeline_parallel.p2p_communication</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive pipeline stages 之间 tensor exchange 的通信器。</div>
+      </section>
+
+      <section class="article-section" id="bubble">
+        <div class="section-no">03 · THE NAIVE PIPELINE BUBBLE</div>
+        <h2>如果一次只送一个大 batch，后面的 GPU 一开始全在等。</h2>
+        <p>先只看 forward。一个 batch 必须先经过 stage 0，stage 1 才能开始；stage 2 又要等 stage 1。于是 pipeline 在“灌满”之前有大量 idle：</p>
+        <div class="bubble-chart"><div class="schedule-grid"><div class="axis"></div><div class="axis">t1</div><div class="axis">t2</div><div class="axis">t3</div><div class="axis">t4</div><div class="axis">t5</div><div class="axis">t6</div><div class="axis">t7</div><div class="axis">t8</div><div class="axis">S0</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S1</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S2</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S3</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div></div></div>
+        <p>这就是 pipeline bubble：昂贵 GPU 因为依赖关系暂时没有工作可做。解决方向不是“去掉依赖”，而是把 batch 切成多个 microbatches，让不同 stages 同时处理不同 microbatches。</p>
+      </section>
+
+      <section class="article-section" id="microbatch">
+        <div class="section-no">04 · MICROBATCHES FILL THE PIPELINE</div>
+        <h2>一个 batch 切成很多小块，stage 0 送走 MB0 后马上开始 MB1。</h2>
+        <div class="microbatch-row"><div class="micro-card"><small>MB0</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB1</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB2</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB3</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB4</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB5</small><b>samples</b><code>micro batch</code></div></div>
+        <p>当 stage 1 在算 MB0 时，stage 0 已经可以算 MB1；stage 2 算 MB0 时，stage 1 算 MB1，stage 0 算 MB2。pipeline 逐渐被填满。</p>
+        <div class="bubble-chart"><div class="schedule-grid"><div class="axis"></div><div class="axis">t1</div><div class="axis">t2</div><div class="axis">t3</div><div class="axis">t4</div><div class="axis">t5</div><div class="axis">t6</div><div class="axis">t7</div><div class="axis">t8</div><div class="axis">S0</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S1</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="schedule-cell idle">idle</div><div class="axis">S2</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="axis">S3</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div></div></div>
+        <p>这个图只演示 forward fill，不是完整训练 schedule。训练还要穿插 backward，Megatron 常用的核心策略就是 1F1B。</p>
+      </section>
+
+      <section class="article-section" id="1f1b">
+        <div class="section-no">05 · 1F1B</div>
+        <h2>稳态里尽量做到：一次 forward，接一次 backward。</h2>
+        <div class="phase-grid"><div><small>WARMUP</small><b>先灌 pipeline</b><span>不同 stage 需要先积累足够的 forward microbatches，才能开始对应 backward。</span></div><div><small>STEADY STATE</small><b>1F1B</b><span>尽量交替执行一个 forward microbatch 和一个 backward microbatch，让 pipeline 保持忙碌。</span></div><div><small>COOLDOWN</small><b>排空剩余 backward</b><span>所有 forward 已完成后，把 pipeline 里尚未完成的 backward 做完。</span></div></div>
+        <p>1F1B 的价值不只是 GPU utilization。相比“先把所有 microbatches 全部 forward 再全部 backward”，1F1B 还可以缩短某些 activation 必须一直存着的时间，从而控制 pipeline activation memory。</p>
+        <div class="concept-note"><p><strong>不要把 1F1B 理解成每个时钟格所有 stages 同步做同一种事。</strong>不同 stage 此刻可能一个在 forward，另一个在 backward；schedule 的任务就是满足依赖同时尽量填满 GPU。</p></div>
+      </section>
+
+      <section class="article-section" id="bubble-math">
+        <div class="section-no">06 · MORE MICROBATCHES, SMALLER RELATIVE BUBBLE</div>
+        <h2>pipeline depth 固定时，microbatches 越多，填充/排空成本占比通常越小。</h2>
+        <p>用最简单的 forward-only、每 stage 等时长模型举例：有 <code>p</code> 个 stages、<code>m</code> 个 microbatches，完成所有 forward 需要大约 <code>m + p - 1</code> 个 stage-time slots。于是理想化 utilization 可以写成：</p>
+        <div class="comm-equation"><small>SIMPLIFIED FORWARD-ONLY INTUITION</small><b>utilization ≈ <span>m / (m + p - 1)</span></b></div>
+        <p>这不是完整 1F1B 训练的通用性能公式，只是用来建立直觉：pipeline 越深，填充成本越大；microbatches 越多，bubble 的相对占比越容易被摊薄。真实效率还会受 F/B 时长不对称、stage imbalance、通信、recompute 等影响。</p>
+      </section>
+
+      <section class="article-section" id="interleave">
+        <div class="section-no">07 · INTERLEAVED / VIRTUAL PIPELINE</div>
+        <h2>一个物理 GPU 还可以持有多个“虚拟 stages / model chunks”。</h2>
+        <p>非 interleaved PP 里，一个 physical rank 常对应一段连续 layers。Interleaved schedule 则把模型切成更多 chunks，让同一个 rank 持有多个不连续 chunks，并让 microbatches 在这些 virtual stages 间流动。</p>
+        <div class="virtual-map"><div><small>NON-INTERLEAVED</small><b>每个 rank 一段连续 layers</b><div class="chunk-list"><span>GPU0: L1–L4</span><span>GPU1: L5–L8</span><span>GPU2: L9–L12</span><span>GPU3: L13–L16</span></div></div><div><small>INTERLEAVED IDEA</small><b>每个 rank 多个 model chunks</b><div class="chunk-list"><span>GPU0: chunk A</span><span>GPU0: chunk E</span><span>GPU1: chunk B</span><span>GPU1: chunk F</span><span>…</span></div></div></div>
+        <p>这样可以缩小 virtual pipeline stage 的粒度，增加 overlap 机会、降低某些 bubble，但 schedule 与通信会更复杂。Megatron 当前 Parallelism Guide 使用 <code>--num-layers-per-virtual-pipeline-stage</code> 配置 virtual pipeline。</p>
+        <div class="source-note">官方指南：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html">Parallelism Strategies Guide</a>；当前 PP 示例包含 <code>--pipeline-model-parallel-size</code> 和 <code>--num-layers-per-virtual-pipeline-stage</code>。</div>
+      </section>
+
+      <section class="article-section" id="tp-pp">
+        <div class="section-no">08 · PP AND TP COMBINE NATURALLY</div>
+        <h2>一个 pipeline stage 本身可以不是一张 GPU，而是一整个 TP group。</h2>
+        <p>例如 PP=4、TP=2，一份模型就需要 8 张 GPU。每个 stage 由两张 GPU 共同完成内部 Tensor Parallel：</p>
+        <div class="pp-tp-grid"><div class="pp-tp-stage"><small>PP STAGE 0</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP STAGE 1</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP STAGE 2</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP STAGE 3</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div></div>
+        <p>stage 内是 TP collectives，stage 间是 PP P2P。于是同一个 rank 同时处在 tensor-model-parallel group 和 pipeline-model-parallel group 中。05.1 的“一个 world，多种 groups”现在真正开始工作。</p>
+      </section>
+
+      <section class="article-section" id="tradeoff">
+        <div class="section-no">09 · WHAT PP BUYS AND WHAT IT COSTS</div>
+        <h2>PP 不是“免费把 layers 分开”，它把问题从显存转成 pipeline scheduling。</h2>
+        <div class="trade-table"><div class="trade-row head"><b>维度</b><span>收益</span><span>代价</span></div><div class="trade-row"><b>Parameter memory</b><span>每个 stage 只保存部分 layers。</span><span>stage 划分不均会导致 memory / compute imbalance。</span></div><div class="trade-row"><b>Compute</b><span>不同 stages 可并行处理不同 microbatches。</span><span>fill / drain 会产生 bubble。</span></div><div class="trade-row"><b>Communication</b><span>不需要像 TP 那样每层频繁全组 collective。</span><span>stage boundary activation / gradient 必须 P2P 传输。</span></div><div class="trade-row"><b>Scheduling</b><span>1F1B / interleaving 可提高利用率。</span><span>microbatch 数、virtual stages、recompute 都会相互影响。</span></div></div>
+      </section>
+
+      <section class="article-section" id="source">
+        <div class="section-no">10 · OPEN THE REAL MEGATRON SCHEDULES</div>
+        <h2>现在你可以带着“stage + microbatch + P2P”去读源码。</h2>
+        <div class="source-map"><div class="source-map-card"><small>SCHEDULES</small><b>pipeline_parallel.schedules</b><code>forward_backward_*</code><span>决定 non-pipeline、non-interleaved 1F1B、interleaved 1F1B 等执行路径。</span></div><div class="source-map-card"><small>P2P</small><b>P2PCommunicator</b><code>p2p_communication.py</code><span>相邻 pipeline stages 的 send/recv tensor exchange。</span></div><div class="source-map-card"><small>NO INTERLEAVING</small><b>forward_backward_pipelining_without_interleaving</b><code>non-interleaved 1F1B</code><span>一个 rank 一个主要 stage/chunk 的经典 pipeline schedule。</span></div><div class="source-map-card"><small>INTERLEAVING</small><b>forward_backward_pipelining_with_interleaving</b><code>interleaved 1F1B</code><span>一个 physical rank 多个 model chunks。</span></div></div>
+        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.schedules.html">core.pipeline_parallel.schedules</a>；包说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/pipeline_parallel.html">pipeline_parallel package</a>。</div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.4</span></div><h2>确认你能把 pipeline 当成一条真实的数据生产线。</h2><div class="quiz-item"><div class="quiz-q">1. TP 和 PP 最大的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个 layer 内沿 tensor/feature 维分工；PP 沿模型深度分层，把不同 layer ranges 放在不同 stages。它们因此使用不同通信：TP 更依赖 collectives，PP 更依赖 stage 间 P2P。</div></div><div class="quiz-item"><div class="quiz-q">2. microbatch 为什么能减少 pipeline bubble？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">stage 0 处理完 MB0 并发给 stage 1 后，可以立刻继续 MB1；于是不同 stages 同时处理不同 microbatches，避免只有一个 stage 忙而其他 stages 等待。</div></div><div class="quiz-item"><div class="quiz-q">3. 1F1B 的三个阶段是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Warmup 先灌 pipeline；steady state 尽量交替执行 forward/backward microbatches；cooldown 在 forward 完成后排空剩余 backward。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 05.5</small><br /><strong>Distributed Optimizer：为什么 Data Parallel 还要把 optimizer states 再切一遍？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#depth">切模型深度</a><a href="#p2p">P2P 数据流</a><a href="#bubble">Pipeline bubble</a><a href="#microbatch">Microbatches</a><a href="#1f1b">1F1B</a><a href="#bubble-math">Bubble 直觉</a><a href="#interleave">Interleaving</a><a href="#tp-pp">TP + PP</a><a href="#tradeoff">收益与代价</a><a href="#source">源码入口</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
