@@ -19,6 +19,20 @@ window.addEventListener('scroll', updateReadingProgress, { passive: true });
 window.addEventListener('resize', updateReadingProgress);
 updateReadingProgress();
 
+// Keep the hands-on path visible from every page without duplicating header markup.
+document.querySelectorAll('.site-nav').forEach((nav) => {
+  const hasLabs = [...nav.querySelectorAll('a')].some(
+    (link) => link.textContent.trim().toLowerCase() === 'labs'
+  );
+  if (hasLabs) return;
+
+  const labsLink = document.createElement('a');
+  labsLink.href = siteUrl('labs/index.html');
+  labsLink.textContent = 'Labs';
+  const cta = nav.querySelector('.nav-cta');
+  nav.insertBefore(labsLink, cta || null);
+});
+
 navToggle?.addEventListener('click', () => {
   const open = siteNav.classList.toggle('open');
   navToggle.setAttribute('aria-expanded', String(open));
@@ -76,9 +90,19 @@ const lessonRoutes = {
   '08.5': 'learn/08-kv-connector/production-pd.html',
 };
 
+const capstoneRoutes = [
+  { pattern: /mini\s+megatron/i, route: 'labs/mini-megatron.html' },
+  { pattern: /mini\s+kv\s+(connector|handoff)/i, route: 'labs/mini-kv-handoff.html' },
+];
+
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
-  const key = item.textContent.trim().match(/^(\d{2}\.\d)/)?.[1];
-  const route = key && lessonRoutes[key];
+  const label = item.textContent.trim();
+  const key = label.match(/^(\d{2}\.\d)/)?.[1];
+  let route = key && lessonRoutes[key];
+
+  if (!route) {
+    route = capstoneRoutes.find(({ pattern }) => pattern.test(label))?.route;
+  }
   if (!route) return;
 
   const link = document.createElement('a');

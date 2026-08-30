@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Megatron TP 实验：用两进程 PyTorch 亲手实现 Column Parallel + Row Parallel MLP。" />
+  <title>Lab A · Mini Megatron TP</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header">
+    <a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A</small></span></a>
+    <nav class="site-nav"><a href="./index.html">Labs</a><a href="../index.html#roadmap">课程地图</a></nav>
+  </header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Megatron TP</span></div>
+    <div class="lab-kicker">LAB A · TENSOR PARALLEL</div>
+    <h1>先别读几千行 Megatron。<br />亲手把一个 MLP 切成两半。</h1>
+    <p class="dek">这一步要验证的只有一个事实：如果第一层按输出维切、第二层按输入维切，那么每个 rank 可以独立完成自己的 GEMM，最后只需要把 partial output 相加。Megatron 的 ColumnParallelLinear / RowParallelLinear，核心就是这件事的工业化版本。</p>
+
+    <section class="lab-section" id="goal">
+      <small class="lab-kicker">01 · THE CONTRACT</small>
+      <h2>一张图先定清楚：每个 rank 到底拥有什么。</h2>
+      <div class="stage-flow">
+        <div class="stage-card train"><small>W1 · COLUMN SPLIT</small><b>[H,F] → [H,F/2]</b><span>每个 rank 算一半 FFN hidden features。</span></div>
+        <div class="stage-card train"><small>W2 · ROW SPLIT</small><b>[F,O] → [F/2,O]</b><span>W2 的 row shard 正好吃对应的 local hidden。</span></div>
+        <div class="stage-card comm"><small>COLLECTIVE</small><b>all-reduce SUM</b><span>两个 partial output 相加，得到与 dense MLP 相同的 Y。</span></div>
+      </div>
+      <p>注意这里没有 all-gather hidden。第一层切出来的 local hidden 可以直接喂给第二层对应 shard，所以通信被推迟到第二层输出。这个组合为什么常见，现在就不再是“框架规定”，而是 shape 自己推出来的。</p>
+    </section>
+
+    <section class="lab-section" id="run">
+      <small class="lab-kicker">02 · RUN</small>
+      <h2>先用 CPU 跑。命令和 2 GPU 完全一样。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 processes</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_megatron_tp.py --steps 50</pre></div>
+      <p>脚本会检查本机是否至少有 2 张 CUDA GPU：有则自动选 NCCL + 每 rank 一张 GPU；没有则使用 Gloo + CPU。这样第一遍学习可以先排除 CUDA/NCCL 配置干扰。</p>
+      <a class="code-link" href="./code/mini_megatron_tp.py"><div><small>FULL SOURCE</small><b>打开 mini_megatron_tp.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="correctness">
+      <small class="lab-kicker">03 · WHAT COUNTS AS PASS</small>
+      <h2>不要因为程序“能跑”就算成功。</h2>
+      <div class="result-grid">
+        <div class="result-card"><small>SHAPE</small><b>W1 [8,12] → [8,6]</b><span>world_size=2 时每 rank 只持有一半 FFN 输出列。</span></div>
+        <div class="result-card"><small>COMM</small><b>all-reduce Y</b><span>collective buffer 就是 local output，而不是完整 W1/W2。</span></div>
+        <div class="result-card"><small>NUMERICS</small><b>max error &lt; 1e-5</b><span>TP 路径必须与 dense reference 数值一致。</span></div>
+      </div>
+      <div class="command"><div class="command-head"><span>EXAMPLE OUTPUT</span><span>CPU / Gloo</span></div><pre>W1 dense shape      : [8, 12]
+W1 shard / rank     : [8, 6]
+W2 shard / rank     : [6, 6]
+all-reduce buffer   : 96 bytes / rank
+max |TP - dense|    : 1.192e-07
+PASS</pre></div>
+      <div class="truth-note"><b>这里的 step time 不是性能结论。</b><p>默认矩阵太小，Python、进程同步和 collective launch 开销会淹没 GEMM。这个 timing 只用来建立“计算 → 通信 → 下一步”的时间感。真正 benchmark 应把 hidden/ffn/batch 放大，并用 profiler 看 timeline。</p></div>
+    </section>
+
+    <section class="lab-section" id="source">
+      <small class="lab-kicker">04 · MAP BACK TO MEGATRON</small>
+      <h2>现在再回源码，类名背后已经有具体图像。</h2>
+      <div class="source-bridge">
+        <div><small>THIS LAB</small><b>torch.chunk + local matmul</b><code>W1 dim=1 · W2 dim=0 · dist.all_reduce</code></div>
+        <span>same contract →</span>
+        <div><small>MEGATRON CORE</small><b>tensor_parallel.layers</b><code>ColumnParallelLinear · RowParallelLinear</code></div>
+      </div>
+      <p class="tiny">建议回看课程 05.2 Tensor Parallel：重点不是逐行照抄，而是寻找“权重在哪里切”“输入/输出是否 replicated”“collective 在 forward 还是 backward 出现”。</p>
+    </section>
+
+    <section class="lab-section" id="upgrade">
+      <small class="lab-kicker">05 · UPGRADE PATH</small>
+      <h2>把这个 80 行实验逐步推向真正的训练 Infra。</h2>
+      <div class="check-list">
+        <div>① 把 ReLU MLP 换成 SwiGLU：观察 gate/up 两个 projection 应该怎么切。</div>
+        <div>② 加 backward 和 optimizer：检查 gradient 的 collective 在哪里出现。</div>
+        <div>③ 把 world_size 改成 4：记录 shard shape 和 collective buffer 如何变化。</div>
+        <div>④ 用 torch.profiler / Nsight Systems：把 GEMM 和 all-reduce 放到同一条 timeline。</div>
+        <div>⑤ 再进入 Megatron Sequence Parallel：思考为什么 activation 也需要减少复制。</div>
+      </div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./index.html">← Labs 首页</a><a href="./mini-kv-handoff.html">Lab B · Mini KV Handoff →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

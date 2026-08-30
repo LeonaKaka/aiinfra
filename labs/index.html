@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero Labs：把 Megatron Tensor Parallel 与 KV Handoff 从概念变成可运行实验。" />
+  <title>Labs · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header">
+    <a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Hands-on Labs</small></span></a>
+    <nav class="site-nav"><a href="../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <main class="lab-shell">
+    <section class="lab-hero">
+      <div>
+        <div class="lab-kicker">CAPSTONE · RUN IT YOURSELF</div>
+        <h1>别停在“我大概懂了”。<br />把数据真的切一次、搬一次。</h1>
+        <p>这两组实验故意比 Megatron 和 vLLM 小很多。目标不是复刻整个框架，而是把最关键的系统契约缩到几十行：Tensor Parallel 里谁持有什么 shard、为什么要 collective；P/D 分离里谁产生 KV、谁消费 KV、handoff 后结果是否与重算一致。</p>
+      </div>
+      <aside class="lab-status">
+        <div class="status-row"><b>CPU fallback</b><span>✓ Gloo · 2 ranks</span></div>
+        <div class="status-row"><b>2-GPU path</b><span>✓ auto NCCL</span></div>
+        <div class="status-row"><b>Correctness</b><span>✓ dense/reference check</span></div>
+        <div class="status-row"><b>Next step</b><span>Profiler → real source</span></div>
+      </aside>
+    </section>
+
+    <section class="level-strip" aria-label="实验升级路线">
+      <div class="level"><small>LEVEL 0</small><b>CPU 跑通</b><span>先确认进程、shape、通信和正确性，不把 CUDA 环境问题混进来。</span></div>
+      <div class="level"><small>LEVEL 1</small><b>2 GPU</b><span>同一份代码自动切到 NCCL，开始观察真实 GPU 通信。</span></div>
+      <div class="level"><small>LEVEL 2</small><b>Profile</b><span>把 GEMM / collective / P2P transfer 放到时间线上，而不是只看总耗时。</span></div>
+      <div class="level"><small>LEVEL 3</small><b>映射源码</b><span>回到 Megatron Core / vLLM，认出同一套契约在工业实现中的形态。</span></div>
+    </section>
+
+    <section class="lab-grid">
+      <a class="lab-card train" href="./mini-megatron.html">
+        <small>LAB A · TRAINING INFRA</small>
+        <h2>Mini Megatron TP</h2>
+        <p>把两层 MLP 做成 Column Parallel + Row Parallel。每个 rank 只持有一部分权重，最后通过 all-reduce 恢复完整输出。</p>
+        <footer><span>你会看到</span><strong>shard → local GEMM → all-reduce</strong></footer>
+      </a>
+      <a class="lab-card infer" href="./mini-kv-handoff.html">
+        <small>LAB B · INFERENCE INFRA</small>
+        <h2>Mini KV Handoff</h2>
+        <p>Rank 0 做 Prefill 产生 K/V，Rank 1 接收后直接做第一步 Decode，再和“在 Decode 端重算 prompt KV”的参考结果比较。</p>
+        <footer><span>你会看到</span><strong>prefill → send KV → decode</strong></footer>
+      </a>
+    </section>
+
+    <div class="truth-note"><b>这不是“迷你版框架”宣传。</b><p>两个实验只保留机制骨架：没有 Megatron 的完整并行拓扑，也没有 vLLM 的 paged KV、Scheduler、lease、异步 NIXL 或 RDMA。正因为删掉了这些工程层，你可以先把核心因果关系看清，再回到真实源码。</p></div>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

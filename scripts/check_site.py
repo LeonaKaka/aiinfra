@@ -77,6 +77,7 @@ def css_refs(path: Path) -> list[str]:
 def main() -> int:
     html_files = sorted(ROOT.rglob("*.html"))
     css_files = sorted(ROOT.rglob("*.css"))
+    lab_python_files = sorted((ROOT / "labs").rglob("*.py")) if (ROOT / "labs").exists() else []
     failures: list[str] = []
     cache: dict[Path, PageParser] = {}
 
@@ -136,6 +137,16 @@ def main() -> int:
             if not target.exists():
                 failures.append(f"{rel}: missing local CSS asset/import: {raw}")
 
+    # Labs are user-runnable artifacts. CI should at least guarantee every
+    # checked-in Python experiment is syntactically valid without importing
+    # heavyweight optional dependencies such as torch.
+    for script in lab_python_files:
+        rel = script.relative_to(ROOT)
+        try:
+            compile(script.read_text(encoding="utf-8"), str(rel), "exec")
+        except SyntaxError as exc:
+            failures.append(f"{rel}: Python syntax error: {exc}")
+
     if failures:
         print("Site checks failed:")
         for item in failures:
@@ -143,8 +154,9 @@ def main() -> int:
         return 1
 
     print(
-        f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files; "
-        "local refs/imports and core reading metadata are valid."
+        f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files, "
+        f"{len(lab_python_files)} lab Python files; local refs/imports, Python syntax, "
+        "and core reading metadata are valid."
     )
     return 0
 

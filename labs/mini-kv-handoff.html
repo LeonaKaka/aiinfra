@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini KV Handoff 实验：Rank 0 Prefill 产生 KV，Rank 1 接收 KV 后直接 Decode，并与重算参考结果核对。" />
+  <title>Lab B · Mini KV Handoff</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header">
+    <a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab B</small></span></a>
+    <nav class="site-nav"><a href="./index.html">Labs</a><a href="../index.html#roadmap">课程地图</a></nav>
+  </header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini KV Handoff</span></div>
+    <div class="lab-kicker">LAB B · PREFILL / DECODE</div>
+    <h1>让 Prefill 算 KV，<br />让另一进程直接接着 Decode。</h1>
+    <p class="dek">KV Connector 最核心的 correctness contract 不是“网络很快”，而是：Decode 收到的远端 KV 必须等价于自己对同一 prompt 重新计算出来的 KV。这个实验先把 Scheduler、paged blocks、NIXL、RDMA 全部拿掉，只验证这条最小契约。</p>
+
+    <section class="lab-section" id="flow">
+      <small class="lab-kicker">01 · DATA FLOW</small>
+      <h2>两个 rank，分别扮演 Prefill 与 Decode。</h2>
+      <div class="stage-flow">
+        <div class="stage-card infer"><small>RANK 0 · PRODUCER</small><b>prompt → K,V</b><span>只对 prompt 做 K/V projection，代表 Prefill 已经完成的状态。</span></div>
+        <div class="stage-card comm"><small>P2P HANDOFF</small><b>send K · send V</b><span>当前用 torch.distributed P2P；真实生产系统可替换成 NIXL/RDMA。</span></div>
+        <div class="stage-card infer"><small>RANK 1 · CONSUMER</small><b>received KV → decode</b><span>只计算新 token 的 q/k/v，再让 q attend 已收到的 prompt KV。</span></div>
+      </div>
+      <p>Rank 1 同时会偷偷做一遍 dense reference：重新从 prompt 计算 K/V。最后比较两条路径的 attention output。如果 handoff 没破坏状态，最大误差应该接近 0。</p>
+    </section>
+
+    <section class="lab-section" id="run">
+      <small class="lab-kicker">02 · RUN</small>
+      <h2>同样先从 CPU / Gloo 开始。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>rank 0 = P · rank 1 = D</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_kv_handoff.py --steps 50</pre></div>
+      <p>如果有 2 张 GPU，脚本自动切到 NCCL。默认 payload 很小，因此延迟数字不代表 RDMA/NVLink 性能；这里只关心“数据真的由另一个 rank 产生并传过来了”。</p>
+      <a class="code-link" href="./code/mini_kv_handoff.py"><div><small>FULL SOURCE</small><b>打开 mini_kv_handoff.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="correctness">
+      <small class="lab-kicker">03 · THE REFERENCE CHECK</small>
+      <h2>最重要的一行不是 send，而是 handoff 与 recompute 的比较。</h2>
+      <div class="result-grid">
+        <div class="result-card"><small>REMOTE STATE</small><b>K,V = [S,H]</b><span>Rank 1 预先分配接收 buffer，再从 Rank 0 收到 prompt KV。</span></div>
+        <div class="result-card"><small>DECODE</small><b>q_new @ Kᵀ</b><span>新 token 的 q 直接消费收到的历史 KV，不重新做 prompt projection。</span></div>
+        <div class="result-card"><small>REFERENCE</small><b>max error &lt; 1e-5</b><span>与 Decoder 本地重算 prompt KV 的结果保持一致。</span></div>
+      </div>
+      <div class="command"><div class="command-head"><span>EXAMPLE OUTPUT</span><span>CPU / Gloo</span></div><pre>prompt KV shape      : K=(6, 8) V=(6, 8)
+payload              : 384 bytes
+producer send time   : 0.286 ms
+consumer wait time   : 0.725 ms
+max |handoff-ref|    : 0.000e+00
+PASS</pre></div>
+    </section>
+
+    <section class="lab-section" id="not-vllm">
+      <small class="lab-kicker">04 · WHAT IS STILL MISSING</small>
+      <h2>它证明了 KV handoff 的核心，但还不是 vLLM KV Connector。</h2>
+      <div class="check-list">
+        <div>没有 paged KV block / block table：这里直接传连续的 [S,H] tensor。</div>
+        <div>没有 Scheduler-side metadata：两边事先知道 shape、src/dst 和请求身份。</div>
+        <div>没有 async layer-by-layer load/save：send/recv 是显式阻塞式教学路径。</div>
+        <div>没有 remote block lifetime、lease、failure policy、preemption 与 prefix-cache 协调。</div>
+        <div>没有 NIXL memory registration、UCX/RDMA、GPUDirect，也没有异构 TP mapping。</div>
+      </div>
+      <div class="truth-note"><b>这正是实验的用途。</b><p>先让“KV 是模型状态，可以由另一执行实体接着消费”变成亲眼可见的事实；然后 08.2–08.5 里的接口、metadata、block mapping 和 transport 才不会混成一团。</p></div>
+    </section>
+
+    <section class="lab-section" id="source">
+      <small class="lab-kicker">05 · MAP BACK TO VLLM</small>
+      <h2>把这个简单 send/recv 拆成 vLLM 的两层职责。</h2>
+      <div class="source-bridge">
+        <div><small>THIS LAB</small><b>control + data mixed together</b><code>known src/dst · known shape · dist.send/recv</code></div>
+        <span>industrialize →</span>
+        <div><small>VLLM V1</small><b>scheduler metadata + worker transfer</b><code>KVConnectorBase_V1 · start_load_kv · save_kv_layer</code></div>
+      </div>
+      <p>真实 Connector 需要回答更多问题：远端有多少 prefix token 可复用？本地 blocks 分到哪里？哪一层可以开始 load？异步 send 什么时候真的完成？request finish 后 blocks 谁负责释放？这些就是 08 模块源码里那些接口存在的原因。</p>
+    </section>
+
+    <section class="lab-section" id="upgrade">
+      <small class="lab-kicker">06 · UPGRADE PATH</small>
+      <h2>下一步不是立刻写 RDMA，而是逐层增加真实约束。</h2>
+      <div class="check-list">
+        <div>① 把 KV 切成固定 token blocks，传 block IDs 而不是一个连续 tensor。</div>
+        <div>② 加 request_id + metadata message，让 consumer 不依赖硬编码 shape。</div>
+        <div>③ 用 batch_isend_irecv / CUDA stream 做异步传输，测 compute-transfer overlap。</div>
+        <div>④ 在同机 2 GPU 上记录 P2P timing，再区分 PCIe 与 NVLink 拓扑。</div>
+        <div>⑤ 最后才换成 vLLM NixlConnector，观察 register_kv_caches、handshake、pull/push worker。</div>
+      </div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A · Mini Megatron TP</a><a href="../learn/08-kv-connector/production-pd.html">回到 08.5 Production P/D →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
