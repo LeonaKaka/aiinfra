@@ -31,7 +31,6 @@ siteNav?.querySelectorAll('a').forEach((link) => {
   });
 });
 
-// Homepage preview: progressively enhance the semantic fallback button.
 const lessonPreviewButton = document.querySelector('.lesson-preview button');
 if (lessonPreviewButton) {
   lessonPreviewButton.disabled = false;
@@ -41,14 +40,12 @@ if (lessonPreviewButton) {
   });
 }
 
-// Static lessons may still show a future lesson as locked when that page was
-// authored. Resolve every known lesson from the site root so links keep working
-// even after we cross into a different module directory.
 const lessonRoutes = {
   '01.2': 'learn/01-foundations/linear.html',
   '01.3': 'learn/01-foundations/training-loop.html',
   '01.4': 'learn/01-foundations/autograd-optimizer.html',
   '02.1': 'learn/02-transformer/attention.html',
+  '02.2': 'learn/02-transformer/mha-gqa.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
@@ -63,7 +60,6 @@ document.querySelectorAll('.lesson-link.locked').forEach((item) => {
   item.replaceWith(link);
 });
 
-// The same upgrade applies to a muted “next lesson” card once that lesson exists.
 const nextLesson = document.querySelector('.next-lesson.muted-next');
 if (nextLesson) {
   const key = nextLesson.querySelector('small')?.textContent.match(/(\d{2}\.\d)/)?.[1];
