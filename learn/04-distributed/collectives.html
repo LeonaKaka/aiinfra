@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 04.2：用 rank 上的 tensor 变化理解 broadcast、all-reduce、all-gather、reduce-scatter、all-to-all 与 P2P。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>04.2 Collectives · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./distributed.css" />
+  <link rel="stylesheet" href="./collectives.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 04.2</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="./process-rank.html">04.1 进程、rank 与 process group</a><a class="lesson-link current" href="./collectives.html">04.2 Collectives</a><span class="lesson-link locked">04.3 NCCL 与拓扑</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>04 · Distributed</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>Collectives</span></div>
+      <div class="lesson-kicker"><span>LESSON 04.2 · DISTRIBUTED</span><span>约 60 min</span></div>
+      <h1>Collectives：每张 GPU 开始有什么，结束又得到什么？</h1>
+      <p class="dek">all-reduce、all-gather、reduce-scatter 这些名字很像，背定义特别容易混。我们只用一个方法学：固定 4 个 ranks，画出通信前每个 rank 手里的 tensor，再画通信后每个 rank 得到什么。只要这个状态变化看懂，Megatron 里大部分 collective 名字就不再神秘。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>不用背英文定义，直接画出 broadcast、all-reduce、all-gather、reduce-scatter 的输入/输出。</li><li>理解 reduce 是“先做聚合运算”，all 表示“结果是否分发给所有参与者”的常见语义。</li><li>解释 Data Parallel 为什么常用 all-reduce / reduce-scatter 处理 gradients。</li><li>解释 Tensor Parallel 为什么经常需要 gather / reduce 一类通信。</li><li>理解 MoE token dispatch 为什么天然会遇到 all-to-all。</li><li>知道 collective 是 group-level contract：参与 ranks、调用顺序、tensor 元信息不匹配都可能造成错误或 hang。</li></ul></div>
+
+      <section class="article-section" id="rule">
+        <div class="section-no">01 · ONE RULE FOR ALL COLLECTIVES</div>
+        <h2>不要先问“这个 API 怎么写”，先问三件事。</h2>
+        <div class="pattern-grid"><div><small>WHO</small><b>哪些 ranks 参加？</b><span>global group 还是某个 TP / DP / PP 子 group？</span></div><div><small>BEFORE</small><b>每个 rank 手里有什么？</b><span>完整 tensor、一个 shard，还是各自不同的数据？</span></div><div><small>AFTER</small><b>每个 rank 要拿到什么？</b><span>完整结果、求和结果，还是新的 shard？</span></div></div>
+        <p>只要这三件事明确，collective 的选择通常就很自然。反过来，如果你只记“all-gather 就是 gather”，到了 Megatron 源码很容易再次迷失。</p>
+      </section>
+
+      <section class="article-section" id="broadcast">
+        <div class="section-no">02 · BROADCAST</div>
+        <h2>一个 rank 有数据，把同一份数据发给所有 ranks。</h2>
+        <div class="collective-demo"><small>BEFORE · source rank = 0</small><div class="collective-row"><div class="collective-rank active"><b>R0</b><code>[A]</code></div><div class="collective-rank"><b>R1</b><code>[?]</code></div><div class="collective-rank"><b>R2</b><code>[?]</code></div><div class="collective-rank"><b>R3</b><code>[?]</code></div></div><div class="collective-arrow">broadcast ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><code>[A]</code></div><div class="collective-rank active"><b>R1</b><code>[A]</code></div><div class="collective-rank active"><b>R2</b><code>[A]</code></div><div class="collective-rank active"><b>R3</b><code>[A]</code></div></div></div>
+        <p>典型直觉：rank 0 先有某个配置或 tensor，其它 ranks 最后都拿到同一份。注意 broadcast 没有“求和”这一步，它只是从一个 source 复制/传播。</p>
+      </section>
+
+      <section class="article-section" id="allreduce">
+        <div class="section-no">03 · ALL-REDUCE</div>
+        <h2>每个 rank 都有一份数据：先 reduce，再让所有 rank 都拿到聚合结果。</h2>
+        <div class="collective-demo"><small>SUM EXAMPLE</small><div class="collective-row"><div class="collective-rank"><b>R0</b><code>[1]</code></div><div class="collective-rank"><b>R1</b><code>[2]</code></div><div class="collective-rank"><b>R2</b><code>[3]</code></div><div class="collective-rank"><b>R3</b><code>[4]</code></div></div><div class="collective-arrow">all-reduce(sum) ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><code>[10]</code></div><div class="collective-rank active"><b>R1</b><code>[10]</code></div><div class="collective-rank active"><b>R2</b><code>[10]</code></div><div class="collective-rank active"><b>R3</b><code>[10]</code></div></div></div>
+        <p><strong>Reduce</strong> 表示先按某个 op 聚合，例如 SUM、MAX；<strong>All</strong> 在这里表示聚合后的结果最终出现在所有参与 ranks 上。</p>
+        <div class="concept-note"><p>Data Parallel 的经典场景：各 rank 看不同 mini-batch，backward 得到不同 gradients；把对应 gradients 求和/平均后，每个模型副本才能继续做一致的参数更新。</p></div>
+      </section>
+
+      <section class="article-section" id="allgather">
+        <div class="section-no">04 · ALL-GATHER</div>
+        <h2>每个 rank 只有一个 shard，最后所有 rank 都拿到完整拼接结果。</h2>
+        <div class="collective-demo"><small>SHARDS → FULL TENSOR</small><div class="collective-row"><div class="collective-rank"><b>R0</b><code>[A]</code></div><div class="collective-rank"><b>R1</b><code>[B]</code></div><div class="collective-rank"><b>R2</b><code>[C]</code></div><div class="collective-rank"><b>R3</b><code>[D]</code></div></div><div class="collective-arrow">all-gather ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div><div class="collective-rank active"><b>R1</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div><div class="collective-rank active"><b>R2</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div><div class="collective-rank active"><b>R3</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div></div></div>
+        <p>这里没有 reduce；只是把各 rank 的 shard 收集并按约定排列成完整数据。以后 Tensor Parallel / Sequence Parallel 中，经常会遇到“某个维度当前被 shard 了，但下一步需要完整 tensor”的情况。</p>
+      </section>
+
+      <section class="article-section" id="reducescatter">
+        <div class="section-no">05 · REDUCE-SCATTER</div>
+        <h2>先 reduce，但最后不把完整结果复制给所有人，而是每人只留一个结果 shard。</h2>
+        <p>假设每个 rank 都有一条长度 4 的 tensor：</p>
+        <div class="collective-demo"><small>REDUCE + SCATTER</small><div class="collective-row"><div class="collective-rank"><b>R0</b><code>[1,1,1,1]</code></div><div class="collective-rank"><b>R1</b><code>[2,2,2,2]</code></div><div class="collective-rank"><b>R2</b><code>[3,3,3,3]</code></div><div class="collective-rank"><b>R3</b><code>[4,4,4,4]</code></div></div><div class="collective-arrow">reduce-scatter(sum) ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><code>[10]</code></div><div class="collective-rank active"><b>R1</b><code>[10]</code></div><div class="collective-rank active"><b>R2</b><code>[10]</code></div><div class="collective-rank active"><b>R3</b><code>[10]</code></div></div></div>
+        <p>如果先做完整 all-reduce，每个 rank 会得到 <code>[10,10,10,10]</code>。reduce-scatter 则直接让每人只保留其中一个 shard。这个语义非常适合“最终本来就只需要每 rank 一部分”的场景。</p>
+      </section>
+
+      <section class="article-section" id="relation">
+        <div class="section-no">06 · ALL-REDUCE VS REDUCE-SCATTER + ALL-GATHER</div>
+        <h2>把 all-reduce 拆开看，会更容易理解现代分布式训练。</h2>
+        <div class="shape-flow"><div><small>START</small><code>replicated tensors</code></div><span>→</span><div><small>REDUCE-SCATTER</small><code>reduced shards</code></div><span>→</span><div><small>ALL-GATHER</small><code>full reduced tensor</code></div></div>
+        <p>从“数据状态”的角度，一个 all-reduce 可以看成先得到 reduced shards，再把 shards gather 成每 rank 都有的完整结果。具体 NCCL 内部算法不会总是简单按这两个 API 顺序实现，但这个分解对理解 ZeRO / FSDP / Megatron 的 sharded states 非常有帮助。</p>
+      </section>
+
+      <section class="article-section" id="alltoall">
+        <div class="section-no">07 · ALL-TO-ALL</div>
+        <h2>每个 rank 都要把不同的一部分发给不同 peers。</h2>
+        <div class="alltoall-demo"><div class="alltoall-side"><div><small>R0</small><code>A0 A1 A2 A3</code></div><div><small>R1</small><code>B0 B1 B2 B3</code></div><div><small>R2</small><code>C0 C1 C2 C3</code></div><div><small>R3</small><code>D0 D1 D2 D3</code></div></div><div class="alltoall-center">all-to-all<br/>↔ ↔ ↔</div><div class="alltoall-side"><div><small>R0 GETS</small><code>A0 B0 C0 D0</code></div><div><small>R1 GETS</small><code>A1 B1 C1 D1</code></div><div><small>R2 GETS</small><code>A2 B2 C2 D2</code></div><div><small>R3 GETS</small><code>A3 B3 C3 D3</code></div></div></div>
+        <p>这比 all-gather 更像一次“重排/洗牌”：每个 sender 给不同 destination 不同数据。MoE 的 Expert Parallel 是一个非常自然的例子——router 决定 token 去哪个 expert，于是 token 要跨 ranks dispatch，再把 expert outputs 发回来。</p>
+      </section>
+
+      <section class="article-section" id="p2p">
+        <div class="section-no">08 · SEND / RECV IS NOT A COLLECTIVE</div>
+        <h2>Point-to-point：明确的 sender 和 receiver。</h2>
+        <p><code>send / recv</code> 不是“整个 group 一起变换 tensor”，而是某些 ranks 直接点对点传数据。Pipeline Parallel 相邻 stages 之间传 activations / gradients 时，就很容易出现 P2P 语义。</p>
+        <div class="process-device"><div><small>RANK 0 · PIPE STAGE 0</small><b>activation</b></div><span>send → recv</span><div><small>RANK 1 · PIPE STAGE 1</small><b>activation</b></div></div>
+        <p>所以后面 Megatron 的不同 parallelism 会对应不同通信模式：TP 经常是 collectives，PP 很多时候更像相邻 stage 的 P2P。</p>
+      </section>
+
+      <section class="article-section" id="pytorch">
+        <div class="section-no">09 · RUN ONE ALL-REDUCE</div>
+        <h2>四个进程，每人一个数字，亲手把它们求和。</h2>
+        <div class="code-block"><div class="code-head"><span>python</span><span>05_all_reduce.py</span></div><pre><code>import os
+import torch
+import torch.distributed as dist
+
+local_rank = int(os.environ[<span class="comment">"LOCAL_RANK"</span>])
+torch.cuda.set_device(local_rank)
+dist.init_process_group(<span class="comment">"nccl"</span>)
+
+rank = dist.get_rank()
+world = dist.get_world_size()
+
+x = torch.tensor([rank + <span class="num">1.</span>], device=f<span class="comment">"cuda:{local_rank}"</span>)
+dist.all_reduce(x, op=dist.ReduceOp.SUM)
+
+print(f<span class="comment">"rank={rank}, sum={x.item()}"</span>)
+<span class="comment"># world=4 时，每个 rank 都打印 sum=10</span>
+
+x /= world
+print(f<span class="comment">"rank={rank}, mean={x.item()}"</span>)
+<span class="comment"># 每个 rank 都得到 2.5</span>
+
+dist.destroy_process_group()</code></pre></div>
+        <div class="code-block"><div class="code-head"><span>shell</span><span>launch</span></div><pre><code>torchrun --standalone --nproc-per-node=4 05_all_reduce.py</code></pre></div>
+        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以 world size。DDP 梯度同步里的具体 averaging 行为由 DDP 的实现语义处理，不应该把“all-reduce API 本身”记成“自动求平均”。</p>
+        <div class="source-note">官方参考：<a href="https://docs.pytorch.org/docs/stable/distributed.html">PyTorch torch.distributed collective APIs</a>。</div>
+      </section>
+
+      <section class="article-section" id="map">
+        <div class="section-no">10 · MAP COLLECTIVES TO AI INFRA</div>
+        <h2>现在把几个 primitive 放回真实系统。</h2>
+        <div class="collective-table"><div class="collective-table-row head"><b>Pattern</b><span>典型数据状态</span><span>你以后会在哪见</span></div><div class="collective-table-row"><b>all-reduce</b><span>每 rank 有完整 shape 的不同值 → 每 rank 得到聚合后的完整结果</span><span>经典 DP gradient synchronization；某些 TP row-parallel 路径</span></div><div class="collective-table-row"><b>all-gather</b><span>每 rank 有 shard → 每 rank 得到完整拼接结果</span><span>sharded parameters / sequence shards 在需要完整视图时</span></div><div class="collective-table-row"><b>reduce-scatter</b><span>每 rank 有完整数据 → reduce 后每人只留结果 shard</span><span>sharded gradients / sequence-parallel outputs 等</span></div><div class="collective-table-row"><b>all-to-all</b><span>不同数据发往不同 peers</span><span>MoE expert token dispatch / combine</span></div><div class="collective-table-row"><b>send / recv</b><span>一个 peer → 另一个 peer</span><span>Pipeline Parallel stage-to-stage activation / gradient</span></div></div>
+        <p>这里的“在哪见”是帮助建立路线感，不表示每个框架在所有配置下都固定使用唯一一种 collective。Megatron 会根据 parallel mode、sequence parallel、overlap 策略等组合不同通信操作。</p>
+      </section>
+
+      <section class="article-section" id="cost">
+        <div class="section-no">11 · COMMUNICATION HAS A COST MODEL</div>
+        <h2>同一个 collective，tensor 越大、group 越大、拓扑越差，代价通常越值得担心。</h2>
+        <div class="cost-intuition"><div><small>LATENCY</small><b>一次通信启动的固定成本</b><span>小 tensor / 高频 collective 时尤其显眼。</span></div><div><small>BANDWIDTH</small><b>大量 bytes 搬运的吞吐上限</b><span>大 tensor 时决定传输时间的主要部分。</span></div></div>
+        <p>但真正 all-reduce 的通信量并不等于简单“tensor 大小 × peers”。下一课学 NCCL、ring/tree、NVLink/PCIe/InfiniBand 时，我们再具体讨论 collective 是怎么映射到链路上的。</p>
+      </section>
+
+      <section class="article-section" id="contract">
+        <div class="section-no">12 · A COLLECTIVE IS A CONTRACT</div>
+        <h2>参与者必须对“现在要做什么通信”有一致理解。</h2>
+        <div class="hang-warning"><strong>典型错误：</strong><p>rank 0 进入 all-reduce，rank 1 却进入 all-gather；某些 ranks 根本没进入 collective；group 不一致；tensor shape / count 不满足 API 要求。结果可能是 runtime error，也可能表现成一直等待。</p></div>
+        <p>所以以后 debugging 分布式代码时，一个非常有效的方法是为每个 rank 打印<strong>collective 前后的序号、group、shape、dtype</strong>，先确认所有 peers 对通信协议的理解一致。</p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.2</span></div><h2>别背名字，直接画输入和输出。</h2><div class="quiz-item"><div class="quiz-q">1. 四个 ranks 分别持有 A、B、C、D 四个 shards，最后希望每个 rank 都得到 [A,B,C,D]，最像哪个 collective？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">all-gather。每个 rank 起初只有自己的 shard，结束时所有参与 ranks 都拥有完整拼接结果。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 reduce-scatter 比“先 all-reduce 再丢掉 3/4 结果”更符合 sharded state 的目标？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为最终每个 rank 本来只需要 reduced result 的一个 shard。reduce-scatter 的语义直接产生分片后的聚合结果，不要求每 rank 都保留完整 reduced tensor。</div></div><div class="quiz-item"><div class="quiz-q">3. MoE 为什么更容易出现 all-to-all，而不是简单 broadcast？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 token 会被 router 分配到不同 experts/ranks，所以每个 sender 需要把不同 token 子集发给不同 destinations；这更像全体之间的重排，而不是把同一份数据复制给所有人。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 04.3</small><br /><strong>NCCL 与拓扑：同一个 all-reduce，为什么换机器就可能差很多？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#rule">三问法</a><a href="#broadcast">Broadcast</a><a href="#allreduce">All-reduce</a><a href="#allgather">All-gather</a><a href="#reducescatter">Reduce-scatter</a><a href="#relation">它们的关系</a><a href="#alltoall">All-to-all</a><a href="#p2p">Send / recv</a><a href="#pytorch">PyTorch 实验</a><a href="#map">对应 AI Infra</a><a href="#cost">成本直觉</a><a href="#contract">Collective contract</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
