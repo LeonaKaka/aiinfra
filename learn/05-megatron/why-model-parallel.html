@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 05.1：从显存不够开始理解为什么需要模型并行，并把 DP、TP、PP、CP、EP 放到 Megatron 的统一坐标系里。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>05.1 为什么要模型并行 · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./megatron.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 05.1</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1 Process / Rank</a><a class="lesson-link" href="../04-distributed/collectives.html">04.2 Collectives</a><a class="lesson-link" href="../04-distributed/nccl-topology.html">04.3 NCCL 与拓扑</a></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link current" href="./why-model-parallel.html">05.1 为什么要模型并行</a><span class="lesson-link locked">05.2 Tensor Parallel</span><span class="lesson-link locked">05.3 Sequence Parallel</span><span class="lesson-link locked">05.4 Pipeline Parallel</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Why Model Parallel</span></div>
+      <div class="lesson-kicker"><span>LESSON 05.1 · MEGATRON</span><span>约 55 min</span></div>
+      <h1>为什么要模型并行：8 张 GPU 并不会自动变成一张 640GB 显卡。</h1>
+      <p class="dek">到这里我们终于正式进入 Megatron。但第一课先不读源码。先把它要解决的问题钉死：模型、activation、optimizer state 太大时，一张 GPU 放不下；而多张 GPU 的显存彼此独立。所谓模型并行，本质上就是决定“模型的哪一部分放在哪些 rank 上，以及这些部分什么时候通信”。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 Data Parallel 不能解决“单份模型本身就放不下”的问题。</li><li>区分 TP、PP、DP 分别在切模型的哪个维度。</li><li>知道 CP 与 EP 又分别在切 sequence/context 与 MoE experts。</li><li>理解 Megatron 为什么要维护多种 process groups，而不是全世界只用一个 group。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道之后读源码时先看 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
+
+      <section class="article-section" id="fit">
+        <div class="section-no">01 · THE FIRST WALL: IT DOES NOT FIT</div>
+        <h2>70B 模型只算 BF16 权重，就已经大约 140 GB。</h2>
+        <p>先做最粗的一笔账：</p>
+        <div class="code-block"><div class="code-head"><span>memory math</span><span>70B weights only</span></div><pre><code>70,000,000,000 parameters × 2 bytes
+≈ 140 GB  (decimal)
+≈ 130 GiB</code></pre></div>
+        <p>这还只是权重。训练还要考虑 gradients、optimizer states、activations、temporary workspace 等。03.2 已经讲过：参数量只是显存账本第一行。</p>
+        <div class="memory-pool"><div class="memory-pool-head"><small>EIGHT 80GB GPUS</small><b>640 GB aggregate capacity ≠ one flat 640 GB address space</b></div><div class="gpu-memory-strip"><span class="on">GPU0<br/>80 GB</span><span class="on">GPU1<br/>80 GB</span><span>GPU2<br/>80 GB</span><span>GPU3<br/>80 GB</span><span>GPU4<br/>80 GB</span><span>GPU5<br/>80 GB</span><span>GPU6<br/>80 GB</span><span>GPU7<br/>80 GB</span></div><div class="pool-warning">每张 GPU 有自己的 device memory。要让一个超过单卡显存的模型运行，必须明确把模型状态或计算拆到多张卡；数据需要跨设备时还要付通信成本。</div></div>
+      </section>
+
+      <section class="article-section" id="dp-not-enough">
+        <div class="section-no">02 · WHY DATA PARALLEL IS NOT ENOUGH</div>
+        <h2>Data Parallel 擅长“多吃数据”，但默认会复制完整模型。</h2>
+        <p>假设模型完整权重需要 130 GiB，而每张 GPU 只有 80 GiB。你即使有 8 张卡，传统 Data Parallel 仍然要求每个 DP rank 持有一份模型副本——所以第一张卡就已经放不下。</p>
+        <div class="shard-vs-replica"><div class="shard-panel"><b>Data Parallel · replica</b><div class="shard-stack"><span>GPU0: full model</span><span>GPU1: full model</span><span>GPU2: full model</span><span>GPU3: full model</span></div></div><div class="vs">VS</div><div class="shard-panel"><b>Model Parallel · shard</b><div class="shard-stack"><span class="split">GPU0: part A</span><span class="split">GPU1: part B</span><span class="split">GPU2: part C</span><span class="split">GPU3: part D</span></div></div></div>
+        <p>所以要区分两个不同问题：<strong>吞吐不够</strong>和<strong>单份模型放不下</strong>。DP 对第一个问题非常有效；模型并行首先解决第二个问题。</p>
+      </section>
+
+      <section class="article-section" id="axes">
+        <div class="section-no">03 · THREE MAIN AXES</div>
+        <h2>Megatron 最核心的三个视角：切 batch、切 layer、切 depth。</h2>
+        <div class="parallel-axis-grid"><div class="parallel-axis dp"><small>DATA PARALLEL · DP</small><b>切 batch</b><span>每组拥有同一份模型副本，各自处理不同样本；之后同步梯度/参数相关状态。</span></div><div class="parallel-axis tp"><small>TENSOR PARALLEL · TP</small><b>切一个 layer 内部</b><span>把 Linear / Attention / MLP 里的大 tensor 计算分到多个 ranks；layer 内就会频繁通信。</span></div><div class="parallel-axis pp"><small>PIPELINE PARALLEL · PP</small><b>切模型深度</b><span>前几层放一个 stage，后几层放另一个 stage；相邻 stages 传 activation / gradient。</span></div></div>
+        <p>这三种并行不是互斥选项。Megatron 的强项恰恰是把它们组合成多维并行：例如 TP=4、PP=8，再在剩余 GPU 上做 DP。</p>
+        <div class="concept-note"><p><strong>一个非常重要的心智模型：</strong>“并行度”不是把同一份工作随便平均分。每一种 parallelism 都选择了不同的数据维度，因此产生完全不同的通信模式。</p></div>
+      </section>
+
+      <section class="article-section" id="world">
+        <div class="section-no">04 · ONE WORLD, MANY GROUPS</div>
+        <h2>同一个 global rank，会同时属于 TP group、PP group、DP group。</h2>
+        <p>先看一个很小的例子：8 个 ranks，设 <code>TP=2</code>、<code>PP=2</code>，那剩下的 DP degree 就是 2。</p>
+        <div class="three-d-grid"><small>ILLUSTRATIVE 2 × 2 × 2 PARALLEL GRID</small><div class="rank-plane"><div class="tp0"><b>rank 0</b><span>tp0 · pp0 · dp0</span></div><div class="tp1"><b>rank 1</b><span>tp1 · pp0 · dp0</span></div><div class="tp0 pp1"><b>rank 2</b><span>tp0 · pp1 · dp0</span></div><div class="tp1 pp1"><b>rank 3</b><span>tp1 · pp1 · dp0</span></div><div class="tp0 dp1"><b>rank 4</b><span>tp0 · pp0 · dp1</span></div><div class="tp1 dp1"><b>rank 5</b><span>tp1 · pp0 · dp1</span></div><div class="tp0 pp1 dp1"><b>rank 6</b><span>tp0 · pp1 · dp1</span></div><div class="tp1 pp1 dp1"><b>rank 7</b><span>tp1 · pp1 · dp1</span></div></div></div>
+        <p>Megatron 会为不同轴创建不同 process groups。比如某个 TP collective 只应该发生在同一 layer shard group 内，而不能把所有 8 个 rank 都卷进来。</p>
+        <div class="group-example"><small>TP GROUP EXAMPLE</small><div><code>[rank 0, rank 1]</code> · 同一个 pipeline stage / data replica 内共同完成 tensor-parallel layer</div></div><div class="group-example"><small>PP GROUP EXAMPLE</small><div><code>[rank 0, rank 2]</code> · 同一个 tensor shard / data replica 在不同 pipeline stages 之间传 activation</div></div><div class="group-example"><small>DP GROUP EXAMPLE</small><div><code>[rank 0, rank 4]</code> · 相同模型分片位置的不同 data replicas 之间同步训练状态</div></div>
+        <p>具体 rank 排列会受 Megatron 的 parallel order 与初始化配置影响，所以不要死背上面的编号；要记住的是<strong>正交并行轴 → 不同 process group</strong>。</p>
+      </section>
+
+      <section class="article-section" id="more-axes">
+        <div class="section-no">05 · MEGATRON HAS MORE THAN TP / PP / DP</div>
+        <h2>长上下文和 MoE 又带来了新的切分维度。</h2>
+        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>CONTEXT PARALLEL · CP</small><b>切 sequence/context</b><span>不同 ranks 处理不同 sequence chunks；Attention 仍需交换必要的 context 信息。</span></div><div class="parallel-axis pp"><small>EXPERT PARALLEL · EP</small><b>切 MoE experts</b><span>不同 ranks 持有不同 experts；token routing 会引入 all-to-all / dispatch 类通信。</span></div><div class="parallel-axis dp"><small>SHARDED DATA PARALLEL</small><b>切 model states</b><span>Megatron Distributed Optimizer / Megatron-FSDP 会进一步减少 DP replicas 之间重复保存的状态。</span></div></div>
+        <p>NVIDIA 当前 Megatron Core 的 Parallelism Guide 把 DP、TP、PP、CP、EP 和 Megatron-FSDP 都作为可组合策略。后面课程会按“最能建立系统直觉”的顺序展开，而不是一次把所有开关堆给你。</p>
+        <div class="source-note">官方参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html">Megatron Core · Parallelism Strategies Guide</a>。当前文档明确列出 DP、TP、PP、CP、EP 与 Megatron-FSDP，并说明它们可以组合用于大规模训练。</div>
+      </section>
+
+      <section class="article-section" id="topology">
+        <div class="section-no">06 · PARALLELISM MUST MATCH TOPOLOGY</div>
+        <h2>为什么我们先学 NCCL 再学 Megatron？因为“怎么切”必须考虑“怎么连”。</h2>
+        <p>TP 在单个 Transformer layer 里就会产生 collective，所以通常最希望 TP peers 是高带宽、低延迟的近邻 GPU。PP 更多是 stage 间 P2P；DP 则常跨节点扩展，并通过 overlap 隐藏一部分 gradient / parameter communication。</p>
+        <div class="mini-code-map"><div class="mini-code-row"><code>TP · layer-internal</code><span>高频通信位于关键路径 → 优先考虑 NVLink/NVSwitch 等快速 GPU fabric。</span></div><div class="mini-code-row"><code>PP · stage-to-stage</code><span>相邻 stages 传 activation / gradient → placement 与 microbatch schedule 都会影响效率。</span></div><div class="mini-code-row"><code>DP · replica-to-replica</code><span>更容易跨节点扩展 → NIC / RDMA / network bandwidth 与 overlap 很重要。</span></div></div>
+        <p>所以以后看到 “TP=8 比 TP=4 更大，应该更快” 这种说法要警惕。TP degree 增大意味着 local GEMM 变小、通信参与者和通信占比也可能变化；是否更快必须结合模型尺寸与拓扑 benchmark。</p>
+      </section>
+
+      <section class="article-section" id="config">
+        <div class="section-no">07 · READ CONFIG AS A PHYSICAL LAYOUT</div>
+        <h2>看到 Megatron 配置时，先翻译成“GPU 怎么分组”。</h2>
+        <div class="code-block"><div class="code-head"><span>shell</span><span>conceptual Megatron flags</span></div><pre><code>--tensor-model-parallel-size 4
+--pipeline-model-parallel-size 8
+--context-parallel-size 1
+
+<span class="comment"># 如果 world_size = 64 且没有其它正交并行轴：</span>
+<span class="comment"># TP × PP = 4 × 8 = 32 GPUs per model replica</span>
+<span class="comment"># DP degree ≈ 64 / 32 = 2</span></code></pre></div>
+        <p>这比单纯记参数名字有用得多：你应该马上意识到，一份模型跨 32 张 GPU；其中每个 pipeline stage 又由 4-way TP group 共同完成；全局还有两份 data replicas。</p>
+        <div class="concept-note"><p><strong>以后每看到一个 parallel size，都问三件事：</strong>它切的是哪个维度？同组 ranks 之间通信什么？它应该尽量放在什么硬件拓扑上？</p></div>
+      </section>
+
+      <section class="article-section" id="source-map">
+        <div class="section-no">08 · SOURCE MAP BEFORE SOURCE CODE</div>
+        <h2>先记四个入口，别从仓库第一页开始“扫代码”。</h2>
+        <div class="source-map"><div class="source-map-card"><small>GROUPS</small><b>parallel_state.py</b><code>megatron/core/parallel_state.py</code><span>TP / PP / DP / CP / EP process groups、rank/world-size helpers 的核心入口。</span></div><div class="source-map-card"><small>TENSOR PARALLEL</small><b>tensor_parallel/</b><code>megatron/core/tensor_parallel/</code><span>ColumnParallelLinear、RowParallelLinear、mappings、cross entropy 等。</span></div><div class="source-map-card"><small>PIPELINE</small><b>pipeline_parallel/</b><code>megatron/core/pipeline_parallel/</code><span>schedule、P2P communication、microbatch pipeline 执行。</span></div><div class="source-map-card"><small>MODEL LAYERS</small><b>transformer/</b><code>megatron/core/transformer/</code><span>把 Attention、MLP、TransformerLayer 与各种并行 module 接起来。</span></div></div>
+        <p>当前 Megatron Core 的 <code>parallel_state</code> 文档里可以直接看到 <code>get_tensor_model_parallel_group()</code>、<code>get_pipeline_model_parallel_group()</code>、<code>get_data_parallel_group()</code>、<code>get_context_parallel_group()</code> 等接口。这正好对应我们前面学过的 process group 心智模型。</p>
+        <div class="source-note">源码/API 参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.parallel_state.html">Megatron Core · core.parallel_state</a>。下一课会正式进入 <code>core.tensor_parallel.layers</code>，对照 <code>ColumnParallelLinear</code> / <code>RowParallelLinear</code>。</div>
+      </section>
+
+      <section class="article-section" id="rule">
+        <div class="section-no">09 · THE RULE FOR THE REST OF MEGATRON</div>
+        <h2>每一种并行都用同一套四问法。</h2>
+        <div class="cost-panel"><div><small>1 · SHARD</small><b>到底把哪个 tensor / layer / sequence / expert 切开？</b></div><div><small>2 · LOCAL COMPUTE</small><b>每个 rank 本地还要算什么？local GEMM 的 shape 变成什么？</b></div><div><small>3 · COMMUNICATION</small><b>为了恢复数学上正确的结果，需要 all-reduce、all-gather、reduce-scatter、all-to-all 还是 send/recv？</b></div><div><small>4 · TRADE-OFF</small><b>省了多少显存/计算？新增多少通信？能不能 overlap？</b></div></div>
+        <p>后面 TP、SP、PP、Distributed Optimizer、CP、EP 全部按这四问展开。这样你不是背“Megatron 有很多 feature”，而是学会自己推导 feature 为什么存在。</p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.1</span></div><h2>先确认你知道 Megatron 在解决什么。</h2><div class="quiz-item"><div class="quiz-q">1. 8 张 80GB GPU 总计 640GB，为什么一个 130GiB 模型仍然不能直接当成“放进一张 640GB 卡”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每张 GPU 的 device memory 独立。模型必须显式 shard/partition 到多张卡；任何跨 shard 的依赖还需要真实通信。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么传统 Data Parallel 不能解决“完整模型单卡放不下”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">传统 DP 在每个 data-parallel rank 上复制完整模型，只切 batch。它提高吞吐，但完整模型仍要在每张卡上存在，所以无法解决单份模型超过单卡容量的问题。</div></div><div class="quiz-item"><div class="quiz-q">3. TP、PP、DP 最稳定的区分方式是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">看“切哪个维度”：DP 切 batch，TP 切一个 layer 内的 tensor/计算，PP 切模型深度。不同切法自然产生不同通信模式。</div></div></section>
+
+      <a class="next-lesson muted-next" href="./tensor-parallel.html"><div><small>NEXT · 05.2</small><br /><strong>Tensor Parallel：把一个 Linear 真正拆到两张 GPU 上。</strong></div><span>→</span></a>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#fit">为什么放不下</a><a href="#dp-not-enough">DP 为什么不够</a><a href="#axes">TP / PP / DP</a><a href="#world">多种 process groups</a><a href="#more-axes">CP / EP</a><a href="#topology">拓扑</a><a href="#config">配置怎么读</a><a href="#source-map">源码地图</a><a href="#rule">四问法</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
