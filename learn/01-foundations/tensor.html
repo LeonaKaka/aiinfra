@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 第一课：Tensor 到底是什么？从 shape 开始建立 AI Infra 的数据流直觉。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>01.1 Tensor 到底是什么？ · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页">
+      <span class="brand-mark">AI</span>
+      <span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 01.1</small></span>
+    </a>
+    <nav class="site-nav">
+      <a href="../../index.html#roadmap">课程地图</a>
+      <a href="https://github.com/LeonaKaka/aiinfra">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div>
+      <a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block">
+        <div class="module-name"><b>01</b> Foundations</div>
+        <a class="lesson-link current" href="./tensor.html">01.1 Tensor 到底是什么？</a>
+        <span class="lesson-link locked">01.2 Matrix multiply 与 Linear</span>
+        <span class="lesson-link locked">01.3 PyTorch 的最小训练循环</span>
+        <span class="lesson-link locked">01.4 autograd 与 optimizer</span>
+      </div>
+      <div class="module-block">
+        <div class="module-name"><b>02</b> Transformer</div>
+        <span class="lesson-link locked">02.1 Attention 数据流</span>
+        <span class="lesson-link locked">02.2 MHA 与 GQA</span>
+        <span class="lesson-link locked">02.3 Transformer Block</span>
+      </div>
+      <div class="module-block">
+        <div class="module-name"><b>03</b> GPU Systems</div>
+        <span class="lesson-link locked">GPU、显存与 kernel</span>
+      </div>
+      <div class="module-block">
+        <div class="module-name"><b>04</b> Distributed</div>
+        <span class="lesson-link locked">Collectives 与 NCCL</span>
+      </div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>Tensor</span></div>
+
+      <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约 25 min</span></div>
+      <h1>Tensor 到底是什么？</h1>
+      <p class="dek">先别急着记 PyTorch API。AI Infra 里最先要学会的，其实是一种“看形状”的能力：数据现在是什么 shape、下一步会变成什么 shape、它占多少内存、如果把它切到多张 GPU 上该怎么切。</p>
+
+      <div class="learning-goals">
+        <strong>这节课结束时，你应该能做到：</strong>
+        <ul>
+          <li>看到 <code>[B, S, H]</code> 不再把它当成神秘缩写。</li>
+          <li>区分 scalar、vector、matrix 与更高维 tensor。</li>
+          <li>用一个实际句子解释 batch、sequence length、hidden size。</li>
+          <li>理解为什么以后学 Megatron 时，“沿哪个维度切 tensor”会成为核心问题。</li>
+        </ul>
+      </div>
+
+      <section class="article-section" id="tensor">
+        <div class="section-no">01 · WHAT IS A TENSOR</div>
+        <h2>先把 Tensor 想成“带形状的一块数字”。</h2>
+        <p>如果你只记一句话，就记这句。Tensor 不需要一开始就从抽象数学定义理解。对我们这条 AI Infra 学习路线来说，它首先是一块被组织成某种形状的数据。</p>
+
+        <div class="dimension-ladder" aria-label="不同维度的数据示例">
+          <div class="dim-card"><small>0D</small><b>Scalar</b><code>3.14</code></div>
+          <div class="dim-card"><small>1D</small><b>Vector</b><code>[0.2, 0.8, -1.1]</code></div>
+          <div class="dim-card"><small>2D</small><b>Matrix</b><code>[[1,2],[3,4]]</code></div>
+          <div class="dim-card"><small>3D+</small><b>Tensor</b><code>[B, S, H]</code></div>
+        </div>
+
+        <p>严格说，scalar、vector、matrix 也都可以看作 tensor，只是维数分别是 0、1、2。深度学习里我们经常处理 3 维、4 维甚至更高维的数据，所以大家统一叫 tensor。</p>
+        <div class="concept-note"><p><strong>Infra 视角：</strong>Tensor 的“数字是什么”当然重要，但系统工程里你会频繁关心另外三件事：<strong>shape、dtype、device</strong>。</p></div>
+      </section>
+
+      <section class="article-section" id="shape">
+        <div class="section-no">02 · THE FIRST SHAPE</div>
+        <h2><code>[B, S, H]</code> 是以后最常见的三维形状。</h2>
+        <p>先看 Transformer 里非常典型的一块数据。假设它的 shape 是：</p>
+
+        <div class="shape-hero">
+          <div class="shape-expression">X.shape = [<span class="b">B</span>, <span class="s">S</span>, <span class="h">H</span>]</div>
+          <div class="shape-legend">
+            <div class="b"><b>B · batch</b><small>一次同时处理多少条样本</small></div>
+            <div class="s"><b>S · sequence</b><small>每条样本有多少个 token</small></div>
+            <div class="h"><b>H · hidden</b><small>每个 token 用多少个数字表示</small></div>
+          </div>
+        </div>
+
+        <p>比如 <code>[2, 5, 8]</code>，你可以把它读成：这批数据有 2 条句子；每条句子暂时统一成 5 个 token；每个 token 当前由 8 个数字表示。</p>
+
+        <div class="example-grid">
+          <div class="example-card">
+            <div class="cap">BATCH ITEM 0</div>
+            <div class="token-row"><span>我</span><span>在</span><span>学</span><span>AI</span><span>Infra</span></div>
+            <p>5 个 token，每个 token 背后不是一个数字，而是一条长度为 H 的向量。</p>
+          </div>
+          <div class="example-card">
+            <div class="cap">BATCH ITEM 1</div>
+            <div class="token-row"><span>GPU</span><span>正在</span><span>计算</span><span>这个</span><span>Tensor</span></div>
+            <p>把两条样本叠在一起，于是最外层多出 batch 这个维度。</p>
+          </div>
+        </div>
+
+        <p>如果 <code>H = 8</code>，那么每个 token 对应 8 个浮点数；如果现实模型里 <code>H = 4096</code>，每个 token 就会对应 4096 个数。现在先不要管这些数到底代表什么，只要先把 shape 读顺。</p>
+      </section>
+
+      <section class="article-section" id="pytorch">
+        <div class="section-no">03 · SEE IT IN PYTORCH</div>
+        <h2>用 4 行代码亲手造出它。</h2>
+        <p>下面这段代码不用背。它只是把刚才的概念变成一个你可以运行的对象。</p>
+
+        <div class="code-block">
+          <div class="code-head"><span>python</span><span>01_tensor.py</span></div>
+          <pre><code><span class="comment"># shape = [batch, sequence, hidden]</span>
+import torch
+
+X = torch.randn(<span class="num">2</span>, <span class="num">5</span>, <span class="num">8</span>)
+print(X.shape)       <span class="comment"># torch.Size([2, 5, 8])</span>
+print(X.dtype)       <span class="comment"># usually torch.float32</span>
+print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code></pre>
+        </div>
+
+        <p>现在你第一次看到了我们刚才说的三个系统属性：</p>
+        <div class="why-grid">
+          <div class="why-card"><b>shape</b><p>有多少个元素、每个维度多长。它决定了后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
+          <div class="why-card"><b>dtype</b><p>每个数字用 FP32、FP16、BF16 还是别的格式存。它直接影响显存和计算性能。</p></div>
+          <div class="why-card"><b>device</b><p>这块数据现在在 CPU、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
+        </div>
+      </section>
+
+      <section class="article-section" id="memory">
+        <div class="section-no">04 · INFRA VIEW</div>
+        <h2>为什么 Infra 工程师这么在意 shape？</h2>
+        <p>因为 shape 一旦确定，很多系统问题就开始可以计算了。假设 <code>X.shape = [2, 5, 8]</code>，总元素数就是：</p>
+        <div class="code-block">
+          <div class="code-head"><span>mental math</span><span>memory</span></div>
+          <pre><code>elements = 2 × 5 × 8 = 80
+
+if FP32: 80 × 4 bytes = 320 bytes
+if FP16: 80 × 2 bytes = 160 bytes</code></pre>
+        </div>
+        <p>这个玩具例子当然很小。但当 shape 变成 <code>[8, 131072, 8192]</code> 时，你会立刻意识到：只是 activation 就可能非常大。以后学 Context Parallel、Sequence Parallel 时，本质上都在继续问一个熟悉的问题：</p>
+        <div class="concept-note"><p><strong>这块大 Tensor，能不能沿某个维度切开，让不同 GPU 各保存一部分？</strong></p></div>
+      </section>
+
+      <section class="article-section" id="megatron">
+        <div class="section-no">05 · WHERE THIS LEADS</div>
+        <h2>这就是它和 Megatron 的第一条连接线。</h2>
+        <p>现在你还不用学 Tensor Parallel。但可以先偷看未来的问题。一个 Linear 层通常会出现类似：</p>
+        <div class="code-block">
+          <div class="code-head"><span>next concept</span><span>linear algebra</span></div>
+          <pre><code>X: [B, S, H]
+W: [H, 4H]
+
+Y = X @ W
+
+<span class="comment"># Megatron 的问题：</span>
+<span class="comment"># W 太大时，能不能把它切给 GPU 0 和 GPU 1？</span>
+<span class="comment"># 如果切了，X / Y 要不要跟着切？</span>
+<span class="comment"># 中间需要 all-reduce 还是 all-gather？</span></code></pre>
+        </div>
+        <p>所以我们今天学 <code>[B,S,H]</code> 不是为了记符号。它是在搭后面所有“怎么切、怎么搬、怎么通信”的地基。</p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint">
+        <div class="checkpoint-head"><span>CHECKPOINT</span><span>不要跳过</span></div>
+        <h2>能答出来，再进下一课。</h2>
+        <div class="quiz-item">
+          <div class="quiz-q">1. <code>[4, 1024, 4096]</code> 里的 4096 是什么意思？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">它是 hidden size：当前每个 token 用一个长度为 4096 的向量表示。</div>
+        </div>
+        <div class="quiz-item">
+          <div class="quiz-q">2. 为什么 FP16 tensor 通常比同 shape 的 FP32 tensor 少一半显存？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">因为元素数量完全相同，但每个 FP32 元素通常占 4 bytes，FP16 占 2 bytes。</div>
+        </div>
+        <div class="quiz-item">
+          <div class="quiz-q">3. 为什么“这块 tensor 在 cuda:0 还是 cuda:1”以后会很重要？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">因为跨 GPU 使用数据往往意味着通信或拷贝。AI Infra 的大量性能问题，就是在研究哪些数据必须移动、移动多少、什么时候移动。</div>
+        </div>
+      </section>
+
+      <div class="next-lesson">
+        <div><small>NEXT · 01.2</small><br /><strong>Matrix Multiply 与 Linear：模型到底在算什么？</strong></div>
+        <span>→</span>
+      </div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录">
+      <strong>ON THIS PAGE</strong>
+      <a href="#tensor">Tensor 是什么</a>
+      <a href="#shape">[B,S,H]</a>
+      <a href="#pytorch">PyTorch</a>
+      <a href="#memory">Infra 视角</a>
+      <a href="#megatron">连接 Megatron</a>
+      <a href="#checkpoint">Checkpoint</a>
+    </aside>
+  </div>
+
+  <script src="../../app.js"></script>
+  <script>
+    document.querySelectorAll('.quiz-toggle').forEach((button) => {
+      button.addEventListener('click', () => {
+        const item = button.closest('.quiz-item');
+        item.classList.toggle('open');
+        button.textContent = item.classList.contains('open') ? '收起答案' : '看答案';
+      });
+    });
+  </script>
+</body>
+</html>
