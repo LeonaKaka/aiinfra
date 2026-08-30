@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Data Parallel：用两张卡/两个进程把不同样本上的 microbatch 梯度先本地累积，再只同步一次。" />
+  <title>Lab A3 · Data Parallel + Gradient Accumulation</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A3</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Data Parallel + Grad Accum</span></div>
+    <div class="lab-kicker">LAB A3 · DATA PARALLEL</div>
+    <h1>TP 是“同一个样本一起算”。<br />DP 是“同一份模型，各算不同样本”。</h1>
+    <p class="dek">前两课一直在 Tensor Parallel group 里切权重。现在换一个维度：两个 rank 都保留同样的参数，但各自拿不同训练样本。它们可以先在本地连续做多个 microbatch 的 backward，把梯度累积起来，最后再做一次 all-reduce。这样你会第一次把“梯度累积”和“梯度同步”拆成两件独立的事。</p>
+
+    <section class="lab-section" id="map"><div class="lab-kicker">01 · TP VS DP</div><h2>先把“切权重”和“切样本”分开。</h2>
+      <div class="stage-flow">
+        <div class="stage-card train"><small>RANK 0</small><b>same W · samples A</b><span>完整参数 W；只看自己那部分数据，连续跑多个 microbatch。</span></div>
+        <div class="stage-card train"><small>RANK 1</small><b>same W · samples B</b><span>参数必须与 Rank 0 一致，但输入样本不同，因此本地梯度也不同。</span></div>
+        <div class="stage-card comm"><small>DP SYNC</small><b>all-reduce gradients</b><span>把各 rank 的局部梯度求和/平均，之后所有副本用同一个 global gradient 更新。</span></div>
+      </div>
+      <p>所以 TP 的核心问题是“一个矩阵怎么分工”；DP 的核心问题是“不同数据算出的梯度，什么时候合成同一个更新”。真实 Megatron 会同时存在 TP group、DP group，二者的通信不能混为一谈。</p>
+    </section>
+
+    <section class="lab-section" id="accum"><div class="lab-kicker">02 · ACCUMULATION BEFORE COMMUNICATION</div><h2>microbatch 每 backward 一次，不代表每次都必须通信。</h2>
+      <div class="command"><div class="command-head"><span>ONE TRAINING STEP</span><span>per DP rank</span></div><pre>microbatch 0 → backward → grad += g₀
+microbatch 1 → backward → grad += g₁
+...
+microbatch M → backward → grad += gₘ
+
+# only now
+all_reduce_sum(grad)
+grad /= global_num_samples
+optimizer.step()</pre></div>
+      <p>脚本故意把每个 microbatch 的 loss 用 <code>SUM</code> 累积，最后只按全局样本数归一化一次。这样等式最清楚：<code>global_grad = (Σ rank Σ microbatch gradients) / N</code>。如果你在每个 microbatch、每个 rank 上都先做不同的 mean，再随手平均，很容易把缩放因子搞错。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>两 rank、每 rank 两个 microbatch，只做一次梯度同步。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>CPU Gloo / 2 GPU NCCL</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_dp_grad_accum.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>microbatches per rank   : 2
+gradient syncs per step : 1
+max dW error            : 1.192e-07
+max db error            : 1.192e-07
+max updated W error     : 2.980e-08
+max updated b error     : 5.960e-08
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_dp_grad_accum.py"><div><small>FULL SOURCE</small><b>打开 mini_dp_grad_accum.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>下一次看 Megatron DDP 时，先找“什么时候开始同步”，不要先看类继承。</h2>
+      <div class="source-bridge"><div><small>LAB</small><b>local accumulation → one all-reduce</b><code>w.grad / b.grad accumulate, then dist.all_reduce</code></div><span>same contract →</span><div><small>MEGATRON</small><b>distributed_data_parallel.py</b><code>grad buffers · sync control · overlap hooks</code></div></div>
+      <p>真实实现会把很多 parameter gradients 放进连续 buffer/bucket，并允许不同 bucket 在 backward 尚未完全结束时开始通信。这里没有做 bucket，也没有 overlap；我们只先钉死最基础的语义：<strong>DP 同步的是不同样本产生的 parameter gradient。</strong></p>
+      <div class="truth-note"><b>Gradient accumulation 不等于 Data Parallel。</b><p>单 GPU 也可以 accumulation；多 GPU DP 也可以每个 microbatch 都同步。二者是两个正交开关：一个控制“多久 update 一次”，另一个控制“多个模型副本如何得到一致梯度”。</p></div>
+    </section>
+
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>如果所有 rank 最终都拿到完整梯度，为什么 optimizer state 还要每张卡复制一份？</h2>
+      <div class="check-list"><div>① 当前 all-reduce 后，每个 rank 都拥有完整 global gradient。</div><div>② SGD momentum / Adam m,v 如果也完整复制，参数越大越浪费显存。</div><div>③ 下一实验让 gradient reduction 直接落成 shard：reduce-scatter。</div><div>④ 每个 rank 只更新自己的 optimizer-state shard，再 all-gather 新参数。</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-tp-backward.html">← Lab A2 · TP Backward</a><a href="./mini-distributed-optimizer.html">Lab A4 · Distributed Optimizer →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

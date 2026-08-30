@@ -2,7 +2,11 @@
 
 一个从基础知识逐层学习到 **Megatron Core** 与 **vLLM KV Connector** 的学习型网站。
 
-当前已经完成 8 个核心学习模块，并进入可运行的 Hands-on Labs、Source Map 与 Glossary 阶段。
+目标不是做名词百科，而是用同一条学习路径把：
+
+`Tensor / Transformer → GPU → Distributed → Megatron → LLM Inference → vLLM → KV Connector`
+
+真正串起来，并且让每个概念都能落到可运行实验与真实源码。
 
 ## Curriculum
 
@@ -15,22 +19,35 @@
 7. vLLM
 8. KV Connector
 
+8 个核心模块正文已经搭建完成。
+
 ## Hands-on Labs
 
-Training Infra：
-- **A1 Mini Megatron TP**：Column Parallel + Row Parallel forward。
-- **A2 Mini TP Backward**：手算 TP backward，并与 dense autograd 核对 dX/dW。
+当前有 7 个可运行实验：
 
-Inference Infra：
-- **B1 Mini KV Handoff**：Prefill rank 生成 K/V，Decode rank 接管并与 recompute reference 核对。
-- **B2 Mini Block KV Handoff**：加入 request metadata、token blocks、physical KV pool 与 block table。
+- A1 Mini Megatron TP
+- A2 Mini TP Backward
+- A3 Data Parallel + Gradient Accumulation
+- A4 Mini Distributed Optimizer
+- B1 Mini KV Handoff
+- B2 Mini Block KV Handoff
+- B3 Mini Async KV Transfer
 
-实验均支持 CPU/Gloo fallback；至少两张 CUDA GPU 时自动使用 NCCL。当前 correctness 路径已在 CPU/Gloo 上验证。
+默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness，不把小 tensor / CPU timing 当真实 GPU 或 RDMA benchmark。
 
-## Reference
+## Reading tools
 
-- **Source Map**：按问题而不是按目录阅读 Megatron Core / vLLM 源码。
-- **Glossary**：按学习路径整理术语，并强调“它解决什么问题”。
+- **Source Map**：按问题与 request/data lifecycle 阅读 Megatron / vLLM，而不是从仓库第一行顺序读。
+- **Glossary**：只收录课程真正用到的概念，并解释它在训练/推理系统里为什么出现。
+
+## Quality checks
+
+每次 push 会运行站点检查，验证：
+
+- HTML 核心阅读元数据；
+- 本地页面 / fragment / asset 链接；
+- CSS `@import` / `url(...)` 依赖；
+- Labs Python 源码语法。
 
 ## Site
 

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Distributed Optimizer：把 DP gradient all-reduce 改成 reduce-scatter，只在本 rank 保留 optimizer state shard，再 all-gather 更新后的参数。" />
+  <title>Lab A4 · Mini Distributed Optimizer</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A4</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Distributed Optimizer</span></div>
+    <div class="lab-kicker">LAB A4 · REDUCE-SCATTER + ALL-GATHER</div>
+    <h1>不要把完整梯度发给每个人。<br />让 reduction 的结果直接落到各自的 shard。</h1>
+    <p class="dek">普通 DP all-reduce 之后，每个 rank 都拿到完整 gradient；如果每个 rank 还保存完整 momentum、Adam m/v、FP32 master params，显存会重复很多份。这个实验做一个最小“Distributed Optimizer 骨架”：gradient 用 reduce-scatter 直接变成 shard；每个 rank 只维护自己的 momentum shard；更新后再 all-gather 参数，供下一次 forward 使用。</p>
+
+    <section class="lab-section" id="map"><div class="lab-kicker">01 · MEMORY CONTRACT</div><h2>计算时需要完整参数，不代表 optimizer state 也必须完整复制。</h2>
+      <div class="stage-flow">
+        <div class="stage-card train"><small>FORWARD / BACKWARD</small><b>full parameter replica</b><span>这个教学版本仍让每个 DP rank 用完整参数做计算，并得到完整 local gradient。</span></div>
+        <div class="stage-card comm"><small>GRADIENT</small><b>reduce-scatter</b><span>先跨 rank 求和，再把结果按参数区间切开；Rank r 只接收属于自己的 global grad shard。</span></div>
+        <div class="stage-card train"><small>OPTIMIZER</small><b>local state shard</b><span>只更新本 rank 的 parameter shard 与 momentum；之后 all-gather 新 parameter shards。</span></div>
+      </div>
+      <p>这和“先 all-reduce 完整 gradient，再每张卡都做同样 optimizer.step()”的数学结果可以一致，但状态复制量不再一样。world size 越大，optimizer-state sharding 的价值越明显。</p>
+    </section>
+
+    <section class="lab-section" id="timeline"><div class="lab-kicker">02 · ONE STEP</div><h2>把一轮更新压成四行，就能看清两次 collective 各自负责什么。</h2>
+      <div class="command"><div class="command-head"><span>DISTRIBUTED OPTIMIZER SKELETON</span><span>DP dimension</span></div><pre>local_full_grad = backward(local_batch)
+
+grad_shard = reduce_scatter_sum(local_full_grad) / DP
+state_shard = momentum * state_shard + grad_shard
+param_shard = param_shard - lr * state_shard
+
+full_param = all_gather(param_shard)
+# next forward uses full_param</pre></div>
+      <p><code>reduce-scatter</code> 的“reduce”解决不同 DP 样本的梯度合并，“scatter”顺便决定哪个 rank 负责哪一段 optimizer update；<code>all-gather</code> 则把更新后的 shards 重新 materialize 成下一轮计算需要的参数视图。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>连续跑三步，并和完整 momentum SGD reference 对齐。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_distributed_optimizer.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>steps                         : 3
+optimizer-state elems / rank  : 4 (vs 8 replicated)
+gradient collective           : reduce-scatter
+parameter materialization     : all-gather
+max parameter error           : 2.384e-07
+max optimizer-state error     : 9.537e-07
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_distributed_optimizer.py"><div><small>FULL SOURCE</small><b>打开 mini_distributed_optimizer.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>现在再打开 <code>distrib_optimizer.py</code>，先沿 buffer/range 找 shard，而不是试图一口气理解 15 万行工程细节。</h2>
+      <div class="source-bridge"><div><small>LAB</small><b>flat param → shard range</b><code>reduce_scatter → local momentum → all_gather</code></div><span>same idea →</span><div><small>MEGATRON</small><b>optimizer/distrib_optimizer.py</b><code>buffers · ranges · main params · reduce-scatter · all-gather</code></div></div>
+      <p>真实 Megatron 还要处理 mixed precision、FP32 main params、bucket alignment、checkpoint、overlap、TP/PP/CP/EP 组合与多种 optimizer。这个实验不是它的简化复制品，而是用最少状态把“为什么 reduce-scatter + local optimizer shard + all-gather”这条主因果链固定下来。</p>
+      <div class="truth-note"><b>不要把这个实验直接叫 ZeRO-3。</b><p>这里只有 optimizer-state / update sharding 的核心数据流；参数在 forward 前仍被完整 materialize，且没有实现完整 ZeRO stage 语义、prefetch、offload 或真实 Megatron buffer 管理。</p></div>
+    </section>
+
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Training 线下一次要把“通信发生了”变成“通信什么时候发生”。</h2>
+      <div class="check-list"><div>① 把 parameter gradients 放进 bucket，而不是每个 tensor 单独 collective。</div><div>② backward 某个 bucket ready 后立即启动 async reduce-scatter。</div><div>③ 用 profiler 看 GEMM 与 collective 是否真正 overlap。</div><div>④ 最后再组合 TP × DP，区分两个 process group 的通信。</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-dp-grad-accum.html">← Lab A3 · DP + Grad Accum</a><a href="./mini-async-kv-transfer.html">Lab B3 · Async KV Transfer →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
