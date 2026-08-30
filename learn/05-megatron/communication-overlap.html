@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 05.8：把 DP、TP、PP、EP 的通信统一放到 timeline 上，理解 Megatron communication overlap、buckets、依赖与 profiling。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>05.8 Communication Overlap · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./megatron.css" />
+  <link rel="stylesheet" href="./communication-overlap.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 05.8</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1–04.3 Distributed</a></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link" href="./tensor-parallel.html">05.2 Tensor Parallel</a><a class="lesson-link" href="./sequence-parallel.html">05.3 Sequence Parallel</a><a class="lesson-link" href="./pipeline-parallel.html">05.4 Pipeline Parallel</a><a class="lesson-link" href="./distributed-optimizer.html">05.5 Distributed Optimizer</a><a class="lesson-link" href="./context-parallel.html">05.6 Context Parallel</a><a class="lesson-link" href="./expert-parallel.html">05.7 Expert Parallel</a><a class="lesson-link current" href="./communication-overlap.html">05.8 Communication Overlap</a></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Communication Overlap</span></div>
+      <div class="lesson-kicker"><span>LESSON 05.8 · MEGATRON</span><span>约 70 min</span></div>
+      <h1>Communication Overlap：Megatron 怎么让 NCCL 和 GEMM 同时发生？</h1>
+      <p class="dek">前面每加一种并行，都会出现一种新的通信税：TP 有 All-Gather / Reduce-Scatter，DP 有 gradient reduce 和 parameter gather，PP 有 stage P2P，EP 有 token All-to-All。真正的大规模训练不能只“把通信做快”，还要问：通信时 GPU 是否有另一段独立计算可以同时做？Communication overlap 就是在依赖允许的地方，把等待时间藏起来。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分“通信时间存在”和“通信时间暴露在 step wall-time 上”是两回事。</li><li>理解 overlap 的前提是数据依赖允许，而不是简单开两个 CUDA streams。</li><li>把 DP grad-reduce / param-gather、TP AG/RS、PP P2P、EP A2A 分别对应到当前 Megatron 的优化开关。</li><li>理解 buckets / chunks 为什么既影响通信效率，也影响 overlap 启动时机。</li><li>知道 overlap 可能因为资源竞争、消息过小、load imbalance 等原因失效。</li><li>建立用 Nsight Systems / timeline 验证 overlap 的基本思路。</li></ul></div>
+
+      <section class="article-section" id="hide">
+        <div class="section-no">01 · THE GOAL IS TO HIDE, NOT DELETE</div>
+        <h2>Overlap 不会让 10 ms NCCL 凭空消失，它只想让这 10 ms 和别的工作重叠。</h2>
+        <div class="serial-vs-overlap"><div class="timeline-card"><small>SERIAL</small><b>compute 完 → 等 communication → 再 compute</b><div class="timeline-track"><span class="compute">GEMM</span><span class="compute">GEMM</span><span class="comm">NCCL</span><span class="comm">NCCL</span><span class="compute">GEMM</span><span class="compute">GEMM</span></div></div><div class="timeline-card good"><small>OVERLAPPED</small><b>communication 与独立 compute 同时推进</b><div class="timeline-track"><span class="compute">GEMM</span><span class="compute">GEMM</span><span class="compute">GEMM</span><span class="compute">GEMM</span><span class="compute">GEMM</span><span class="compute">GEMM</span></div><div class="timeline-track"><span class="idle">—</span><span class="comm">NCCL</span><span class="comm">NCCL</span><span class="idle">—</span><span class="idle">—</span><span class="idle">—</span></div></div></div>
+        <p>如果 communication 完全落在 compute 的时间窗口里，那么它对 step time 的“暴露部分”可能很小；如果通信比可重叠计算更长，超出来的尾巴仍然必须等待。</p>
+        <div class="hidden-exposed"><div><small>HIDDEN COMM</small><b>被计算覆盖的部分</b><span>它仍然占网络/NVLink 资源，只是不额外拉长关键路径。</span></div><i>+</i><div><small>EXPOSED COMM</small><b>覆盖不住的尾巴</b><span>这部分真正出现在 timeline gap / step wall-time 中。</span></div></div>
+      </section>
+
+      <section class="article-section" id="dependency">
+        <div class="section-no">02 · DEPENDENCIES DECIDE WHAT CAN OVERLAP</div>
+        <h2>最重要的不是“有没有两个 stream”，而是下一段计算到底需不需要这次通信结果。</h2>
+        <div class="dependency-graph"><div><small>COMPUTE A</small><b>produce tensor X</b></div><span>→ communication X →</span><div><small>COMPUTE B</small><b>needs X</b></div><span>dependency</span><div><small>COMPUTE C</small><b>does not need X</b></div></div>
+        <p>Compute B 必须等 communication X 完成，无法靠“异步”绕过数学依赖；但 Compute C 如果使用别的数据，就可能和通信并发。优秀的 schedule、bucket order、microbatch interleaving 都是在主动寻找这种独立工作。</p>
+        <div class="concept-note"><p><strong>Overlap 是调度问题，也是数据布局问题。</strong>你如何 shard tensors、什么时候某个 bucket ready、哪层参数下一刻才会被使用，都会决定可重叠窗口有多大。</p></div>
+      </section>
+
+      <section class="article-section" id="streams">
+        <div class="section-no">03 · CUDA / NCCL ASYNCHRONY IS THE MECHANISM</div>
+        <h2>计算 kernel 和通信 collective 可以被异步提交，但能否并行还要看硬件资源。</h2>
+        <div class="stream-grid"><div class="stream-card"><small>COMPUTE WORK</small><b>GEMM / attention kernels</b><span>主要使用 SM、Tensor Cores、HBM bandwidth 等 GPU 资源。</span></div><div class="stream-card"><small>COMM WORK</small><b>NCCL / P2P</b><span>使用 NVLink/PCIe/NIC 等数据路径，也会占用 GPU copy/communication engine、SM 或 memory bandwidth，具体取决于算法/平台。</span></div></div>
+        <p>因此两个 stream “时间上可以并发”不代表性能一定相加。若两者都强烈争抢 HBM bandwidth 或其它共享资源，compute 可能变慢，通信也可能变慢。</p>
+        <div class="resource-conflict"><div class="conflict-row head"><b>情况</b><span>看起来可 overlap</span><span>实际可能发生</span></div><div class="conflict-row"><b>Compute-bound GEMM + network comm</b><span>资源更互补</span><span>通常更有隐藏通信的空间。</span></div><div class="conflict-row"><b>Memory-bound kernel + heavy comm</b><span>两个任务异步</span><span>可能争 HBM / fabric，互相拖慢。</span></div><div class="conflict-row"><b>Tiny compute chunks</b><span>有很多空隙</span><span>窗口太短，通信 launch/latency 反而更显眼。</span></div></div>
+      </section>
+
+      <section class="article-section" id="map">
+        <div class="section-no">04 · FOUR PARALLELISMS, FOUR OVERLAP TARGETS</div>
+        <h2>前面学过的通信，现在统一放到一张表里。</h2>
+        <div class="overlap-kinds"><div class="overlap-kind"><small>DP</small><b>grad RS/AR + param AG</b><span>Backward 时提前 reduce gradient buckets；forward 前预取 parameter buckets。</span></div><div class="overlap-kind"><small>TP</small><b>activation AG / RS</b><span>Sequence Parallel 下把 Linear GEMM 与 TP collectives 做 bulk / pipelined overlap。</span></div><div class="overlap-kind"><small>PP</small><b>P2P activation / gradient</b><span>1F1B/VPP schedule 中把 stage send/recv 与其它 microbatch compute 交错。</span></div><div class="overlap-kind"><small>EP</small><b>token All-to-All</b><span>通过相邻 microbatch / shared expert / delayed wgrad 等制造可覆盖 A2A 的计算。</span></div></div>
+        <p>当前 Megatron 文档对应的主要开关分别是 <code>--overlap-grad-reduce</code>、<code>--overlap-param-gather</code>、<code>--tp-comm-overlap</code>、<code>--overlap-p2p-comm</code>、<code>--overlap-moe-expert-parallel-comm</code> 等。</p>
+        <div class="source-note">当前 Megatron MoE/performance guide 汇总了 DP、TP、PP、EP 的 communication overlap 配置：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/moe.html">Megatron Core · Mixture of Experts / Performance Tips</a>。</div>
+      </section>
+
+      <section class="article-section" id="dp">
+        <div class="section-no">05 · DP OVERLAP: BUCKETS CREATE EARLY STARTS</div>
+        <h2>Backward 不必全部结束，某个 gradient bucket ready 就可以开始 reduce。</h2>
+        <div class="bucket-pipeline"><div class="bucket-row"><small>BACKWARD</small><span class="compute">L7</span><span class="compute">L6</span><span class="compute">L5</span><span class="compute">L4</span><span class="compute">L3</span><span class="compute">L2</span><span class="compute">L1</span></div><div class="bucket-row"><small>GRAD REDUCE</small><span class="empty">—</span><span class="comm">B7</span><span class="comm">B6</span><span class="comm">B5</span><span class="comm">B4</span><span class="comm">B3</span><span class="comm">B2</span></div></div>
+        <p>这也是 05.5 为什么强调 contiguous buffers / buckets。bucket 太大，通信启动晚，可 overlap 窗口变小；bucket 太小，又会产生更多 collective launch / latency overhead。bucket size 本身就是性能调参的一部分。</p>
+        <p>当前 <code>param_and_grad_buffer</code> API 中，<code>start_grad_sync()</code> 在开启 overlap 时会发起异步 all-reduce/reduce-scatter，<code>finish_grad_sync()</code> 再在真正需要完成时等待。</p>
+        <div class="source-note">API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.param_and_grad_buffer.html">core.distributed.param_and_grad_buffer</a>。</div>
+      </section>
+
+      <section class="article-section" id="tp">
+        <div class="section-no">06 · TP OVERLAP: PIPELINE COLLECTIVE CHUNKS WITH GEMM</div>
+        <h2>TP 的挑战更难：通信就在 Linear 的数据依赖附近。</h2>
+        <p>Sequence Parallel 下，TP Linear 周围常有 activation all-gather / reduce-scatter。某些通信和 GEMM 存在直接依赖，不能整块同时跑；于是实现可以把 tensor/GEMM/collective 切成更小 chunks，让“AG 一部分 → GEMM 一部分”形成流水。</p>
+        <div class="bucket-pipeline"><div class="bucket-row"><small>ALL-GATHER</small><span class="comm">chunk 0</span><span class="comm">chunk 1</span><span class="comm">chunk 2</span><span class="comm">chunk 3</span><span class="empty">—</span><span class="empty">—</span><span class="empty">—</span></div><div class="bucket-row"><small>GEMM</small><span class="empty">wait</span><span class="compute">chunk 0</span><span class="compute">chunk 1</span><span class="compute">chunk 2</span><span class="compute">chunk 3</span><span class="empty">—</span><span class="empty">—</span></div></div>
+        <p>Megatron 当前 <code>ModelParallelConfig</code> 中，<code>tp_comm_overlap</code> 会尝试在 forward/backward Linear 上 overlap TP collectives；还有 bulk wgrad/dgrad、AG/RS pipelining 等更细的控制项。</p>
+        <div class="source-note">当前 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.model_parallel_config.html">core.model_parallel_config</a>，见 <code>tp_comm_overlap</code> 及相关配置。</div>
+      </section>
+
+      <section class="article-section" id="pp-ep">
+        <div class="section-no">07 · PP / EP NEED SCHEDULING WINDOWS</div>
+        <h2>PP 和 EP 的 overlap 更明显地依赖 microbatch schedule。</h2>
+        <div class="serial-vs-overlap"><div class="timeline-card"><small>PIPELINE PARALLEL</small><b>different microbatches create independent work</b><div class="timeline-track"><span class="comm">send MB0</span><span class="compute">F MB1</span><span class="comm">recv dMB0</span><span class="compute">B MB1</span><span class="compute">F MB2</span><span class="comm">send MB2</span></div></div><div class="timeline-card good"><small>EXPERT PARALLEL</small><b>adjacent microbatches / delayed wgrad</b><div class="timeline-track"><span class="comm">A2A MB0</span><span class="compute">expert MB-1</span><span class="comm">A2A MB1</span><span class="compute">wgrad</span><span class="comm">combine</span><span class="compute">shared exp</span></div></div></div>
+        <p>这里的 timeline 只是概念图。PP 的 VPP 可以增加可交错的 model chunks；EP overlap 则可能重排 forward/backward 子任务，甚至延后 wgrad 来制造通信窗口。越高级的 overlap，越不能只靠“函数调用顺序”理解，必须看 timeline。</p>
+      </section>
+
+      <section class="article-section" id="fail">
+        <div class="section-no">08 · WHY OVERLAP CAN FAIL</div>
+        <h2>开了 flag 以后 throughput 没涨，不代表 flag 没生效。</h2>
+        <div class="overlap-checklist"><div><small>DEPENDENCY</small><b>可重叠窗口太短</b><span>下一段关键计算很快就需要通信结果，异步也必须立刻 wait。</span></div><div><small>RESOURCE CONFLICT</small><b>compute / comm 互相抢资源</b><span>同时跑以后每个任务都变慢，净收益变小。</span></div><div><small>MESSAGE SIZE</small><b>bucket 太碎</b><span>latency / launch overhead 过大，难以跑到高带宽。</span></div><div><small>TOPOLOGY</small><b>跨慢链路</b><span>通信尾巴太长，可用 compute 根本盖不住。</span></div><div><small>IMBALANCE</small><b>某些 ranks 更慢</b><span>PP stage / MoE expert 负载不均，其他 ranks 仍然会在同步点等待。</span></div><div><small>CPU LAUNCH</small><b>主机跟不上</b><span>GPU timeline 本身出现空洞时，先解决 launch overhead，再谈通信 overlap。</span></div></div>
+      </section>
+
+      <section class="article-section" id="profile">
+        <div class="section-no">09 · VERIFY WITH A TIMELINE</div>
+        <h2>性能优化不能凭代码阅读猜，最终要看 GPU timeline。</h2>
+        <div class="profile-lane"><div class="profile-row"><small>COMPUTE</small><span class="gemm">GEMM</span><span class="gemm">GEMM</span><span class="gemm">ATTN</span><span class="gemm">GEMM</span><span class="gap">gap</span><span class="gemm">GEMM</span><span class="gemm">GEMM</span><span class="gemm">GEMM</span></div><div class="profile-row"><small>COMM</small><span class="gap">—</span><span class="nccl">RS</span><span class="nccl">RS</span><span class="gap">—</span><span class="nccl">AG</span><span class="nccl">AG</span><span class="gap">—</span><span class="gap">—</span></div></div>
+        <p>用 Nsight Systems 一类 profiler 时，至少问：NCCL kernel 是否与 GEMM 真正重叠？通信结束后是否仍有长 wait？GPU 是否因为 CPU launch 出现空洞？某些 ranks 是否明显比其它 ranks 晚？</p>
+        <div class="concept-note"><p><strong>优化目标不是“让图上颜色更多”。</strong>最终看的是 step time、tokens/s、MFU、显存峰值和 tail imbalance 等指标是否真的改善。</p></div>
+      </section>
+
+      <section class="article-section" id="source">
+        <div class="section-no">10 · SOURCE MAP: FOLLOW START / FINISH PAIRS</div>
+        <h2>读 overlap 源码时，优先找“发起异步工作”和“真正等待结果”的两个位置。</h2>
+        <div class="source-map"><div class="source-map-card"><small>DP</small><b>start_grad_sync / finish_grad_sync</b><code>param_and_grad_buffer</code><span>观察 collective 从哪里 dispatch、哪里 wait。</span></div><div class="source-map-card"><small>PARAM AG</small><b>start_param_sync / finish_param_sync</b><code>param_and_grad_buffer</code><span>理解 prefetch / bucket progression。</span></div><div class="source-map-card"><small>TP</small><b>tp_comm_overlap</b><code>ModelParallelConfig + TE</code><span>bulk / pipelined TP communication 与 Linear GEMM。</span></div><div class="source-map-card"><small>PP / EP</small><b>schedules / token dispatcher</b><code>pipeline_parallel / moe</code><span>通过 microbatch 与任务重排制造独立工作窗口。</span></div></div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.8</span></div><h2>到这里，你应该开始像 Infra 工程师一样看 timeline。</h2><div class="quiz-item"><div class="quiz-q">1. 一次 NCCL 操作耗时 10 ms，和 GEMM 完全重叠后，它的“真实耗时”变成 0 ms 了吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">没有。通信仍实际执行并消耗链路/GPU资源；只是如果它完全落在原本就要执行的独立 GEMM 时间里，它对 step 关键路径新增的 exposed time 可以接近 0。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 bucket 太大和太小都可能不好？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">太大时要等很多 gradient/参数准备好后才能启动通信，减少 overlap 窗口；太小时 collective 数量太多，launch/latency overhead 上升，带宽利用也可能变差。</div></div><div class="quiz-item"><div class="quiz-q">3. 开启异步 stream 后为什么仍可能完全没有 overlap 收益？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">可能存在立即数据依赖，必须马上 wait；也可能 compute/comm 争抢相同资源、通信远长于可覆盖计算、CPU launch 出现瓶颈等。是否有效必须靠实际 timeline 和 throughput 验证。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 06.1</small><br /><strong>LLM Inference：训练结束以后，生成一个 token 到底发生什么？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#hide">隐藏 vs 删除</a><a href="#dependency">依赖关系</a><a href="#streams">Streams / resources</a><a href="#map">四种 overlap</a><a href="#dp">DP buckets</a><a href="#tp">TP overlap</a><a href="#pp-ep">PP / EP</a><a href="#fail">为什么失败</a><a href="#profile">Timeline</a><a href="#source">源码地图</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
