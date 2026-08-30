@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 03.3：理解 compute-bound、memory-bound、communication-bound、arithmetic intensity、overlap，以及 prefill/decode 的不同性能压力。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>03.3 GPU 到底在等什么 · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./gpu.css" />
+  <link rel="stylesheet" href="./gpu-performance.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 03.3</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1 Attention</a><a class="lesson-link" href="../02-transformer/mha-gqa.html">02.2 MHA / GQA</a><a class="lesson-link" href="../02-transformer/transformer-block.html">02.3 Transformer Block</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="./gpu-mental-model.html">03.1 GPU 心智模型</a><a class="lesson-link" href="./gpu-memory.html">03.2 显存到底花在哪</a><a class="lesson-link current" href="./gpu-bottlenecks.html">03.3 Compute / Memory / Communication</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><span class="lesson-link locked">04.1 进程、rank 与 process group</span><span class="lesson-link locked">04.2 Collectives</span><span class="lesson-link locked">04.3 NCCL 与拓扑</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>03 · GPU Systems</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>Bottlenecks</span></div>
+      <div class="lesson-kicker"><span>LESSON 03.3 · GPU SYSTEMS</span><span>约 55 min</span></div>
+      <h1>GPU 到底在等什么：Compute、Memory、Communication。</h1>
+      <p class="dek">“GPU 利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做 Infra 时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 launch / CPU 调度开销。优化方向必须跟瓶颈对上。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释 compute-bound、memory-bound、communication-bound。</li><li>理解 arithmetic intensity 为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信的 bandwidth 与 latency 是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解 communication overlap 的收益上限，并把它连接到 Megatron。</li><li>解释为什么 LLM prefill 和 decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
+
+      <section class="article-section" id="triad">
+        <div class="section-no">01 · THREE DIFFERENT CEILINGS</div>
+        <h2>先把“慢”拆成三种完全不同的慢。</h2>
+        <div class="bottleneck-triad"><div><small>COMPUTE-BOUND</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU 能做多少计算。</span></div><div><small>MEMORY-BOUND</small><b>数据喂不够快</b><span>计算单元有空，但 HBM / cache 的数据搬运速度先到上限。</span></div><div><small>COMMUNICATION-BOUND</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective、P2P 或网络传输。</span></div></div>
+        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：compute-bound 更关注更快的 GEMM、precision 和 kernel；memory-bound 更关注少搬数据、fusion、复用；communication-bound 更关注通信量、拓扑、collective 算法和 overlap。</p>
+        <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
+      </section>
+
+      <section class="article-section" id="intensity">
+        <div class="section-no">02 · ARITHMETIC INTENSITY</div>
+        <h2>判断 compute 还是 memory，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
+        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>AI = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分 DRAM、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
+        <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受 memory bandwidth 限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入 compute-bound 区域。</span></div></div>
+        <p>“某类算子永远 memory-bound”也不是绝对规律。shape、batch、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
+      </section>
+
+      <section class="article-section" id="roofline">
+        <div class="section-no">03 · A MINIMAL ROOFLINE</div>
+        <h2>Roofline 只是把两个上限画在一张图上。</h2>
+        <p>横轴是 arithmetic intensity，纵轴是能达到的计算性能。极简版可以想成：</p>
+        <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">memory bandwidth roof</div><div class="roof-label compute">compute roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
+        <div class="roof-caption"><div><b>左边 · memory-limited</b><span>每 byte 做的计算太少，性能上限随带宽和 arithmetic intensity 增长。</span></div><div><b>右边 · compute-limited</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
+        <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
+        <div class="source-note">官方延伸阅读：NVIDIA Nsight Compute 的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同 memory hierarchy 的 roof。</div>
+      </section>
+
+      <section class="article-section" id="compute">
+        <div class="section-no">04 · COMPUTE-BOUND</div>
+        <h2>Compute-bound 时，你真的在“吃计算单元”。</h2>
+        <p>想象一个足够大的 Linear：<code>[M,K] @ [K,N]</code>。如果矩阵尺寸合适、数据复用高、底层库能充分使用 Tensor Cores，kernel 可能更接近 compute-bound。</p>
+        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / SM 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯 compute efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine 等实现质量很重要</span></div></div>
+        <p>这也是为什么 Megatron 会如此关心 TP 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
+      </section>
+
+      <section class="article-section" id="memory">
+        <div class="section-no">05 · MEMORY-BOUND</div>
+        <h2>Memory-bound 时，减少“搬”往往比减少“算”更重要。</h2>
+        <p>如果一个操作只对每个元素做很少计算，却必须把大量数据从 HBM 读进来再写回去，那么 Tensor Cores 再强也帮不了太多。典型优化思路是：</p>
+        <div class="stall-grid"><div><b>Kernel fusion</b><span>多个操作合并，减少中间 tensor 写回 HBM 再读出的次数。</span></div><div><b>Better locality</b><span>让数据更多在 register / shared memory / cache 层级复用。</span></div><div><b>Fewer bytes</b><span>更低 precision、压缩、只搬真正需要的数据。</span></div><div><b>Batching</b><span>让一次权重读取服务更多 token / request，提高复用。</span></div><div><b>Layout</b><span>合适的数据布局能帮助 coalesced access 与底层 kernel。</span></div><div><b>Avoid copies</b><span>不必要的 tensor materialization / device copy 会直接烧带宽。</span></div></div>
+        <p>后面读 FlashAttention 时，你会看到一个经典例子：它不是简单把 attention 数学公式改掉，而是重新组织数据流，减少昂贵的 HBM 读写。</p>
+      </section>
+
+      <section class="article-section" id="launch">
+        <div class="section-no">06 · A FOURTH THING YOU MUST NOT FORGET</div>
+        <h2>有时既没吃满 compute，也没吃满 bandwidth：工作可能太碎了。</h2>
+        <p>每次 CUDA kernel launch 都有调度/提交开销。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、scheduler 也可能来不及持续喂工作。</p>
+        <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">launch</span><span class="launch">launch</span><span class="launch">launch</span></div><div class="gpu-line"><small>GPU</small><span class="work a">tiny A</span><span class="work b">tiny B</span></div></div>
+        <p>这也是 CUDA Graphs、kernel fusion、continuous batching 等技术有价值的一部分原因：它们不一定只是在“让某个 kernel 更快”，也可能是在减少碎片化调度和空档。</p>
+      </section>
+
+      <section class="article-section" id="communication">
+        <div class="section-no">07 · COMMUNICATION-BOUND</div>
+        <h2>一旦跨 GPU，就多了一份“必须把数据送到别人那里”的时间。</h2>
+        <p>单 GPU 里主要盯 compute 和 memory hierarchy；多 GPU 还要把 GPU↔GPU、node↔node 的通信加进账本。最简单的传输时间直觉：</p>
+        <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency + bytes / bandwidth</b><p>小消息时固定启动 latency 更显眼；大消息时有效 bandwidth 更关键。collective 通信还会包含多轮传输、拓扑和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐。</p></div>
+        <div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>Latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>Bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
+        <p>后面学 all-reduce / all-gather / reduce-scatter 时，我们会把“需要搬多少 bytes、走几轮、哪些 rank 互相交换”算得更具体。</p>
+      </section>
+
+      <section class="article-section" id="overlap">
+        <div class="section-no">08 · HIDE COMMUNICATION BEHIND COMPUTE</div>
+        <h2>Megatron 很多优化的关键词：不要傻等通信。</h2>
+        <p>假设一次 step 有 60ms compute 和 40ms communication。如果完全串行，就是 100ms。若依赖关系允许把一部分通信和计算同时进行，理想上总时间可以更接近两者较大的那个，而不是简单相加。</p>
+        <div class="serial-overlap"><div><small>SERIAL</small><div class="bar-track"><span class="bar-compute">compute · 60</span><span class="bar-comm">comm · 40</span></div></div><div><small>OVERLAP</small><div class="overlap-track"><span class="bar-compute">compute</span><span class="bar-comm">comm hidden</span></div></div></div>
+        <p>现实不可能凭空把所有通信隐藏掉：通信可能依赖前面的结果，也会争抢 GPU、copy engine、memory bandwidth 或网络资源。但这个思路非常重要——<strong>communication overlap 是把“不得不做的通信”藏进原本就要做的计算时间里。</strong></p>
+        <div class="concept-note"><p>以后看到 Megatron 的 gradient reduce overlap、parameter gather overlap、pipeline P2P overlap，都可以先用这个时间线直觉理解。</p></div>
+      </section>
+
+      <section class="article-section" id="prefill-decode">
+        <div class="section-no">09 · WHY VLLM CARES ABOUT BATCHING</div>
+        <h2>LLM 推理里，Prefill 和 Decode 常常不是同一种性能问题。</h2>
+        <div class="prefill-decode-pressure"><div><small>PREFILL</small><b>很多 token 一起算</b><span>Prompt 一次送进大量 token，大矩阵乘更容易形成高效 GEMM，通常更有机会把 compute 吃起来。</span></div><div><small>DECODE</small><b>每个 request 每步只新增少量 token</b><span>单 request 很难形成足够大的矩阵；模型权重需要反复被读取，常更容易受到 memory bandwidth、batch size、KV 访问等因素限制。</span></div></div>
+        <p>这不是“prefill 永远 compute-bound、decode 永远 memory-bound”的绝对定律。batch 大小、模型结构、quantization、hardware、kernel 都会改变瓶颈。但它给了我们一个极其重要的 vLLM 直觉：</p>
+        <div class="concept-note"><p><strong>Continuous batching 的价值之一：</strong>把多个 request 的 decode token 聚起来，让一次权重读取服务更多 token，提高 GPU 的有效工作量与数据复用。</p></div>
+      </section>
+
+      <section class="article-section" id="profile">
+        <div class="section-no">10 · HOW TO LOOK AT A REAL SYSTEM</div>
+        <h2>不要靠猜，用不同 profiler 回答不同层级的问题。</h2>
+        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems</b><span>看 CPU、CUDA kernels、NCCL、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight Compute</b><span>看某个 kernel 的 compute / memory throughput、occupancy、roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler</b><span>把 Python/PyTorch op 和 CUDA activities 对起来，定位模型级热点。</span></div></div>
+        <p>真正的性能工作通常是从宏观 timeline 找热点，再下钻到关键 kernel，而不是打开源码随机找“看起来可以优化”的 for-loop。</p>
+      </section>
+
+      <section class="article-section" id="bridge">
+        <div class="section-no">11 · THE ROAD AHEAD</div>
+        <h2>GPU Systems 到这里结束，下一模块开始研究“通信到底怎么发生”。</h2>
+        <div class="bridge-grid"><div><small>TRAINING · MEGATRON</small><b>compute + communication</b><span>TP/PP/DP 把工作拆开；NCCL collectives 搬数据；overlap 尽量把通信藏起来；parallel size 还会改变 local GEMM efficiency。</span></div><div><small>INFERENCE · vLLM</small><b>memory + scheduling + communication</b><span>continuous batching 提高利用率；Paged KV 管 HBM；P/D disaggregation 与 KV Connector 再引入跨设备/节点数据传输。</span></div></div>
+        <p>因此 04 Distributed 不会从抽象“分布式系统理论”起步，而会直接从你已经遇到的问题开始：<strong>两张 GPU 到底如何知道自己是谁、如何建立通信组、all-reduce 又到底搬了什么？</strong></p>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.3</span></div><h2>优化之前，先说出你认为瓶颈在哪。</h2><div class="quiz-item"><div class="quiz-q">1. 一个 kernel 的 Tensor Core 很空闲，但 HBM throughput 已经很高，更应该先怀疑 compute 还是 memory？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更应该先怀疑 memory-bound。计算单元没有吃满，而 memory throughput 接近上限，说明继续增加理论 FLOPs 往往帮助不大，应该优先考虑少搬数据、提高复用或 fusion。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么“60ms compute + 40ms communication”不一定必须等于 100ms？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果依赖关系和资源允许，一部分 communication 可以与仍在进行的 compute 并发。理想 overlap 会把一部分通信时间隐藏在计算时间内，但实际收益会受依赖和资源竞争限制。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 vLLM 会极其在意 continuous batching？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">自回归 decode 对单个 request 每步工作量很小。把多个 request 的 token 聚在一起，可以形成更大的有效 batch，让权重读取服务更多 token、提高 GPU 利用率和吞吐；同时 scheduler 还能及时补入新请求。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 04.1</small><br /><strong>进程、rank 与 process group：多张 GPU 先怎么“认识彼此”？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#triad">三种瓶颈</a><a href="#intensity">Arithmetic intensity</a><a href="#roofline">Roofline</a><a href="#compute">Compute-bound</a><a href="#memory">Memory-bound</a><a href="#launch">Launch overhead</a><a href="#communication">Communication</a><a href="#overlap">Overlap</a><a href="#prefill-decode">Prefill / Decode</a><a href="#profile">Profiler</a><a href="#bridge">下一模块</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
