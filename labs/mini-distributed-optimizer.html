@@ -63,7 +63,7 @@ PASS</pre></div>
       <div class="check-list"><div>① 把 parameter gradients 放进 bucket，而不是每个 tensor 单独 collective。</div><div>② backward 某个 bucket ready 后立即启动 async reduce-scatter。</div><div>③ 用 profiler 看 GEMM 与 collective 是否真正 overlap。</div><div>④ 最后再组合 TP × DP，区分两个 process group 的通信。</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-dp-grad-accum.html">← Lab A3 · DP + Grad Accum</a><a href="./mini-async-kv-transfer.html">Lab B3 · Async KV Transfer →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-dp-grad-accum.html">← Lab A3 · DP + Grad Accum</a><a href="./mini-bucketed-reduce-scatter.html">Lab A5 · Bucketed Reduce-Scatter →</a></nav>
   </main>
   <script src="../app.js"></script>
 </body>

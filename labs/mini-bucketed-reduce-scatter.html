@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Bucketed Async Reduce-Scatter：模拟 backward 中不同 gradient bucket 依次 ready，并在继续计算时启动异步 reduce-scatter。" />
+  <title>Lab A5 · Bucketed Async Reduce-Scatter</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A5</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Bucketed Async Reduce-Scatter</span></div>
+    <div class="lab-kicker">LAB A5 · COMMUNICATION OVERLAP</div>
+    <h1>真正的 overlap 不是“最后异步一下”。<br />而是哪个 bucket ready，就尽早把它发出去。</h1>
+    <p class="dek">A4 已经知道 Distributed Optimizer 为什么喜欢 reduce-scatter，但通信仍然放在 backward 之后。这里再前进一步：两层 MLP 的 W2 gradient 会比 W1 更早 ready。W2 一算完就立刻发起 async reduce-scatter；主线程随后继续算 dH、ReLU backward 和 dW1。等 W1 bucket 也 ready，再发起第二个 collective。这样“backward 计算”和“梯度通信”第一次出现在同一条时间线里。</p>
+
+    <section class="lab-section" id="timeline"><div class="lab-kicker">01 · READY ORDER</div><h2>Backward 天然有顺序；bucket 就利用这个顺序。</h2>
+      <div class="stage-flow">
+        <div class="stage-card train"><small>BUCKET 0 READY</small><b>dW2</b><span>输出层先得到 gradient。不要等整个模型 backward 完成。</span></div>
+        <div class="stage-card comm"><small>LAUNCH</small><b>async reduce-scatter W2</b><span>拿到 Work handle 后调用方可以继续；底层是否真正并行 progress 要看 backend 与硬件。</span></div>
+        <div class="stage-card train"><small>KEEP COMPUTING</small><b>dH → dPre → dW1</b><span>这段计算不依赖 W2 reduction 的最终结果，所以可以继续。</span></div>
+      </div>
+      <p>随后 W1 bucket ready，再启动自己的 reduce-scatter。工业实现会有很多 bucket，并由 autograd hook / grad buffer 追踪“这个 bucket 的所有参数梯度是否都 ready”。</p>
+    </section>
+
+    <section class="lab-section" id="pseudo"><div class="lab-kicker">02 · THE MINIMUM OVERLAP PATTERN</div><h2>只看四个时间点，就知道“哪里有机会重叠”。</h2>
+      <div class="command"><div class="command-head"><span>BACKWARD TIMELINE</span><span>conceptual</span></div><pre>dW2 ready
+  └─ work2 = reduce_scatter(dW2, async=True)
+
+compute dH
+compute ReLU backward
+compute dW1
+
+dW1 ready
+  └─ work1 = reduce_scatter(dW1, async=True)
+
+wait(work2)
+wait(work1)
+optimizer can consume local shards</pre></div>
+      <p><strong>关键不是 <code>async=True</code> 这个布尔值，而是 wait 被推迟到了真正需要 gradient shard 的位置。</strong>如果 launch 后立刻 wait，逻辑上仍然是同步执行。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>两个 gradient shard 都与完整 global-batch reference 对齐。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_bucketed_reduce_scatter.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>ordering only</span></div><pre>bucket ready order          : W2 → W1
+W2 collective               : async reduce-scatter
+compute between post/wait   : dH + dPre + dW1
+max W2 shard error          : 5.960e-08
+max W1 shard error          : 2.980e-08
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_bucketed_reduce_scatter.py"><div><small>FULL SOURCE</small><b>打开 mini_bucketed_reduce_scatter.py</b></div><span>→</span></a>
+      <div class="truth-note"><b>这里仍然不能宣称“通信被隐藏了”。</b><p>CPU/Gloo 的本地小 tensor 只验证依赖顺序和 correctness。要证明真正 overlap，必须在 GPU 上同时看到 compute kernel 与 NCCL collective 的时间区间重叠，并比较 end-to-end step time。</p></div>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>这次应该去看 grad buffer / bucket，而不仅是 optimizer。</h2>
+      <div class="source-bridge"><div><small>LAB</small><b>W2 bucket ready first</b><code>async reduce_scatter → continue backward → wait later</code></div><span>same scheduling idea →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket · grad ready · communication handle · overlap</code></div></div>
+      <p>然后再回 <code>distributed_data_parallel.py</code> 看这些 buffer 如何挂到模型和 backward 上，最后到 <code>distrib_optimizer.py</code> 看 local shard 怎样进入 optimizer。这样阅读顺序是：<strong>gradient 何时 ready → 通信何时启动 → shard 最后被谁消费。</strong></p>
+    </section>
+
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Training 线下一步要引入第二个 process group：TP × DP。</h2>
+      <div class="check-list"><div>① 用 4 ranks 创建 TP=2、DP=2 的二维拓扑。</div><div>② 区分 TP group 内的 layer communication 与 DP group 内的 gradient reduction。</div><div>③ 画出每个 global rank 同时属于哪两个 group。</div><div>④ 最后用 profiler 把 TP collective、DP reduce-scatter 和 GEMM 放在同一张 timeline。</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-distributed-optimizer.html">← Lab A4 · Distributed Optimizer</a><a href="./mini-layerwise-kv-stream.html">Lab B4 · Layer-wise KV Streaming →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

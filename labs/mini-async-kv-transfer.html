@@ -51,11 +51,11 @@ PASS</pre></div>
       <div class="source-bridge"><div><small>READ FIRST</small><b>KVConnectorBase_V1</b><code>start_load_kv · wait_for_layer_load · save_kv_layer</code></div><span>then →</span><div><small>NIXL WORKER</small><b>nixl/base_worker.py</b><code>registered memory · peer metadata · transfer lifecycle</code></div></div>
     </section>
 
-    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>下一步不再只是 async API，而是“怎样证明真的 overlap”。</h2>
-      <div class="check-list"><div>① 放大 KV payload，并在 GPU 上跑 NCCL P2P。</div><div>② 用 CUDA events / profiler 分别标记 compute、post、transfer wait。</div><div>③ 尝试 layer-by-layer KV transfer，让第 L 层搬运与第 L+1 层计算重叠。</div><div>④ 最后进入 NIXL memory registration、remote descriptor 与 RDMA path；没有对应硬件时只做源码/协议分析，不伪造 benchmark。</div></div>
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>下一步把 async dependency 从“整个请求”细化到“每一层”。</h2>
+      <div class="check-list"><div>① Prefill 每生成一层 KV 就立即发送，不等全部 layers 完成。</div><div>② Decode 提前 post receives，但只在进入 layer L 前 wait KV[L]。</div><div>③ 观察哪一层 wait 暴露在关键路径上。</div><div>④ 再进入 NIXL memory registration、remote descriptor 与 RDMA path；没有对应硬件时不伪造 benchmark。</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-block-kv-handoff.html">← Lab B2 · Block KV Handoff</a><a href="../learn/08-kv-connector/nixl-rdma.html">回 08.4 NIXL / RDMA →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-block-kv-handoff.html">← Lab B2 · Block KV Handoff</a><a href="./mini-layerwise-kv-stream.html">Lab B4 · Layer-wise KV Streaming →</a></nav>
   </main>
   <script src="../app.js"></script>
 </body>

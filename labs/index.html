@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero Labs：从 Tensor Parallel forward/backward、Data Parallel 与 Distributed Optimizer，到 block-based / async KV handoff 的可运行实验。" />
+  <meta name="description" content="AI Infra from Zero Labs：从 TP/DP/Distributed Optimizer 到 block-based、async、layer-wise KV handoff 的可运行实验。" />
   <title>Labs · AI Infra from Zero</title>
   <link rel="stylesheet" href="../styles.css" />
   <link rel="stylesheet" href="./lab.css" />
@@ -20,10 +20,10 @@
       <div>
         <div class="lab-kicker">CAPSTONE · RUN IT YOURSELF</div>
         <h1>从“知道概念”继续往前：<br />把通信、状态和依赖真的跑一遍。</h1>
-        <p>Training 线现在从 TP forward/backward 扩展到 DP gradient accumulation 与 Distributed Optimizer；Inference 线从连续 KV handoff 扩展到 block table 与 nonblocking transfer。每个实验都先用 dense/recompute reference 验证 correctness，再讨论性能。</p>
+        <p>Training 线从 TP forward/backward 走到 DP、Distributed Optimizer 与 bucketed communication overlap；Inference 线从 KV handoff 走到 block table、nonblocking transfer 与 layer-by-layer streaming。每一步都先做 correctness reference，再谈性能。</p>
       </div>
       <aside class="lab-status">
-        <div class="status-row"><b>Runnable labs</b><span>7 experiments</span></div>
+        <div class="status-row"><b>Runnable labs</b><span>9 experiments</span></div>
         <div class="status-row"><b>CPU verified</b><span>✓ Gloo · 2 ranks</span></div>
         <div class="status-row"><b>2-GPU path</b><span>✓ auto NCCL</span></div>
         <div class="status-row"><b>Rule</b><span>correctness before speed</span></div>
@@ -32,55 +32,29 @@
 
     <section class="level-strip" aria-label="实验升级路线">
       <div class="level"><small>LEVEL 0</small><b>Mechanism</b><span>先把 shard、gradient、KV block、P2P 的最小数据流看清。</span></div>
-      <div class="level"><small>LEVEL 1</small><b>Correctness</b><span>所有关键结果都与 dense autograd / recompute reference 对齐。</span></div>
-      <div class="level"><small>LEVEL 2</small><b>System State</b><span>加入 accumulation、optimizer state shard、metadata、block table、async handle。</span></div>
-      <div class="level"><small>LEVEL 3</small><b>Performance</b><span>下一阶段放大 workload，用 profiler 判断 collective / transfer 是否真正 overlap。</span></div>
+      <div class="level"><small>LEVEL 1</small><b>Correctness</b><span>关键结果与 dense autograd / recompute reference 对齐。</span></div>
+      <div class="level"><small>LEVEL 2</small><b>System State</b><span>加入 optimizer shard、metadata、block table、async handle 与 per-layer dependency。</span></div>
+      <div class="level"><small>LEVEL 3</small><b>Performance</b><span>先制造 overlap 的条件，再用 GPU profiler 判断它是否真的发生。</span></div>
     </section>
 
     <div class="lab-kicker" style="margin-top:42px">TRACK A · TRAINING INFRA</div>
     <section class="lab-grid">
-      <a class="lab-card train" href="./mini-megatron.html">
-        <small>LAB A1 · TP FORWARD</small><h2>Mini Megatron TP</h2>
-        <p>Column Parallel W1 + Row Parallel W2。每个 rank 只做自己的 GEMM，最后 all-reduce partial output。</p>
-        <footer><span>核心问题</span><strong>为什么 forward 在这里通信？</strong></footer>
-      </a>
-      <a class="lab-card train" href="./mini-tp-backward.html">
-        <small>LAB A2 · TP BACKWARD</small><h2>Mini TP Backward</h2>
-        <p>手算 dW2、dW1、dX，再和 dense autograd 对照；看清哪些 gradient 保持 sharded，哪些必须求和。</p>
-        <footer><span>核心问题</span><strong>为什么 backward 的通信位置不同？</strong></footer>
-      </a>
-      <a class="lab-card train" href="./mini-dp-grad-accum.html">
-        <small>LAB A3 · DATA PARALLEL</small><h2>DP + Gradient Accumulation</h2>
-        <p>两个 rank 持有相同参数、处理不同样本；先本地累计多个 microbatch，再只做一次 gradient all-reduce。</p>
-        <footer><span>核心问题</span><strong>“累积”和“同步”为什么是两件事？</strong></footer>
-      </a>
-      <a class="lab-card train" href="./mini-distributed-optimizer.html">
-        <small>LAB A4 · OPTIMIZER SHARDING</small><h2>Mini Distributed Optimizer</h2>
-        <p>reduce-scatter 让 global gradient 直接落成 shard；每个 rank 只保留本地 momentum，再 all-gather 更新后的参数。</p>
-        <footer><span>核心问题</span><strong>为什么 optimizer state 不必每卡复制？</strong></footer>
-      </a>
+      <a class="lab-card train" href="./mini-megatron.html"><small>LAB A1 · TP FORWARD</small><h2>Mini Megatron TP</h2><p>Column Parallel W1 + Row Parallel W2。每个 rank 只做自己的 GEMM，最后 all-reduce partial output。</p><footer><span>核心问题</span><strong>为什么 forward 在这里通信？</strong></footer></a>
+      <a class="lab-card train" href="./mini-tp-backward.html"><small>LAB A2 · TP BACKWARD</small><h2>Mini TP Backward</h2><p>手算 dW2、dW1、dX，再和 dense autograd 对照；看清哪些 gradient 保持 sharded，哪些必须求和。</p><footer><span>核心问题</span><strong>为什么 backward 的通信位置不同？</strong></footer></a>
+      <a class="lab-card train" href="./mini-dp-grad-accum.html"><small>LAB A3 · DATA PARALLEL</small><h2>DP + Gradient Accumulation</h2><p>两个 rank 持有相同参数、处理不同样本；先本地累计多个 microbatch，再只做一次 gradient all-reduce。</p><footer><span>核心问题</span><strong>“累积”和“同步”为什么是两件事？</strong></footer></a>
+      <a class="lab-card train" href="./mini-distributed-optimizer.html"><small>LAB A4 · OPTIMIZER SHARDING</small><h2>Mini Distributed Optimizer</h2><p>reduce-scatter 让 global gradient 直接落成 shard；每个 rank 只保留本地 momentum，再 all-gather 更新后的参数。</p><footer><span>核心问题</span><strong>为什么 optimizer state 不必每卡复制？</strong></footer></a>
+      <a class="lab-card train" href="./mini-bucketed-reduce-scatter.html" style="grid-column:1/-1"><small>LAB A5 · COMMUNICATION OVERLAP</small><h2>Bucketed Async Reduce-Scatter</h2><p>W2 gradient 先 ready 就先发 async reduce-scatter；backward 继续计算 W1。第一次把“gradient readiness”和“通信启动时机”放到同一条时间线上。</p><footer><span>核心问题</span><strong>为什么 bucket ready 后要尽早 launch，而不是等整个 backward？</strong></footer></a>
     </section>
 
     <div class="lab-kicker" style="margin-top:42px">TRACK B · INFERENCE INFRA</div>
     <section class="lab-grid">
-      <a class="lab-card infer" href="./mini-kv-handoff.html">
-        <small>LAB B1 · RAW KV HANDOFF</small><h2>Mini KV Handoff</h2>
-        <p>Rank 0 Prefill 产生连续 K/V；Rank 1 接收后直接 Decode，并与本地重算 prompt KV 的 reference 对齐。</p>
-        <footer><span>核心问题</span><strong>远端 KV 能否等价接管模型状态？</strong></footer>
-      </a>
-      <a class="lab-card infer" href="./mini-block-kv-handoff.html">
-        <small>LAB B2 · BLOCK KV</small><h2>Mini Block KV Handoff</h2>
-        <p>加入 request metadata、固定 token blocks、physical KV pool 和 logical→physical block table。</p>
-        <footer><span>核心问题</span><strong>逻辑序列如何脱离物理显存位置？</strong></footer>
-      </a>
-      <a class="lab-card infer" href="./mini-async-kv-transfer.html" style="grid-column:1/-1">
-        <small>LAB B3 · ASYNC DATA PLANE</small><h2>Mini Async KV Transfer</h2>
-        <p>把 block transfer 拆成 isend/irecv launch → independent work → Work.wait()。先理解“异步提供了重叠机会”，再去谈 NIXL/RDMA 的真实性能。</p>
-        <footer><span>核心问题</span><strong>什么时候可以不等 KV？什么时候必须建立依赖？</strong></footer>
-      </a>
+      <a class="lab-card infer" href="./mini-kv-handoff.html"><small>LAB B1 · RAW KV HANDOFF</small><h2>Mini KV Handoff</h2><p>Rank 0 Prefill 产生连续 K/V；Rank 1 接收后直接 Decode，并与本地重算 prompt KV 的 reference 对齐。</p><footer><span>核心问题</span><strong>远端 KV 能否等价接管模型状态？</strong></footer></a>
+      <a class="lab-card infer" href="./mini-block-kv-handoff.html"><small>LAB B2 · BLOCK KV</small><h2>Mini Block KV Handoff</h2><p>加入 request metadata、固定 token blocks、physical KV pool 和 logical→physical block table。</p><footer><span>核心问题</span><strong>逻辑序列如何脱离物理显存位置？</strong></footer></a>
+      <a class="lab-card infer" href="./mini-async-kv-transfer.html"><small>LAB B3 · ASYNC DATA PLANE</small><h2>Mini Async KV Transfer</h2><p>把 block transfer 拆成 isend/irecv launch → independent work → Work.wait()，先建立异步依赖模型。</p><footer><span>核心问题</span><strong>什么时候可以不等 KV？</strong></footer></a>
+      <a class="lab-card infer" href="./mini-layerwise-kv-stream.html"><small>LAB B4 · LAYER PIPELINE</small><h2>Layer-wise KV Streaming</h2><p>Prefill 每算完一层就发送 KV[L]；Decode 只在进入 layer L 前等待该层，形成 per-layer ready dependency。</p><footer><span>核心问题</span><strong>为什么不必等所有层 KV 都到齐？</strong></footer></a>
     </section>
 
-    <div class="truth-note"><b>目前所有“已验证”性能含义都非常克制。</b><p>七个脚本的 correctness 路径都可在 CPU/Gloo 两进程上运行；代码在 ≥2 张 CUDA GPU 时自动切 NCCL。但当前页面不把 CPU timing 当 GPU/NVLink/RDMA benchmark，也不把“nonblocking API”直接等同于“实际重叠”。性能阶段会单独用 profiler 验收。</p></div>
+    <div class="truth-note"><b>“异步”与“流水”页面都没有把 CPU timing 当成性能结论。</b><p>9 个脚本目前的第一验收标准仍是 correctness 与依赖结构。代码在 ≥2 张 CUDA GPU 时自动切 NCCL，但要证明 communication/compute overlap，必须在 GPU 上用 profiler 看到时间区间真正重叠；NIXL/RDMA 则还需要对应硬件与软件栈。</p></div>
   </main>
   <script src="../app.js"></script>
 </body>

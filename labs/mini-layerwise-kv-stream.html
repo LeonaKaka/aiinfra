@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Layer-wise KV Streaming：Prefill 每算完一层就发送该层 KV，Decode 在真正进入该层前才等待对应 KV ready。" />
+  <title>Lab B4 · Layer-wise KV Streaming</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab B4</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Layer-wise KV Streaming</span></div>
+    <div class="lab-kicker">LAB B4 · LAYER-BY-LAYER PIPELINE</div>
+    <h1>不要等所有层 KV 都搬完。<br />第 L 层只需要在“用到它之前” ready。</h1>
+    <p class="dek">B3 已经把 transfer 拆成 launch 与 wait，但仍然把整个 KV 当一个阶段。真实模型有几十层，每层都有自己的 KV。当前 vLLM <code>KVConnectorBase_V1</code> 明确提供 <code>start_load_kv()</code> 与 <code>wait_for_layer_load(layer_name)</code>，并说明后者用于 layer-by-layer pipelining。这个实验把那条依赖关系单独做出来。</p>
+
+    <section class="lab-section" id="pipeline"><div class="lab-kicker">01 · PER-LAYER DEPENDENCY</div><h2>Prefill 生产得越早，Decode 就越不需要等“整车货物”。</h2>
+      <div class="stage-flow">
+        <div class="stage-card train"><small>PREFILL</small><b>compute KV[L]</b><span>第 L 层 prompt KV 一算完，立即 isend；然后 Prefill 继续算 L+1。</span></div>
+        <div class="stage-card comm"><small>TRANSFER</small><b>KV[L] in flight</b><span>后续层的 Prefill compute 与前一层 KV 传输存在并行机会。</span></div>
+        <div class="stage-card infer"><small>DECODE</small><b>wait only for layer L</b><span>真正进入 attention layer L 前，才要求 KV[L] 已经 ready。</span></div>
+      </div>
+      <p>依赖从“Decode 必须等所有 KV 完成”变成“Decode layer L 只依赖 KV layer L”。这给系统调度出了更多 overlap 空间。</p>
+    </section>
+
+    <section class="lab-section" id="timeline"><div class="lab-kicker">02 · TWO PIPELINES</div><h2>你要同时想两条流水线：模型层与网络传输。</h2>
+      <div class="command"><div class="command-head"><span>CONCEPTUAL TIMELINE</span><span>P / D</span></div><pre>Prefill:  compute L0 ─ send L0 ─ compute L1 ─ send L1 ─ ...
+                         ╲             ╲
+Network:                  transfer L0   transfer L1   ...
+                             ╲             ╲
+Decode:                  wait L0 → use L0 → wait L1 → use L1 → ...</pre></div>
+      <p>如果 Decode 到达 L1 时它已经在后台传完，<code>wait_for_layer_load("L1")</code> 可能很短；如果网络跟不上，wait 会直接暴露在关键路径上。性能问题因此会变成“哪一层、哪一段 transfer 没被隐藏”。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>四层 KV 流式到达，最终 Decode 与“所有 KV 本地已知”的 reference 对齐。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_layerwise_kv_stream.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>backend=gloo device=cpu layers=4
+prefill behavior        : compute layer L KV → isend immediately
+decode behavior         : wait(layer L) → consume → next layer
+max final decode error  : 1.490e-07
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_layerwise_kv_stream.py"><div><small>FULL SOURCE</small><b>打开 mini_layerwise_kv_stream.py</b></div><span>→</span></a>
+      <div class="truth-note"><b>这里的 layer pipeline 是教学抽象，不等于 vLLM/NIXL 的实际线程、stream 与 transport 结构。</b><p>真正系统还要处理 paged KV layout、request batching、每层 cache group、CUDA stream、registered memory、peer metadata、失败与 preemption。我们这里只验证“per-layer ready dependency”这个最核心的契约。</p></div>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO VLLM</div><h2>现在可以直接带着实验里的两个动作去读 Connector base。</h2>
+      <div class="source-bridge"><div><small>LAB</small><b>post all receives</b><code>irecv KV[L] → wait immediately before consume</code></div><span>maps to →</span><div><small>VLLM</small><b>KVConnectorBase_V1</b><code>start_load_kv() → wait_for_layer_load(layer_name)</code></div></div>
+      <p>同一文件里的 <code>save_kv_layer()</code> 也允许在模型执行过程中启动 KV 保存，而 <code>wait_for_save()</code> 在 forward 结束前保证所有 save 完成。读这些 API 时，不要只记函数名，要把它们当作<strong>“什么时候允许继续跑模型”的依赖边界</strong>。</p>
+    </section>
+
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Inference 线下一步才真正进入 NIXL 的 memory registration / handshake。</h2>
+      <div class="check-list"><div>① 为什么远端不能只收到“一个 Python tensor”？</div><div>② memory region 为什么要预先 registration？</div><div>③ peer/agent metadata 里需要交换什么地址与能力信息？</div><div>④ transfer handle、completion 与 request lifetime 如何避免 KV 被提前复用或覆盖？</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-async-kv-transfer.html">← Lab B3 · Async KV Transfer</a><a href="../learn/08-kv-connector/nixl-rdma.html">回 08.4 NIXL / RDMA →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

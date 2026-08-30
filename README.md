@@ -23,17 +23,19 @@
 
 ## Hands-on Labs
 
-当前有 7 个可运行实验：
+当前有 9 个可运行实验：
 
 - A1 Mini Megatron TP
 - A2 Mini TP Backward
 - A3 Data Parallel + Gradient Accumulation
 - A4 Mini Distributed Optimizer
+- A5 Bucketed Async Reduce-Scatter
 - B1 Mini KV Handoff
 - B2 Mini Block KV Handoff
 - B3 Mini Async KV Transfer
+- B4 Layer-wise KV Streaming
 
-默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness，不把小 tensor / CPU timing 当真实 GPU 或 RDMA benchmark。
+默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness，不把小 tensor / CPU timing 当真实 GPU、NIXL 或 RDMA benchmark。
 
 ## Reading tools
 
@@ -42,12 +44,7 @@
 
 ## Quality checks
 
-每次 push 会运行站点检查，验证：
-
-- HTML 核心阅读元数据；
-- 本地页面 / fragment / asset 链接；
-- CSS `@import` / `url(...)` 依赖；
-- Labs Python 源码语法。
+每次 push 会运行站点检查，验证 HTML 阅读元数据、本地页面/fragment/asset 链接、CSS 依赖，以及 Labs Python 源码语法。
 
 ## Site
 
