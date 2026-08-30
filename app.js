@@ -51,6 +51,7 @@ const lessonRoutes = {
   '03.2': 'learn/03-gpu-systems/gpu-memory.html',
   '03.3': 'learn/03-gpu-systems/gpu-bottlenecks.html',
   '04.1': 'learn/04-distributed/process-rank.html',
+  '04.2': 'learn/04-distributed/collectives.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
