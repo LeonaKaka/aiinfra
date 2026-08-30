@@ -55,6 +55,8 @@ const lessonRoutes = {
   '04.3': 'learn/04-distributed/nccl-topology.html',
   '05.1': 'learn/05-megatron/why-model-parallel.html',
   '05.2': 'learn/05-megatron/tensor-parallel.html',
+  '05.3': 'learn/05-megatron/sequence-parallel.html',
+  '05.4': 'learn/05-megatron/pipeline-parallel.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
