@@ -69,6 +69,11 @@ const lessonRoutes = {
   '07.3': 'learn/07-vllm/kv-cache-manager.html',
   '07.4': 'learn/07-vllm/model-runner-paged-attention.html',
   '07.5': 'learn/07-vllm/prefix-cache-preemption.html',
+  '08.1': 'learn/08-kv-connector/why-move-kv.html',
+  '08.2': 'learn/08-kv-connector/connector-architecture.html',
+  '08.3': 'learn/08-kv-connector/transfer-lifecycle.html',
+  '08.4': 'learn/08-kv-connector/nixl-rdma.html',
+  '08.5': 'learn/08-kv-connector/production-pd.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
