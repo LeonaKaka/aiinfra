@@ -1,6 +1,11 @@
 const progress = document.getElementById('readingProgress');
 const navToggle = document.getElementById('navToggle');
 const siteNav = document.getElementById('siteNav');
+const siteRoot = new URL('./', document.currentScript?.src || window.location.href);
+
+function siteUrl(path) {
+  return new URL(path, siteRoot).href;
+}
 
 function updateReadingProgress() {
   const scrollable = document.documentElement.scrollHeight - window.innerHeight;
@@ -32,41 +37,41 @@ if (lessonPreviewButton) {
   lessonPreviewButton.disabled = false;
   lessonPreviewButton.textContent = '进入第一课 →';
   lessonPreviewButton.addEventListener('click', () => {
-    window.location.href = './learn/01-foundations/tensor.html';
+    window.location.href = siteUrl('learn/01-foundations/tensor.html');
   });
 }
 
-// Lessons are static HTML, so older pages may still contain a "locked" span
-// when a later lesson gets published. Keep known routes in one small map and
-// progressively upgrade those spans to links. If JavaScript is unavailable,
-// the page still remains fully readable; only the shortcut stays locked.
+// Static lessons may still show a future lesson as locked when that page was
+// authored. Resolve every known lesson from the site root so links keep working
+// even after we cross into a different module directory.
 const lessonRoutes = {
-  '01.2': './linear.html',
-  '01.3': './training-loop.html',
-  '01.4': './autograd-optimizer.html',
+  '01.2': 'learn/01-foundations/linear.html',
+  '01.3': 'learn/01-foundations/training-loop.html',
+  '01.4': 'learn/01-foundations/autograd-optimizer.html',
+  '02.1': 'learn/02-transformer/attention.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
   const key = item.textContent.trim().match(/^(\d{2}\.\d)/)?.[1];
-  const href = key && lessonRoutes[key];
-  if (!href) return;
+  const route = key && lessonRoutes[key];
+  if (!route) return;
 
   const link = document.createElement('a');
   link.className = 'lesson-link';
-  link.href = href;
+  link.href = siteUrl(route);
   link.textContent = item.textContent;
   item.replaceWith(link);
 });
 
-// The same upgrade applies to a muted "next lesson" card once that lesson exists.
+// The same upgrade applies to a muted “next lesson” card once that lesson exists.
 const nextLesson = document.querySelector('.next-lesson.muted-next');
 if (nextLesson) {
   const key = nextLesson.querySelector('small')?.textContent.match(/(\d{2}\.\d)/)?.[1];
-  const href = key && lessonRoutes[key];
-  if (href) {
+  const route = key && lessonRoutes[key];
+  if (route) {
     const link = document.createElement('a');
     link.className = 'next-lesson';
-    link.href = href;
+    link.href = siteUrl(route);
     link.innerHTML = nextLesson.innerHTML;
     nextLesson.replaceWith(link);
   }
