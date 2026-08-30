@@ -52,6 +52,7 @@ const lessonRoutes = {
   '03.3': 'learn/03-gpu-systems/gpu-bottlenecks.html',
   '04.1': 'learn/04-distributed/process-rank.html',
   '04.2': 'learn/04-distributed/collectives.html',
+  '04.3': 'learn/04-distributed/nccl-topology.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
