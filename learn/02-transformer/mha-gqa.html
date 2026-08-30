@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 02.2：从 Multi-Head Attention 的 head shape 走到 GQA/MQA，理解 KV heads 为什么直接影响 KV Cache 与推理 Infra。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>02.2 MHA 与 GQA · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./mha-gqa.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 02.2</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1 Tensor 到底是什么？</a><a class="lesson-link" href="../01-foundations/linear.html">01.2 Matrix multiply 与 Linear</a><a class="lesson-link" href="../01-foundations/training-loop.html">01.3 PyTorch 的最小训练循环</a><a class="lesson-link" href="../01-foundations/autograd-optimizer.html">01.4 autograd 与 optimizer</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="./attention.html">02.1 Attention 数据流</a><a class="lesson-link current" href="./mha-gqa.html">02.2 MHA 与 GQA</a><span class="lesson-link locked">02.3 Transformer Block</span></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><span class="lesson-link locked">GPU、显存与 kernel</span></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><span class="lesson-link locked">Collectives 与 NCCL</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>MHA &amp; GQA</span></div>
+      <div class="lesson-kicker"><span>LESSON 02.2 · TRANSFORMER</span><span>约 45 min</span></div>
+      <h1>MHA 与 GQA：为什么 Q 有很多个 head，K/V 却可以更少？</h1>
+      <p class="dek">上一课故意只画了一个 head。真实 LLM 通常会把 hidden dimension 拆成多个 attention heads，让不同 head 在不同子空间里做匹配。接着为了降低推理时最昂贵的 KV Cache，又出现了 GQA：Query heads 仍然很多，但多个 Query heads 共享更少的 K/V heads。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 <code>[B,S,H]</code> 正确拆成 <code>[B,N,S,D]</code>，并知道 <code>H=N×D</code>。</li><li>从 shape 推导 Multi-Head Attention 的 scores 为 <code>[B,N,S,S]</code>。</li><li>解释 MHA、GQA、MQA 的区别不在“有没有 Attention”，而在 Q heads 与 KV heads 的数量关系。</li><li>用一个比例说明为什么 GQA 会显著减少 KV Cache。</li><li>理解 heads 为什么同时是 Megatron Tensor Parallel 与 vLLM serving 的重要结构。</li></ul></div>
+
+      <section class="article-section" id="why-heads">
+        <div class="section-no">01 · WHY MULTIPLE HEADS</div>
+        <h2>不是把同一个 Attention 重复很多遍，而是把 hidden space 分成多个更小的子空间。</h2>
+        <p>假设 <code>H=8</code>，我们设置 <code>N=2</code> 个 heads，那么每个 head 的维度就是 <code>D=4</code>：</p>
+        <div class="shape-rule"><code>H = 8</code><span>=</span><code>N = 2</code><span>×</span><code>D = 4</code></div>
+        <div class="head-split">
+          <div class="head-input"><small>ONE TOKEN</small><b>hidden = 8</b><div class="head-cells"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+          <span>split →</span>
+          <div class="head-pair"><div><small>HEAD 0</small><b>D=4</b></div><div><small>HEAD 1</small><b>D=4</b></div></div>
+        </div>
+        <p>每个 head 都有自己的 Q/K/V 子空间，可以学到不同的匹配方式。最后再把所有 heads 的结果拼回 hidden dimension。</p>
+        <div class="concept-note"><p><strong>重要：</strong>“head 学到句法、另一个 head 学到指代”这种说法只能当直觉例子，不是固定分工。head 学到什么由训练决定。</p></div>
+      </section>
+
+      <section class="article-section" id="shape">
+        <div class="section-no">02 · THE HEAD DIMENSION</div>
+        <h2>真正的关键不是 head 这个词，而是多出来了一个维度。</h2>
+        <p>Q 投影后仍可先看成 <code>[B,S,H]</code>。接着把最后一维 H reshape 成 <code>N × D</code>，再把 head 维移到 sequence 前面：</p>
+        <div class="shape-flow"><div><small>PROJECTED Q</small><code>[B,S,H]</code></div><span>→</span><div><small>RESHAPE</small><code>[B,S,N,D]</code></div><span>→</span><div><small>TRANSPOSE</small><code>[B,N,S,D]</code></div></div>
+        <p>K、V 在普通 MHA 中做同样的变换。于是每个 head 独立做上一课学过的单头 Attention：</p>
+        <div class="shape-rule"><code>Q [B,N,S,D]</code><span>@</span><code>Kᵀ [B,N,D,S]</code><span>→</span><code>scores [B,N,S,S]</code></div>
+        <p>只多了一个 N。你可以把它理解为：每个 batch 里，现在并行存在 N 张独立的 <code>S×S</code> attention map。</p>
+      </section>
+
+      <section class="article-section" id="mha">
+        <div class="section-no">03 · MHA END TO END</div>
+        <h2>Multi-Head Attention 的完整 shape 流程。</h2>
+        <div class="mha-pipeline">
+          <div><small>INPUT</small><b>X</b><code>[B,S,H]</code></div><span>→</span>
+          <div><small>QKV</small><b>split heads</b><code>[B,N,S,D]</code></div><span>→</span>
+          <div><small>ATTENTION</small><b>per head</b><code>[B,N,S,D]</code></div><span>→</span>
+          <div><small>CONCAT</small><b>merge heads</b><code>[B,S,H]</code></div><span>→</span>
+          <div><small>OUTPUT</small><b>Wₒ</b><code>[B,S,H]</code></div>
+        </div>
+        <p>这里上一课没讲完的 <code>Wₒ</code> 出现了。各 head 输出先拼回 H，再经过一个 output projection。于是整个 MHA 模块输入和输出通常都保持 <code>[B,S,H]</code>，方便接残差连接。</p>
+      </section>
+
+      <section class="article-section" id="code">
+        <div class="section-no">04 · PYTORCH SHAPE LAB</div>
+        <h2>亲手做一次 split heads 和 merge heads。</h2>
+        <div class="code-block"><div class="code-head"><span>python</span><span>05_multi_head_shapes.py</span></div><pre><code>import math
+import torch
+
+B, S, H = <span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>
+N = <span class="num">2</span>
+D = H // N
+
+X = torch.randn(B, S, H)
+Wq = torch.randn(H, H)
+Wk = torch.randn(H, H)
+Wv = torch.randn(H, H)
+
+Q = (X @ Wq).view(B, S, N, D).transpose(<span class="num">1</span>, <span class="num">2</span>)
+K = (X @ Wk).view(B, S, N, D).transpose(<span class="num">1</span>, <span class="num">2</span>)
+V = (X @ Wv).view(B, S, N, D).transpose(<span class="num">1</span>, <span class="num">2</span>)
+<span class="comment"># Q, K, V: [2, 2, 4, 4]</span>
+
+scores = Q @ K.transpose(-2, -1) / math.sqrt(D)
+<span class="comment"># scores: [2, 2, 4, 4]</span>
+
+weights = torch.softmax(scores, dim=-1)
+heads = weights @ V
+<span class="comment"># heads: [2, 2, 4, 4]</span>
+
+merged = heads.transpose(<span class="num">1</span>, <span class="num">2</span>).contiguous().view(B, S, H)
+<span class="comment"># merged: [2, 4, 8]</span></code></pre></div>
+        <p>这里暂时省略 causal mask，目的是只观察 head 维度。注意 merge 前常见 <code>transpose(...).contiguous().view(...)</code>：transpose 改变了 stride/layout 视图，后续 reshape 是否需要 contiguous copy 要看具体操作与实现。这是以后进入性能工程时值得留意的细节。</p>
+      </section>
+
+      <section class="article-section" id="gqa-problem">
+        <div class="section-no">05 · THE KV CACHE PROBLEM</div>
+        <h2>如果 Q/K/V 都有很多 heads，decode 时 K/V 要缓存很多份。</h2>
+        <p>在 MHA 中，通常 <code>Nq = Nk = Nv = N</code>。自回归 decode 时，每一层、每一个历史 token、每一个 KV head 都要保留 Key 和 Value。</p>
+        <div class="kv-ledger"><div><small>PER LAYER · ELEMENT COUNT</small><b>KV ≈ 2 × S × N<sub>kv</sub> × D</b></div><p>前面的 2 代表 K 和 V 两份。再乘 layer 数、dtype bytes，以及 serving 时的并发序列，就会变成非常大的显存账单。</p></div>
+        <p>于是问题出现了：<strong>Query 一定需要和 KV 一样多的 heads 吗？</strong></p>
+      </section>
+
+      <section class="article-section" id="gqa">
+        <div class="section-no">06 · GROUPED-QUERY ATTENTION</div>
+        <h2>GQA：保留很多 Query heads，但让一组 Query heads 共享一个 K/V head。</h2>
+        <p>例如 <code>Nq=8</code>、<code>Nkv=2</code>。每 4 个 Query heads 共用 1 个 K head 和 1 个 V head：</p>
+        <div class="gqa-map">
+          <div class="kv-group"><div class="kv-head"><small>KV HEAD 0</small><b>K₀ / V₀</b></div><div class="query-group"><span>Q₀</span><span>Q₁</span><span>Q₂</span><span>Q₃</span></div></div>
+          <div class="kv-group"><div class="kv-head"><small>KV HEAD 1</small><b>K₁ / V₁</b></div><div class="query-group"><span>Q₄</span><span>Q₅</span><span>Q₆</span><span>Q₇</span></div></div>
+        </div>
+        <div class="compare-strip"><div><small>MHA</small><b>Nq = Nkv</b><span>每个 Q head 有自己的 K/V head</span></div><div><small>GQA</small><b>Nq &gt; Nkv &gt; 1</b><span>多个 Q heads 共享一个 KV head</span></div><div><small>MQA</small><b>Nkv = 1</b><span>所有 Q heads 共用一组 K/V</span></div></div>
+        <p>GQA 的目标是折中：尽量保留多 Query heads 的表达能力，同时显著减少需要缓存和读取的 K/V 数量。</p>
+      </section>
+
+      <section class="article-section" id="saving">
+        <div class="section-no">07 · WHY GQA MATTERS TO SERVING</div>
+        <h2>KV Cache 的缩减比例，直接由 KV head 数量决定。</h2>
+        <p>如果其它条件相同，MHA 有 32 个 KV heads，而 GQA 只有 8 个：</p>
+        <div class="ratio-card"><div><small>MHA</small><b>32 KV heads</b><span class="ratio-bar full"></span></div><div><small>GQA</small><b>8 KV heads</b><span class="ratio-bar quarter"></span></div><strong>KV 元素量约变为 8 / 32 = 1/4</strong></div>
+        <p>这不仅减少显存占用，也减少 decode 时 attention 读取历史 K/V 的数据量；如果未来要把 KV Cache 跨进程、跨 GPU、跨节点搬运，KV 更小也意味着更少的传输字节。</p>
+        <div class="concept-note"><p><strong>这就是 GQA 和 KV Connector 的连接：</strong>Connector 解决“KV 怎么搬”，而模型结构本身决定“到底有多少 KV 要搬”。</p></div>
+      </section>
+
+      <section class="article-section" id="gqa-code">
+        <div class="section-no">08 · GQA SHAPE LAB</div>
+        <h2>shape 上，Q heads 和 KV heads 不再一样多。</h2>
+        <div class="code-block"><div class="code-head"><span>concept code</span><span>06_gqa_shapes.py</span></div><pre><code>B, S, D = <span class="num">2</span>, <span class="num">4</span>, <span class="num">4</span>
+Nq = <span class="num">8</span>
+Nkv = <span class="num">2</span>
+group_size = Nq // Nkv              <span class="comment"># 4</span>
+
+Q = torch.randn(B, Nq, S, D)        <span class="comment"># [2,8,4,4]</span>
+K = torch.randn(B, Nkv, S, D)       <span class="comment"># [2,2,4,4]</span>
+V = torch.randn(B, Nkv, S, D)       <span class="comment"># [2,2,4,4]</span>
+
+<span class="comment"># 教学上可以把每个 KV head 逻辑扩展给 4 个 query heads：</span>
+K_for_q = K.repeat_interleave(group_size, dim=<span class="num">1</span>)
+V_for_q = V.repeat_interleave(group_size, dim=<span class="num">1</span>)
+<span class="comment"># [2,8,4,4]</span></code></pre></div>
+        <p><strong>但不要把这段 repeat 当作生产实现。</strong>高性能 kernels 可以根据 group mapping 让多个 Q heads 读取同一 KV head，而不必真的复制一份更大的 K/V tensor；否则就把 GQA 节省的内存又浪费回去了。</p>
+      </section>
+
+      <section class="article-section" id="tp">
+        <div class="section-no">09 · THE ROAD TO TENSOR PARALLEL</div>
+        <h2>heads 天然适合分给不同 Tensor Parallel ranks。</h2>
+        <p>对普通 MHA，Q/K/V projection 的输出特征可以按 heads 切开：</p>
+        <div class="tp-heads"><div><small>TP RANK 0</small><b>heads 0–3</b></div><div><small>TP RANK 1</small><b>heads 4–7</b></div><div><small>TP RANK 2</small><b>heads 8–11</b></div><div><small>TP RANK 3</small><b>heads 12–15</b></div></div>
+        <p>每张 GPU 可以先独立计算自己的 local heads。最后 output projection 再把局部结果组合进后续网络。到 Megatron 章节，我们会把它和 ColumnParallelLinear / RowParallelLinear 对上。</p>
+        <div class="concept-note"><p><strong>GQA 会让映射更微妙：</strong>KV heads 比 Q heads 少时，TP degree、head 数是否可整除，以及 KV heads 是否需要特殊映射/复制都要由具体模型和实现决定。这里不提前记死规则。</p></div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>02.2</span></div><h2>看见 head 数，先想到 shape 和 KV Cache。</h2><div class="quiz-item"><div class="quiz-q">1. <code>H=4096</code>、<code>N=32</code>，每个 head 的 <code>D</code> 是多少？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>D = H / N = 4096 / 32 = 128</code>。普通 MHA 中可以把 Q/K/V reshape 成包含 32 个 head、每个 head 128 维的结构。</div></div><div class="quiz-item"><div class="quiz-q">2. MHA 的 <code>Q,K=[B,N,S,D]</code>，scores 是什么 shape？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>[B,N,S,S]</code>。每个 batch、每个 head 都有一张 S×S 的 token-to-token score matrix。</div></div><div class="quiz-item"><div class="quiz-q">3. 如果从 32 KV heads 改成 8 KV heads，其它条件相同，KV Cache 元素量大约变成多少？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">约变成原来的 <code>8/32 = 1/4</code>。这是 GQA 对 serving 很重要的原因之一。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 02.3</small><br /><strong>Transformer Block：Attention、MLP、Residual、Norm 怎么拼起来？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#why-heads">为什么多 head</a><a href="#shape">Head shape</a><a href="#mha">MHA 全流程</a><a href="#code">Shape lab</a><a href="#gqa-problem">KV Cache 问题</a><a href="#gqa">GQA / MQA</a><a href="#saving">KV 缩减</a><a href="#gqa-code">GQA shape</a><a href="#tp">通向 TP</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
