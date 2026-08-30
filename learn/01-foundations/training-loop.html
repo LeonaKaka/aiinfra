@@ -32,7 +32,7 @@
         <a class="lesson-link" href="./tensor.html">01.1 Tensor 到底是什么？</a>
         <a class="lesson-link" href="./linear.html">01.2 Matrix multiply 与 Linear</a>
         <a class="lesson-link current" href="./training-loop.html">01.3 PyTorch 的最小训练循环</a>
-        <span class="lesson-link locked">01.4 autograd 与 optimizer</span>
+        <a class="lesson-link" href="./autograd-optimizer.html">01.4 autograd 与 optimizer</a>
       </div>
       <div class="module-block">
         <div class="module-name"><b>02</b> Transformer</div>
@@ -163,8 +163,8 @@ print(model.weight.item(), model.bias.item())
 print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item())</code></pre>
         </div>
         <div class="example-grid">
-          <div class="example-card"><div class="cap">BEFORE</div><h3>随机参数</h3><p>例如 w≈-0.4、b≈0.2。预测自然很差，loss 比较大。</p></div>
-          <div class="example-card"><div class="cap">AFTER</div><h3>接近目标</h3><p>经过许多小步更新后，w 会逼近 2、b 会逼近 1，预测也越来越准。</p></div>
+          <div class="example-card"><div class="cap">BEFORE</div><p><strong>随机参数。</strong> 例如 w≈-0.4、b≈0.2。预测自然很差，loss 比较大。</p></div>
+          <div class="example-card"><div class="cap">AFTER</div><p><strong>接近目标。</strong> 经过许多小步更新后，w 会逼近 2、b 会逼近 1，预测也越来越准。</p></div>
         </div>
         <p>以后调大模型时，“参数有没有 grad”“grad 是不是异常”“optimizer 有没有真的 step”仍然是最基本的 debugging 思路，只是参数数量从 2 个变成几十亿个。</p>
       </section>
@@ -173,7 +173,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         <div class="section-no">06 · INFRA VIEW</div>
         <h2>一旦模型和 batch 变大，这五步就都变成系统问题。</h2>
         <div class="cost-panel">
-          <div><small>FORWARD</small><b>需要算大量 GEMM，还要保存 backward 之后会用到的 activation。</b></div>
+          <div><small>FORWARD</small><b>需要算大量 GEMM，还要保存 backward 时会用到的 activation。</b></div>
           <div><small>BACKWARD</small><b>通常计算量很大，还会生成与参数相关的 gradients。</b></div>
           <div><small>OPTIMIZER</small><b>除了参数和梯度，还可能维护额外 optimizer states，占据大量显存。</b></div>
           <div><small>DISTRIBUTED</small><b>多张 GPU 各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
@@ -216,10 +216,10 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         </div>
       </section>
 
-      <div class="next-lesson muted-next">
+      <a class="next-lesson" href="./autograd-optimizer.html">
         <div><small>NEXT · 01.4</small><br /><strong>autograd 与 optimizer：梯度从哪里来，显存又花在哪里？</strong></div>
         <span>→</span>
-      </div>
+      </a>
     </main>
 
     <aside class="toc" aria-label="本页目录">
