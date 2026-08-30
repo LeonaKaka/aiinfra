@@ -57,6 +57,8 @@ const lessonRoutes = {
   '05.2': 'learn/05-megatron/tensor-parallel.html',
   '05.3': 'learn/05-megatron/sequence-parallel.html',
   '05.4': 'learn/05-megatron/pipeline-parallel.html',
+  '05.5': 'learn/05-megatron/distributed-optimizer.html',
+  '05.6': 'learn/05-megatron/context-parallel.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
