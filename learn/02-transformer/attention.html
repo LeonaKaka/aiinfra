@@ -35,93 +35,19 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 Q、K、V 都是从输入 X 经过不同 Linear 投影得到的。</li><li>推导 <code>Q @ Kᵀ → [S,S]</code> 为什么得到 token-to-token 的分数矩阵。</li><li>理解 causal mask 为什么必须在 decoder 自回归模型里阻止“偷看未来”。</li><li>推导 <code>softmax(scores) @ V</code> 为什么又回到每个 token 一条向量。</li><li>说出 Attention 与 Megatron Tensor Parallel、vLLM KV Cache 的第一条连接线。</li></ul></div>
 
-      <section class="article-section" id="recap">
-        <div class="section-no">01 · START FROM WHAT YOU KNOW</div>
-        <h2>Attention 的起点，仍然只是一个 <code>[B,S,H]</code> tensor。</h2>
-        <p>先用一个玩具设置：<code>B=2</code>、<code>S=4</code>、<code>H=8</code>。也就是一批有 2 条序列，每条 4 个 token，每个 token 用 8 个数字表示。</p>
-        <div class="shape-hero"><div class="shape-expression">X = [<span class="b">2</span>, <span class="s">4</span>, <span class="h">8</span>]</div><div class="shape-legend"><div class="b"><b>B · 2</b><small>两条样本</small></div><div class="s"><b>S · 4</b><small>每条四个 token</small></div><div class="h"><b>H · 8</b><small>每个 token 八维</small></div></div></div>
-        <p>上一模块已经告诉我们：Linear 可以只改变最后一维。所以如果准备三个不同的 <code>8 → 8</code> Linear，同一个 X 就能产生三份 shape 完全相同、数值含义不同的 tensor。</p>
-      </section>
+      <section class="article-section" id="recap"><div class="section-no">01 · START FROM WHAT YOU KNOW</div><h2>Attention 的起点，仍然只是一个 <code>[B,S,H]</code> tensor。</h2><p>先用一个玩具设置：<code>B=2</code>、<code>S=4</code>、<code>H=8</code>。也就是一批有 2 条序列，每条 4 个 token，每个 token 用 8 个数字表示。</p><div class="shape-hero"><div class="shape-expression">X = [<span class="b">2</span>, <span class="s">4</span>, <span class="h">8</span>]</div><div class="shape-legend"><div class="b"><b>B · 2</b><small>两条样本</small></div><div class="s"><b>S · 4</b><small>每条四个 token</small></div><div class="h"><b>H · 8</b><small>每个 token 八维</small></div></div></div><p>上一模块已经告诉我们：Linear 可以只改变最后一维。所以如果准备三个不同的 <code>8 → 8</code> Linear，同一个 X 就能产生三份 shape 完全相同、数值含义不同的 tensor。</p></section>
 
-      <section class="article-section" id="qkv">
-        <div class="section-no">02 · THREE LINEAR PROJECTIONS</div>
-        <h2>Q、K、V 不是凭空出现的：就是三个不同的 Linear。</h2>
-        <div class="qkv-grid">
-          <div class="qkv-source"><small>INPUT</small><b>X</b><code>[B,S,H]</code></div>
-          <div class="qkv-arrow">→</div>
-          <div class="qkv-stack">
-            <div><small>QUERY</small><b>Q = XWq</b><code>[B,S,H]</code></div>
-            <div><small>KEY</small><b>K = XWk</b><code>[B,S,H]</code></div>
-            <div><small>VALUE</small><b>V = XWv</b><code>[B,S,H]</code></div>
-          </div>
-        </div>
-        <p>可以先用一个不严格但很好用的比喻：</p>
-        <div class="why-grid"><div class="why-card"><b>Query · 我在找什么？</b><p>当前 token 以 Q 的方式表达自己的“查询需求”。</p></div><div class="why-card"><b>Key · 我有什么特征？</b><p>每个 token 以 K 的方式提供可被匹配的“索引特征”。</p></div><div class="why-card"><b>Value · 真正拿走什么？</b><p>匹配强弱确定后，最后按权重混合的是 V 中的信息。</p></div></div>
-        <div class="concept-note"><p><strong>别把比喻当定义。</strong>真正的定义仍然是三个可学习的线性投影。模型训练后自己学会什么样的 Q/K 匹配对任务有用。</p></div>
-      </section>
+      <section class="article-section" id="qkv"><div class="section-no">02 · THREE LINEAR PROJECTIONS</div><h2>Q、K、V 不是凭空出现的：就是三个不同的 Linear。</h2><div class="qkv-grid"><div class="qkv-source"><small>INPUT</small><b>X</b><code>[B,S,H]</code></div><div class="qkv-arrow">→</div><div class="qkv-stack"><div><small>QUERY</small><b>Q = XWq</b><code>[B,S,H]</code></div><div><small>KEY</small><b>K = XWk</b><code>[B,S,H]</code></div><div><small>VALUE</small><b>V = XWv</b><code>[B,S,H]</code></div></div></div><p>可以先用一个不严格但很好用的比喻：</p><div class="why-grid"><div class="why-card"><b>Query · 我在找什么？</b><p>当前 token 以 Q 的方式表达自己的“查询需求”。</p></div><div class="why-card"><b>Key · 我有什么特征？</b><p>每个 token 以 K 的方式提供可被匹配的“索引特征”。</p></div><div class="why-card"><b>Value · 真正拿走什么？</b><p>匹配强弱确定后，最后按权重混合的是 V 中的信息。</p></div></div><div class="concept-note"><p><strong>别把比喻当定义。</strong>真正的定义仍然是三个可学习的线性投影。模型训练后自己学会什么样的 Q/K 匹配对任务有用。</p></div><div class="concept-note"><p><strong>源码预告：</strong>概念上我们写成 Wq、Wk、Wv 三个投影；真实高性能实现经常把它们融合成一次更大的 QKV projection。并且在 GQA 等结构里，K/V 的总宽度也不一定和 Q 一样。下一课再把这些差异拆开。</p></div></section>
 
-      <section class="article-section" id="scores">
-        <div class="section-no">03 · Q MEETS K</div>
-        <h2>一个 token 怎么给所有 token 打分？用自己的 Q 去点积所有 K。</h2>
-        <p>先暂时忽略 batch，只看一条长度 <code>S=4</code> 的序列。Q 和 K 都可以想成 <code>[4,8]</code>：</p>
-        <div class="shape-rule"><code>Q [4,8]</code><span>@</span><code>Kᵀ [8,4]</code><span>→</span><code>scores [4,4]</code></div>
-        <p>为什么结果是 <code>[4,4]</code>？第一维的 4 代表“有 4 个 query token”；第二维的 4 代表“每个 query 都要和 4 个 key token 比一次”。于是每个格子就是一对 token 的匹配分数。</p>
-        <div class="score-matrix" aria-label="4x4 attention score matrix">
-          <div class="score-corner">Q \ K</div><div class="score-head">K₁</div><div class="score-head">K₂</div><div class="score-head">K₃</div><div class="score-head">K₄</div>
-          <div class="score-head">Q₁</div><span>q₁·k₁</span><span>q₁·k₂</span><span>q₁·k₃</span><span>q₁·k₄</span>
-          <div class="score-head">Q₂</div><span>q₂·k₁</span><span>q₂·k₂</span><span>q₂·k₃</span><span>q₂·k₄</span>
-          <div class="score-head">Q₃</div><span>q₃·k₁</span><span>q₃·k₂</span><span>q₃·k₃</span><span>q₃·k₄</span>
-          <div class="score-head">Q₄</div><span>q₄·k₁</span><span>q₄·k₂</span><span>q₄·k₃</span><span>q₄·k₄</span>
-        </div>
-        <p>实际 scaled dot-product attention 还会把这些点积除以 <code>√dₖ</code>。现在只记作用：维度大时点积的量级容易变大，缩放可以让 softmax 的数值范围更稳定。</p>
-      </section>
+      <section class="article-section" id="scores"><div class="section-no">03 · Q MEETS K</div><h2>一个 token 怎么给所有 token 打分？用自己的 Q 去点积所有 K。</h2><p>先暂时忽略 batch，只看一条长度 <code>S=4</code> 的序列。Q 和 K 都可以想成 <code>[4,8]</code>：</p><div class="shape-rule"><code>Q [4,8]</code><span>@</span><code>Kᵀ [8,4]</code><span>→</span><code>scores [4,4]</code></div><p>为什么结果是 <code>[4,4]</code>？第一维的 4 代表“有 4 个 query token”；第二维的 4 代表“每个 query 都要和 4 个 key token 比一次”。于是每个格子就是一对 token 的匹配分数。</p><div class="score-matrix" aria-label="4x4 attention score matrix"><div class="score-corner">Q \ K</div><div class="score-head">K₁</div><div class="score-head">K₂</div><div class="score-head">K₃</div><div class="score-head">K₄</div><div class="score-head">Q₁</div><span>q₁·k₁</span><span>q₁·k₂</span><span>q₁·k₃</span><span>q₁·k₄</span><div class="score-head">Q₂</div><span>q₂·k₁</span><span>q₂·k₂</span><span>q₂·k₃</span><span>q₂·k₄</span><div class="score-head">Q₃</div><span>q₃·k₁</span><span>q₃·k₂</span><span>q₃·k₃</span><span>q₃·k₄</span><div class="score-head">Q₄</div><span>q₄·k₁</span><span>q₄·k₂</span><span>q₄·k₃</span><span>q₄·k₄</span></div><p>实际 scaled dot-product attention 还会把这些点积除以 <code>√dₖ</code>。现在只记作用：维度大时点积的量级容易变大，缩放可以让 softmax 的数值范围更稳定。</p></section>
 
-      <section class="article-section" id="mask">
-        <div class="section-no">04 · CAUSAL MASK</div>
-        <h2>生成模型不能在训练时偷看右边还没生成的 token。</h2>
-        <p>对于 GPT 这类 decoder-only 自回归模型，token 2 可以看 token 1 和自己，但不能看 token 3、4。于是 softmax 前会把未来位置屏蔽掉：</p>
-        <div class="mask-matrix" aria-label="causal attention mask">
-          <div><small>Q₁</small><span class="allowed">✓</span><span class="blocked">×</span><span class="blocked">×</span><span class="blocked">×</span></div>
-          <div><small>Q₂</small><span class="allowed">✓</span><span class="allowed">✓</span><span class="blocked">×</span><span class="blocked">×</span></div>
-          <div><small>Q₃</small><span class="allowed">✓</span><span class="allowed">✓</span><span class="allowed">✓</span><span class="blocked">×</span></div>
-          <div><small>Q₄</small><span class="allowed">✓</span><span class="allowed">✓</span><span class="allowed">✓</span><span class="allowed">✓</span></div>
-        </div>
-        <p>代码里常见做法是把被屏蔽位置的 score 设成一个极小值（概念上可看作 <code>-∞</code>）。softmax 之后，这些位置的权重就变成 0。</p>
-        <div class="concept-note"><p><strong>不要泛化过头：</strong>causal mask 是自回归 decoder attention 的典型要求；不同 Transformer 架构的 mask 规则可以不同。</p></div>
-      </section>
+      <section class="article-section" id="mask"><div class="section-no">04 · CAUSAL MASK</div><h2>生成模型不能在训练时偷看右边还没生成的 token。</h2><p>对于 GPT 这类 decoder-only 自回归模型，token 2 可以看 token 1 和自己，但不能看 token 3、4。于是 softmax 前会把未来位置屏蔽掉：</p><div class="mask-matrix" aria-label="causal attention mask"><div><small>Q₁</small><span class="allowed">✓</span><span class="blocked">×</span><span class="blocked">×</span><span class="blocked">×</span></div><div><small>Q₂</small><span class="allowed">✓</span><span class="allowed">✓</span><span class="blocked">×</span><span class="blocked">×</span></div><div><small>Q₃</small><span class="allowed">✓</span><span class="allowed">✓</span><span class="allowed">✓</span><span class="blocked">×</span></div><div><small>Q₄</small><span class="allowed">✓</span><span class="allowed">✓</span><span class="allowed">✓</span><span class="allowed">✓</span></div></div><p>代码里常见做法是把被屏蔽位置的 score 设成一个极小值（概念上可看作 <code>-∞</code>）。softmax 之后，这些位置的权重就变成 0。</p><div class="concept-note"><p><strong>不要泛化过头：</strong>causal mask 是自回归 decoder attention 的典型要求；不同 Transformer 架构的 mask 规则可以不同。</p></div></section>
 
-      <section class="article-section" id="softmax">
-        <div class="section-no">05 · SCORES BECOME WEIGHTS</div>
-        <h2>Softmax 做的事：把一行分数变成一行“该看多少”的权重。</h2>
-        <p>对某个 query token，假设允许看到三个位置，softmax 后可能得到：</p>
-        <div class="attention-bars">
-          <div><small>token 1</small><span style="--w:68%"></span><b>0.68</b></div>
-          <div><small>token 2</small><span style="--w:21%"></span><b>0.21</b></div>
-          <div><small>token 3</small><span style="--w:11%"></span><b>0.11</b></div>
-        </div>
-        <p>这些权重加起来是 1。权重大，代表当前 query 会从对应 token 的 Value 中取更多信息。于是 attention 不再只是“谁像谁”，而变成了一个可用于加权混合 V 的矩阵。</p>
-      </section>
+      <section class="article-section" id="softmax"><div class="section-no">05 · SCORES BECOME WEIGHTS</div><h2>Softmax 做的事：把一行分数变成一行“该看多少”的权重。</h2><p>对某个 query token，假设允许看到三个位置，softmax 后可能得到：</p><div class="attention-bars"><div><small>token 1</small><span style="--w:68%"></span><b>0.68</b></div><div><small>token 2</small><span style="--w:21%"></span><b>0.21</b></div><div><small>token 3</small><span style="--w:11%"></span><b>0.11</b></div></div><p>这些权重加起来是 1。权重大，代表当前 query 会从对应 token 的 Value 中取更多信息。于是 attention 不再只是“谁像谁”，而变成了一个可用于加权混合 V 的矩阵。</p></section>
 
-      <section class="article-section" id="value">
-        <div class="section-no">06 · WEIGHTS MIX VALUES</div>
-        <h2>最后一步：<code>attention weights @ V</code>。</h2>
-        <p>仍然看单条序列：</p>
-        <div class="shape-rule"><code>weights [S,S]</code><span>@</span><code>V [S,H]</code><span>→</span><code>context [S,H]</code></div>
-        <p>每一行权重都对应一个 query token。它拿这 S 个权重去加权 S 条 Value 向量，最后得到一条新的 H 维向量。所以输出又回到“每个 token 一条向量”的结构。</p>
-        <div class="attention-pipeline">
-          <div><small>1</small><b>X</b><code>[B,S,H]</code></div><span>→</span>
-          <div><small>2</small><b>Q K V</b><code>3 × [B,S,H]</code></div><span>→</span>
-          <div><small>3</small><b>scores</b><code>[B,S,S]</code></div><span>→</span>
-          <div><small>4</small><b>weights</b><code>[B,S,S]</code></div><span>→</span>
-          <div><small>5</small><b>context</b><code>[B,S,H]</code></div>
-        </div>
-        <p>这里故意还是“单头教学版”。下一课 Multi-Head Attention 会把 H 拆成 <code>n_heads × head_dim</code>，到时 scores 会多一个 head 维度。</p>
-      </section>
+      <section class="article-section" id="value"><div class="section-no">06 · WEIGHTS MIX VALUES</div><h2>最后一步：<code>attention weights @ V</code>。</h2><p>仍然看单条序列：</p><div class="shape-rule"><code>weights [S,S]</code><span>@</span><code>V [S,H]</code><span>→</span><code>context [S,H]</code></div><p>每一行权重都对应一个 query token。它拿这 S 个权重去加权 S 条 Value 向量，最后得到一条新的 H 维向量。所以输出又回到“每个 token 一条向量”的结构。</p><div class="attention-pipeline"><div><small>1</small><b>X</b><code>[B,S,H]</code></div><span>→</span><div><small>2</small><b>Q K V</b><code>3 × [B,S,H]</code></div><span>→</span><div><small>3</small><b>scores</b><code>[B,S,S]</code></div><span>→</span><div><small>4</small><b>weights</b><code>[B,S,S]</code></div><span>→</span><div><small>5</small><b>context</b><code>[B,S,H]</code></div></div><p>这里故意还是“单头教学版”。下一课 Multi-Head Attention 会把 H 拆成 <code>n_heads × head_dim</code>，到时 scores 会多一个 head 维度。标准 Multi-Head Attention 在各 head 的结果拼回去以后，通常还会再经过一个 output projection <code>Wₒ</code>；我们也留到下一课一起讲。</p></section>
 
-      <section class="article-section" id="code">
-        <div class="section-no">07 · SEE THE SHAPES IN PYTORCH</div>
-        <h2>不用高级 Attention API，自己把这条数据流跑一次。</h2>
-        <div class="code-block"><div class="code-head"><span>python</span><span>04_attention_single_head.py</span></div><pre><code>import math
+      <section class="article-section" id="code"><div class="section-no">07 · SEE THE SHAPES IN PYTORCH</div><h2>不用高级 Attention API，自己把这条数据流跑一次。</h2><div class="code-block"><div class="code-head"><span>python</span><span>04_attention_single_head.py</span></div><pre><code>import math
 import torch
 
 B, S, H = <span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>
@@ -146,39 +72,13 @@ scores = scores.masked_fill(mask, float(<span class="comment">'-inf'</span>))
 weights = torch.softmax(scores, dim=-1)  <span class="comment"># [2,4,4]</span>
 context = weights @ V                    <span class="comment"># [2,4,8]</span>
 
-print(Q.shape, scores.shape, context.shape)</code></pre></div>
-        <p>这段代码只是为了看 shape，所以 Wq/Wk/Wv 直接用随机矩阵。真正 Transformer 里它们是模型参数，通常由 Linear 层管理并在训练中学习。</p>
-      </section>
+print(Q.shape, scores.shape, context.shape)</code></pre></div><p>这段代码只是为了看 shape，所以 Wq/Wk/Wv 直接用随机矩阵。真正 Transformer 里它们是模型参数，通常由 Linear 层管理并在训练中学习。</p></section>
 
-      <section class="article-section" id="infra">
-        <div class="section-no">08 · WHY INFRA CARES</div>
-        <h2>Attention 一旦变大，会同时碰到计算、显存和并行问题。</h2>
-        <div class="cost-panel"><div><small>Q/K/V PROJECTIONS</small><b>三个大 Linear → 大量 GEMM；这是 Tensor Parallel 很自然的切分目标。</b></div><div><small>SCORE MATRIX</small><b>朴素 attention scores 与序列长度呈 S×S 规模；长上下文时会迅速变大。</b></div><div><small>TRAINING</small><b>backward 需要相关中间状态；FlashAttention 等方法会改变中间数据怎样读写/保存，而不改变 attention 的数学结果。</b></div><div><small>DISTRIBUTED</small><b>heads、sequence/context、Linear 权重都可能成为并行切分维度。</b></div></div>
-        <p>所以学 Attention 的目的不只是会写公式，而是以后看到一个优化时能问：“它到底在减少哪块数据的存储、计算还是通信？”</p>
-      </section>
+      <section class="article-section" id="infra"><div class="section-no">08 · WHY INFRA CARES</div><h2>Attention 一旦变大，会同时碰到计算、显存和并行问题。</h2><div class="cost-panel"><div><small>Q/K/V PROJECTIONS</small><b>三个大 Linear → 大量 GEMM；这是 Tensor Parallel 很自然的切分目标。</b></div><div><small>SCORE MATRIX</small><b>朴素 attention scores 与序列长度呈 S×S 规模；长上下文时会迅速变大。</b></div><div><small>TRAINING</small><b>backward 需要相关中间状态；FlashAttention 等方法会改变中间数据怎样读写/保存，而不改变 attention 的数学结果。</b></div><div><small>DISTRIBUTED</small><b>heads、sequence/context、Linear 权重都可能成为并行切分维度。</b></div></div><p>所以学 Attention 的目的不只是会写公式，而是以后看到一个优化时能问：“它到底在减少哪块数据的存储、计算还是通信？”</p></section>
 
-      <section class="article-section" id="kv">
-        <div class="section-no">09 · THE ROAD TO KV CACHE</div>
-        <h2>为什么以后会出现 KV Cache？因为生成下一个 token 时，过去 token 的 K/V 不需要重新变。</h2>
-        <p>自回归推理时，先有 prompt，然后一次只新增一个 token。对已经出现的旧 token 来说，它们在当前层算出的 K 和 V 可以复用；真正新增的是新 token 的 Q/K/V。</p>
-        <div class="kv-cache-preview">
-          <div><small>STEP t</small><b>old K / V</b><code>cache and keep</code></div>
-          <span>+</span>
-          <div><small>NEW TOKEN</small><b>new Q / K / V</b><code>compute once</code></div>
-          <span>→</span>
-          <div><small>ATTENTION</small><b>Q_new attends to K_all</b><code>mix V_all</code></div>
-        </div>
-        <p>这就是后面 vLLM 章节最核心的对象第一次露面：<strong>KV Cache 本质上就是把历史 token 的 Key / Value 留下来，避免 decode 每一步都重新计算整段历史。</strong></p>
-        <div class="concept-note"><p><strong>先别急着问 Connector。</strong>KV Connector 只是更后面的问题：当这些 K/V 已经在 GPU A 上算好了，GPU B 又要继续 decode，它们怎样高效搬过去？</p></div>
-      </section>
+      <section class="article-section" id="kv"><div class="section-no">09 · THE ROAD TO KV CACHE</div><h2>为什么以后会出现 KV Cache？因为生成下一个 token 时，过去 token 的 K/V 不需要重新变。</h2><p>自回归推理时，先有 prompt，然后一次只新增一个 token。对已经出现的旧 token 来说，它们在当前层算出的 K 和 V 可以复用；真正新增的是新 token 的 Q/K/V。</p><div class="kv-cache-preview"><div><small>STEP t</small><b>old K / V</b><code>cache and keep</code></div><span>+</span><div><small>NEW TOKEN</small><b>new Q / K / V</b><code>compute once</code></div><span>→</span><div><small>ATTENTION</small><b>Q_new attends to K_all</b><code>mix V_all</code></div></div><p>这就是后面 vLLM 章节最核心的对象第一次露面：<strong>KV Cache 本质上就是把历史 token 的 Key / Value 留下来，避免 decode 每一步都重新计算整段历史。</strong></p><div class="concept-note"><p><strong>先别急着问 Connector。</strong>KV Connector 只是更后面的问题：当这些 K/V 已经在 GPU A 上算好了，GPU B 又要继续 decode，它们怎样高效搬过去？</p></div></section>
 
-      <section class="article-section" id="megatron">
-        <div class="section-no">10 · THE ROAD TO MEGATRON</div>
-        <h2>Attention 也把我们重新带回了 Megatron。</h2>
-        <p>Q/K/V 的来源是几个巨大的 Linear。上一模块已经看到，大 Linear 可以沿输出特征切分。等学到 Megatron Tensor Parallel 时，我们会把这里的抽象重新打开：</p>
-        <div class="split-preview"><div class="split-original"><small>QKV PROJECTION</small><code>X @ Wqkv</code></div><span>split output / heads →</span><div class="split-gpus"><div><small>TP RANK 0</small><code>subset of Q/K/V</code></div><div><small>TP RANK 1</small><code>another subset</code></div></div></div>
-        <p>现在只需要知道：<strong>Attention 并不是一个无法拆分的黑盒，它内部仍然由你已经学过的 tensor、GEMM 和数据搬运组成。</strong></p>
-      </section>
+      <section class="article-section" id="megatron"><div class="section-no">10 · THE ROAD TO MEGATRON</div><h2>Attention 也把我们重新带回了 Megatron。</h2><p>Q/K/V 的来源是几个巨大的 Linear。上一模块已经看到，大 Linear 可以沿输出特征切分。等学到 Megatron Tensor Parallel 时，我们会把这里的抽象重新打开：</p><div class="split-preview"><div class="split-original"><small>QKV PROJECTION</small><code>X @ Wqkv</code></div><span>split output / heads →</span><div class="split-gpus"><div><small>TP RANK 0</small><code>subset of Q/K/V</code></div><div><small>TP RANK 1</small><code>another subset</code></div></div></div><p>现在只需要知道：<strong>Attention 并不是一个无法拆分的黑盒，它内部仍然由你已经学过的 tensor、GEMM 和数据搬运组成。</strong></p></section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>02.1</span></div><h2>不背公式，直接用 shape 回答。</h2><div class="quiz-item"><div class="quiz-q">1. 单头教学版里，<code>Q=[B,S,H]</code>、<code>K=[B,S,H]</code>，为什么 <code>Q @ Kᵀ</code> 是 <code>[B,S,S]</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">对每个 batch，Q 的每个 S 个 query 都要和 K 的 S 个 key 做点积；H 是点积中被求和掉的维度，所以留下 S×S。</div></div><div class="quiz-item"><div class="quiz-q">2. causal mask 应该在 softmax 前还是后应用？为什么常把被屏蔽 score 设成极小值？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">通常在 softmax 前作用到 scores。把未来位置设成概念上的 -∞，softmax 后这些位置的概率/权重就会变成 0。</div></div><div class="quiz-item"><div class="quiz-q">3. KV Cache 为什么缓存 K/V，而不是简单说“把所有东西都缓存”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">decode 新 token 时，需要新的 query；但旧 token 在该层已经算出的 K/V 可以直接复用。保存历史 K/V 就能避免每一步为整个历史重复计算这些投影。</div></div></section>
 
