@@ -50,6 +50,7 @@ const lessonRoutes = {
   '03.1': 'learn/03-gpu-systems/gpu-mental-model.html',
   '03.2': 'learn/03-gpu-systems/gpu-memory.html',
   '03.3': 'learn/03-gpu-systems/gpu-bottlenecks.html',
+  '04.1': 'learn/04-distributed/process-rank.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
