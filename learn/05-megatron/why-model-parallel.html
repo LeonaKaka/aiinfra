@@ -24,7 +24,7 @@
       <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
       <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
       <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1 Process / Rank</a><a class="lesson-link" href="../04-distributed/collectives.html">04.2 Collectives</a><a class="lesson-link" href="../04-distributed/nccl-topology.html">04.3 NCCL 与拓扑</a></div>
-      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link current" href="./why-model-parallel.html">05.1 为什么要模型并行</a><span class="lesson-link locked">05.2 Tensor Parallel</span><span class="lesson-link locked">05.3 Sequence Parallel</span><span class="lesson-link locked">05.4 Pipeline Parallel</span></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link current" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link" href="./tensor-parallel.html">05.2 Tensor Parallel</a><span class="lesson-link locked">05.3 Sequence Parallel</span><span class="lesson-link locked">05.4 Pipeline Parallel</span></div>
     </aside>
 
     <main class="article">
@@ -120,7 +120,7 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.1</span></div><h2>先确认你知道 Megatron 在解决什么。</h2><div class="quiz-item"><div class="quiz-q">1. 8 张 80GB GPU 总计 640GB，为什么一个 130GiB 模型仍然不能直接当成“放进一张 640GB 卡”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每张 GPU 的 device memory 独立。模型必须显式 shard/partition 到多张卡；任何跨 shard 的依赖还需要真实通信。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么传统 Data Parallel 不能解决“完整模型单卡放不下”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">传统 DP 在每个 data-parallel rank 上复制完整模型，只切 batch。它提高吞吐，但完整模型仍要在每张卡上存在，所以无法解决单份模型超过单卡容量的问题。</div></div><div class="quiz-item"><div class="quiz-q">3. TP、PP、DP 最稳定的区分方式是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">看“切哪个维度”：DP 切 batch，TP 切一个 layer 内的 tensor/计算，PP 切模型深度。不同切法自然产生不同通信模式。</div></div></section>
 
-      <a class="next-lesson muted-next" href="./tensor-parallel.html"><div><small>NEXT · 05.2</small><br /><strong>Tensor Parallel：把一个 Linear 真正拆到两张 GPU 上。</strong></div><span>→</span></a>
+      <a class="next-lesson" href="./tensor-parallel.html"><div><small>NEXT · 05.2</small><br /><strong>Tensor Parallel：把一个 Linear 真正拆到两张 GPU 上。</strong></div><span>→</span></a>
     </main>
 
     <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#fit">为什么放不下</a><a href="#dp-not-enough">DP 为什么不够</a><a href="#axes">TP / PP / DP</a><a href="#world">多种 process groups</a><a href="#more-axes">CP / EP</a><a href="#topology">拓扑</a><a href="#config">配置怎么读</a><a href="#source-map">源码地图</a><a href="#rule">四问法</a><a href="#checkpoint">Checkpoint</a></aside>
