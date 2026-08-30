@@ -59,6 +59,8 @@ const lessonRoutes = {
   '05.4': 'learn/05-megatron/pipeline-parallel.html',
   '05.5': 'learn/05-megatron/distributed-optimizer.html',
   '05.6': 'learn/05-megatron/context-parallel.html',
+  '05.7': 'learn/05-megatron/expert-parallel.html',
+  '05.8': 'learn/05-megatron/communication-overlap.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
