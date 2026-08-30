@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero Labs：把 Megatron Tensor Parallel 与 KV Handoff 从概念变成可运行实验。" />
+  <meta name="description" content="AI Infra from Zero Labs：从 Tensor Parallel forward/backward 到 block-based KV handoff 的可运行实验。" />
   <title>Labs · AI Infra from Zero</title>
   <link rel="stylesheet" href="../styles.css" />
   <link rel="stylesheet" href="./lab.css" />
@@ -12,47 +12,60 @@
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
   <header class="site-header">
     <a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Hands-on Labs</small></span></a>
-    <nav class="site-nav"><a href="../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+    <nav class="site-nav"><a href="../source-map/index.html">Source Map</a><a href="../index.html#roadmap">课程地图</a></nav>
   </header>
 
   <main class="lab-shell">
     <section class="lab-hero">
       <div>
         <div class="lab-kicker">CAPSTONE · RUN IT YOURSELF</div>
-        <h1>别停在“我大概懂了”。<br />把数据真的切一次、搬一次。</h1>
-        <p>这两组实验故意比 Megatron 和 vLLM 小很多。目标不是复刻整个框架，而是把最关键的系统契约缩到几十行：Tensor Parallel 里谁持有什么 shard、为什么要 collective；P/D 分离里谁产生 KV、谁消费 KV、handoff 后结果是否与重算一致。</p>
+        <h1>别停在“我大概懂了”。<br />把数据真的切一次、反传一次、搬一次。</h1>
+        <p>现在有两条实验轨：Training Infra 从 TP forward 走到 backward communication；Inference Infra 从连续 KV handoff 走到 request metadata、token blocks、physical KV pool 与 block table。每一步都先做 correctness reference，再谈性能。</p>
       </div>
       <aside class="lab-status">
-        <div class="status-row"><b>CPU fallback</b><span>✓ Gloo · 2 ranks</span></div>
+        <div class="status-row"><b>Runnable labs</b><span>4 experiments</span></div>
+        <div class="status-row"><b>CPU verified</b><span>✓ Gloo · 2 ranks</span></div>
         <div class="status-row"><b>2-GPU path</b><span>✓ auto NCCL</span></div>
-        <div class="status-row"><b>Correctness</b><span>✓ dense/reference check</span></div>
-        <div class="status-row"><b>Next step</b><span>Profiler → real source</span></div>
+        <div class="status-row"><b>Validation</b><span>✓ dense/recompute checks</span></div>
       </aside>
     </section>
 
     <section class="level-strip" aria-label="实验升级路线">
-      <div class="level"><small>LEVEL 0</small><b>CPU 跑通</b><span>先确认进程、shape、通信和正确性，不把 CUDA 环境问题混进来。</span></div>
-      <div class="level"><small>LEVEL 1</small><b>2 GPU</b><span>同一份代码自动切到 NCCL，开始观察真实 GPU 通信。</span></div>
-      <div class="level"><small>LEVEL 2</small><b>Profile</b><span>把 GEMM / collective / P2P transfer 放到时间线上，而不是只看总耗时。</span></div>
-      <div class="level"><small>LEVEL 3</small><b>映射源码</b><span>回到 Megatron Core / vLLM，认出同一套契约在工业实现中的形态。</span></div>
+      <div class="level"><small>LEVEL 0</small><b>Mechanism</b><span>TP forward / raw KV handoff：先看最小数据流。</span></div>
+      <div class="level"><small>LEVEL 1</small><b>Correctness</b><span>与 dense autograd / recompute reference 逐项核对。</span></div>
+      <div class="level"><small>LEVEL 2</small><b>System State</b><span>加入 backward communication、metadata、block table 与 physical pool。</span></div>
+      <div class="level"><small>LEVEL 3</small><b>Production</b><span>下一步进入 async overlap、profiler、NIXL/RDMA 与真实框架。</span></div>
     </section>
 
+    <div class="lab-kicker" style="margin-top:42px">TRACK A · TRAINING INFRA</div>
     <section class="lab-grid">
       <a class="lab-card train" href="./mini-megatron.html">
-        <small>LAB A · TRAINING INFRA</small>
-        <h2>Mini Megatron TP</h2>
-        <p>把两层 MLP 做成 Column Parallel + Row Parallel。每个 rank 只持有一部分权重，最后通过 all-reduce 恢复完整输出。</p>
-        <footer><span>你会看到</span><strong>shard → local GEMM → all-reduce</strong></footer>
+        <small>LAB A1 · TP FORWARD</small><h2>Mini Megatron TP</h2>
+        <p>Column Parallel W1 + Row Parallel W2。每个 rank 只做自己的 GEMM，最后 all-reduce partial output。</p>
+        <footer><span>核心问题</span><strong>为什么 forward 在这里通信？</strong></footer>
       </a>
-      <a class="lab-card infer" href="./mini-kv-handoff.html">
-        <small>LAB B · INFERENCE INFRA</small>
-        <h2>Mini KV Handoff</h2>
-        <p>Rank 0 做 Prefill 产生 K/V，Rank 1 接收后直接做第一步 Decode，再和“在 Decode 端重算 prompt KV”的参考结果比较。</p>
-        <footer><span>你会看到</span><strong>prefill → send KV → decode</strong></footer>
+      <a class="lab-card train" href="./mini-tp-backward.html">
+        <small>LAB A2 · TP BACKWARD</small><h2>Mini TP Backward</h2>
+        <p>手算 dW2、dW1、dX，再和 dense autograd 对照。你会看到 weight gradients 保持 sharded，而 replicated dX 需要 all-reduce。</p>
+        <footer><span>核心问题</span><strong>为什么 backward 的通信位置不同？</strong></footer>
       </a>
     </section>
 
-    <div class="truth-note"><b>这不是“迷你版框架”宣传。</b><p>两个实验只保留机制骨架：没有 Megatron 的完整并行拓扑，也没有 vLLM 的 paged KV、Scheduler、lease、异步 NIXL 或 RDMA。正因为删掉了这些工程层，你可以先把核心因果关系看清，再回到真实源码。</p></div>
+    <div class="lab-kicker" style="margin-top:42px">TRACK B · INFERENCE INFRA</div>
+    <section class="lab-grid">
+      <a class="lab-card infer" href="./mini-kv-handoff.html">
+        <small>LAB B1 · RAW KV HANDOFF</small><h2>Mini KV Handoff</h2>
+        <p>Rank 0 Prefill 产生连续 K/V；Rank 1 接收后直接 Decode，并与本地重算 prompt KV 的 reference 对齐。</p>
+        <footer><span>核心问题</span><strong>远端 KV 能否等价接管模型状态？</strong></footer>
+      </a>
+      <a class="lab-card infer" href="./mini-block-kv-handoff.html">
+        <small>LAB B2 · BLOCK KV</small><h2>Mini Block KV Handoff</h2>
+        <p>加入 request metadata、固定 token blocks、physical KV pool 和 logical→physical block table，开始接近 vLLM 的真实问题。</p>
+        <footer><span>核心问题</span><strong>逻辑序列如何脱离物理显存位置？</strong></footer>
+      </a>
+    </section>
+
+    <div class="truth-note"><b>性能数字仍然不是这一阶段的目标。</b><p>默认 tensor 很小，CPU/Gloo 的 timing 也不代表 GPU/NCCL，更不代表 RDMA。当前四个实验的验收标准是：你可以预测每个 rank 持有什么、哪一步必须通信、通信后数值为何仍与单机 reference 一致。下一阶段才会放大 workload、异步化并进入 profiler。</p></div>
   </main>
   <script src="../app.js"></script>
 </body>

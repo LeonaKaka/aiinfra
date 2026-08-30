@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Block KV Handoff：加入 request metadata、固定 token blocks、物理 KV pool 与 block table。" />
+  <title>Lab B2 · Mini Block KV Handoff</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab B2</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Block KV Handoff</span></div>
+    <div class="lab-kicker">LAB B2 · BLOCK TABLE + METADATA</div>
+    <h1>连续 K/V 太简单了。<br />现在把它切成 block，再放进任意物理槽位。</h1>
+    <p class="dek">上一实验只证明“远端 KV 可以继续 Decode”。这一层开始接近 vLLM 的真正问题：请求携带 metadata；KV 按固定 token block 传输；Consumer 把逻辑 block 放进任意物理 KV pool slot；attention 依靠 block table 找回正确顺序。这里第一次把“逻辑序列”和“物理显存位置”明确分开。</p>
+
+    <section class="lab-section" id="map"><div class="lab-kicker">01 · TWO PLANES</div><h2>先分控制信息，再分真正的大 tensor。</h2>
+      <div class="stage-flow">
+        <div class="stage-card comm"><small>CONTROL</small><b>request metadata</b><span>request_id、seq、hidden、block_size、num_blocks。Consumer 先知道“接下来要收什么”。</span></div>
+        <div class="stage-card infer"><small>DATA</small><b>K/V wire blocks</b><span>每个 logical block 带 valid-token count，再发送固定 shape 的 K block 与 V block。</span></div>
+        <div class="stage-card train"><small>LOCAL MEMORY</small><b>physical KV pool</b><span>Consumer 自己决定 physical block id；这与 Producer 的逻辑编号没有一一同址关系。</span></div>
+      </div>
+      <p>这就是为什么真实 KV Connector 不可能只有一个 <code>send(tensor)</code>：Scheduler / metadata 解决“应该搬什么”，Worker / transport 解决“字节怎么搬”。</p>
+    </section>
+
+    <section class="lab-section" id="table"><div class="lab-kicker">02 · LOGICAL ≠ PHYSICAL</div><h2>故意把 0,1,2 三个逻辑 block 放到 7,6,5。</h2>
+      <div class="source-bridge"><div><small>REQUEST VIEW</small><b>logical blocks</b><code>[0] [1] [2]</code></div><span>block table →</span><div><small>GPU-POOL VIEW</small><b>physical slots</b><code>[7] [6] [5]</code></div></div>
+      <p>最后一个 block 只有 2 个有效 token，但 wire block 仍是固定的 4-token shape；多出来的位置被 padding。Consumer 另外记录 <code>valid_tokens</code>，重建逻辑 K/V 时只取有效部分。这让 block 管理与 tensor shape 保持简单，但会引入 padding / fragmentation 成本。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>Decode 必须不关心 KV 的物理排布。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_block_kv_handoff.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>request_id           : 101
+logical blocks       : [0, 1, 2]
+physical block table : [7, 6, 5]
+valid tokens/block   : [4, 4, 2]
+logical KV bytes     : 640
+padded wire bytes    : 768
+max |block-ref|      : 0.000e+00
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_block_kv_handoff.py"><div><small>FULL SOURCE</small><b>打开 mini_block_kv_handoff.py</b></div><span>→</span></a>
+      <div class="truth-note"><b>768 / 640 不是“vLLM 的固定 20% 开销”。</b><p>这里只是 seq=10、block_size=4 的教学例子，最后一个 block padding 了 2 个 token。真实系统的 block size、kernel layout、prefix reuse、allocator 与传输协议都会改变成本结构。</p></div>
+    </section>
+
+    <section class="lab-section" id="vllm"><div class="lab-kicker">04 · MAP TO VLLM</div><h2>这次已经可以一一对应三个真实组件。</h2>
+      <div class="result-grid"><div class="result-card"><small>OUR METADATA</small><b>request + block count</b><span>对应真实 Connector 里 Scheduler-side 构建的 transfer metadata。</span></div><div class="result-card"><small>OUR BLOCK TABLE</small><b>logical → physical</b><span>对应 vLLM block table / KV manager 维护的 token-to-KV-slot 映射。</span></div><div class="result-card"><small>OUR POOL</small><b>fixed physical slots</b><span>对应 Worker 端真正用于 attention 的 paged KV storage。</span></div></div>
+      <div class="source-bridge"><div><small>READ FIRST</small><b>block_pool.py + block_table.py</b><code>block id · free queue · slot mapping</code></div><span>then →</span><div><small>CONNECTOR</small><b>KVConnectorBase_V1</b><code>matched tokens · alloc · metadata · load/save</code></div></div>
+    </section>
+
+    <section class="lab-section" id="missing"><div class="lab-kicker">05 · STILL MISSING</div><h2>离 NIXL/RDMA 还有四个值得单独学的台阶。</h2><div class="check-list"><div>① Prefix lookup：Consumer 不应该总收完整 prompt，要先告诉 Scheduler“远端到底命中了多少 token”。</div><div>② Async transfer：metadata 决策与实际 K/V load 不能把整个 engine step 阻塞住。</div><div>③ Layer-by-layer：每层 KV 的 load/save 可以与模型执行流水，而不是全部搬完再 forward。</div><div>④ Memory registration + remote handles：进入 NIXL 后，传的不再只是 Python tensor 引用，而是可远程访问的 memory region 描述。</div></div></section>
+
+    <nav class="lab-footer-nav"><a href="./mini-kv-handoff.html">← Lab B1 · KV Handoff</a><a href="../learn/08-kv-connector/connector-architecture.html">回 08.2 Connector Architecture →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
