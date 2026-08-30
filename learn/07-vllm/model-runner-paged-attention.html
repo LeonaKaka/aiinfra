@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 07.4：理解 vLLM GPUModelRunner、GPUInputBatch、BlockTable、slot mapping 与 paged KV attention 的执行路径。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>07.4 ModelRunner 与 Paged Attention · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./vllm.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header"><a class="brand" href="../../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 07.4</small></span></a><nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav></header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录"><div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a><div class="module-block"><div class="module-name"><b>07</b> vLLM</div><a class="lesson-link" href="./architecture.html">07.1 Architecture</a><a class="lesson-link" href="./scheduler-continuous-batching.html">07.2 Scheduler</a><a class="lesson-link" href="./kv-cache-manager.html">07.3 KV Cache Manager</a><a class="lesson-link current" href="./model-runner-paged-attention.html">07.4 ModelRunner / Paged Attention</a><span class="lesson-link locked">07.5 Prefix Cache / Preemption</span></div><div class="module-block"><div class="module-name"><b>08</b> KV Connector</div><span class="lesson-link locked">08.1 为什么要搬 KV</span></div></aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>ModelRunner / Paged Attention</span></div>
+      <div class="lesson-kicker"><span>LESSON 07.4 · VLLM</span><span>约 75 min</span></div>
+      <h1>ModelRunner 与 Paged Attention：scheduler 给出的 block IDs，最后怎样变成 GPU attention？</h1>
+      <p class="dek">上一课停在控制层：Request A 的逻辑 blocks 被映射到 physical IDs，例如 <code>[8, 2, 19, 5]</code>。但 GPU attention kernel 不会自己去问 Python 的 KVCacheManager。执行层必须把这些信息整理成设备侧的 block table、slot mapping、input tensors 和 attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 SchedulerOutput 到 GPU execution 之间还需要一次“元数据压缩/搬运”。</li><li>知道 <code>GPUInputBatch</code>、<code>BlockTable</code>、slot mapping 各自在解决什么。</li><li>解释 paged KV attention 如何让 attention 读取不连续 physical KV blocks。</li><li>知道“PagedAttention”是核心思想，但当前 vLLM 会根据平台/模型选择不同 attention backends，不能把系统等同于一个固定 kernel。</li><li>理解新 token 的 K/V 怎样写入分配好的 slot，Q 又怎样按 block table 读取历史 KV。</li><li>能沿一次 decode iteration 从 scheduler 一路追到 attention backend。</li></ul></div>
+
+      <section class="article-section" id="contract">
+        <div class="section-no">01 · THE EXECUTION CONTRACT</div>
+        <h2>SchedulerOutput 是逻辑计划，ModelRunner 要把它翻译成设备可以直接消费的结构。</h2>
+        <div class="runner-contract"><div><b>Scheduler 视角</b><span>req A 本轮 1 token，req B 本轮 1 token，req C 继续 prefill 128 tokens；各自对应哪些 KV blocks。</span></div><div><b>GPU 视角</b><span>一批 token IDs / positions / request indices、连续 input buffers、block table tensor、slot mapping、attention metadata。</span></div></div>
+        <p>这个转换不能每层都临时用 Python list 做一遍，否则 CPU overhead 和 CPU→GPU metadata copy 会变成新的瓶颈。因此 vLLM 会维护长期复用的 batch buffers 与 block-table buffers。</p>
+      </section>
+
+      <section class="article-section" id="input-batch">
+        <div class="section-no">02 · GPUINPUTBATCH</div>
+        <h2>动态 requests 最终要被压成一个 GPU batch。</h2>
+        <p>当前 V1 有 <code>vllm/v1/worker/gpu_input_batch.py</code>。它的角色可以先理解为：维护“当前 GPU batch 里有哪些 requests，以及这些 request-level 状态在 batch tensor 中放在哪里”。</p>
+        <div class="batch-snapshots"><div class="batch-row"><small>logical reqs</small><span class="run">A d1</span><span class="run">B d1</span><span class="prefill">C p0</span><span class="prefill">C p1</span><span class="prefill">C p2</span><span class="prefill">…</span><span class="run">D d1</span><span>—</span></div><div class="batch-row"><small>GPU tokens</small><span class="new">tok A</span><span class="new">tok B</span><span class="new">C0</span><span class="new">C1</span><span class="new">C2</span><span class="new">…</span><span class="new">tok D</span><span>pad/unused</span></div></div>
+        <p>模型最终并不关心“这是用户 Alice 的请求”。它需要的是 tensor positions、batch offsets、KV addresses 和 sampling metadata。</p>
+      </section>
+
+      <section class="article-section" id="block-table">
+        <div class="section-no">03 · BLOCKTABLE</div>
+        <h2>BlockTable 是“每个 request 的逻辑块 → physical block ID”的设备可用表示。</h2>
+        <div class="logical-table"><small>REQ A · BLOCK TABLE ROW</small><div class="block-chain"><span>logical 0 → #8</span><span>logical 1 → #2</span><span>logical 2 → #19</span><span>logical 3 → #5</span></div></div>
+        <div class="logical-table"><small>REQ B · BLOCK TABLE ROW</small><div class="block-chain"><span>logical 0 → #11</span><span>logical 1 → #4</span><span>logical 2 → #7</span></div></div>
+        <p>当前 <code>BlockTable</code> 源码维护一个二维 block table buffer，也维护 slot mapping。它还处理 allocation block size 与某些 attention kernel block size 不一致时的拆分逻辑。入门先只记住：<strong>block table 告诉 attention“历史 KV 在哪些 blocks”</strong>。</p>
+        <div class="source-note">当前实现：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">vllm/v1/worker/block_table.py</a>。构造参数里就能看到 <code>block_size</code>、<code>max_num_reqs</code>、<code>max_num_blocks_per_req</code>、<code>max_num_batched_tokens</code> 与 <code>slot_mapping_mode</code>。</div>
+      </section>
+
+      <section class="article-section" id="slot">
+        <div class="section-no">04 · SLOT MAPPING</div>
+        <h2>Block table 解决“读历史”，slot mapping 解决“本轮新 KV 写到哪一个具体 slot”。</h2>
+        <p>假设 physical block #5 有 16 个 token slots，而 Request A 当前已经占用了前 12 个。本轮 decode 的新 token 应该写入 #5 的第 12 个 slot。系统需要把当前 scheduled token 映射到这个具体 KV storage slot。</p>
+        <div class="attention-page"><small>WRITE PATH · SIMPLIFIED</small><div class="attention-page-flow"><div><b>new K/V</b><span>本轮 token 在某层算出的 Kₜ / Vₜ</span></div><i>→</i><div><b>slot mapping</b><span>req A → block #5 → offset 12</span></div><i>→</i><div><b>physical KV</b><span>写进已分配好的 cache storage</span></div></div></div>
+        <p>这就是为什么 scheduler 的 allocation 与 ModelRunner 的 slot mapping 必须严格一致：如果 block ID 或 offset 错一位，attention 读到的历史上下文就直接错了。</p>
+      </section>
+
+      <section class="article-section" id="paged">
+        <div class="section-no">05 · PAGED ATTENTION MENTAL MODEL</div>
+        <h2>Q 逻辑上 attend 一段连续历史，底层却可以按 block table 从散落的 physical blocks 取 K/V。</h2>
+        <div class="attention-page"><small>READ PATH · SIMPLIFIED</small><div class="attention-page-flow"><div><b>Qₜ</b><span>当前 token 的 query</span></div><i>→</i><div><b>block table</b><span>[#8, #2, #19, #5]</span></div><i>→</i><div><b>K/V pages</b><span>从这些 physical blocks 读取历史 K/V</span></div></div></div>
+        <p>从数学上看，Attention 仍然是在对 token 0…t 的 K/V 做同一个 causal attention。变化的是存储层：K/V 不要求物理连续，而是由映射表间接寻址。</p>
+        <div class="concept-note"><p><strong>“Paged”改变的是内存管理与寻址方式，不改变 Transformer 的 Attention 数学定义。</strong></p></div>
+      </section>
+
+      <section class="article-section" id="backend">
+        <div class="section-no">06 · PAGEDATTENTION IS NOT ONE ETERNAL KERNEL</div>
+        <h2>现代 vLLM 有 attention backend 抽象，实际 kernel 会随硬件、模型和配置变化。</h2>
+        <p>早期介绍 vLLM 时，经常把“PagedAttention kernel”当成整个系统的代表。这个历史直觉很有价值，但读当前源码时必须升级：V1 有 <code>attention/backend.py</code>、<code>attention/backends/</code> 和 selector；不同平台可以使用 FlashAttention、FlashInfer 或其它 backend 路径。</p>
+        <div class="warning-note"><b>不要学成“vLLM = 一个 PagedAttention CUDA kernel”。</b><p>更稳定的核心是：KV 是 block/page 管理的；执行层提供 block table/slot mapping；具体 attention backend 以相应方式消费这些 metadata。</p></div>
+      </section>
+
+      <section class="article-section" id="runner-step">
+        <div class="section-no">07 · ONE DECODE ITERATION END TO END</div>
+        <h2>现在把一次 decode 从 scheduler 串到 GPU。</h2>
+        <div class="iteration-flow"><div class="iteration-card"><small>1 · SCHEDULE</small><b>A gets 1 token</b><span>Scheduler 决定 req A 本轮推进 1。</span></div><div class="iteration-card"><small>2 · KV</small><b>block #5 slot 12</b><span>KV manager 已保证有可写 slot。</span></div><div class="iteration-card"><small>3 · PREPARE</small><b>batch + tables</b><span>ModelRunner 更新 GPUInputBatch、BlockTable、slot mapping。</span></div><div class="iteration-card"><small>4 · FORWARD</small><b>model + attention</b><span>新 K/V 写入 slot；Q 按 block table 读取历史 KV。</span></div><div class="iteration-card"><small>5 · SAMPLE</small><b>next token</b><span>结果返回 scheduler，A 的进度 +1。</span></div></div>
+        <p>你之后读 <code>gpu_model_runner.py</code> 时，任何一段复杂代码都先塞回这五步之一。这样即使文件超过几十万字符，也不会完全失去方向。</p>
+      </section>
+
+      <section class="article-section" id="cuda-graphs">
+        <div class="section-no">08 · WHY MODELRUNNER ALSO CARES ABOUT SHAPES</div>
+        <h2>Serving batch 很动态，但 GPU 喜欢稳定、足够大的工作。</h2>
+        <p>ModelRunner 不只是“调用 model.forward”。它还要处理 padded batch sizes、CUDA Graph capture/replay、attention backend metadata、TP/PP、spec decode 等执行优化。核心矛盾是：<strong>上层 requests 高度动态，底层 GPU kernel 又希望输入 shape 可预测、开销低。</strong></p>
+        <div class="control-plane"><div class="control-card"><small>DYNAMIC FRONT</small><b>每轮 request 数、token 数都变</b><span>continuous batching 带来利用率，但也让 execution shape 变化。</span></div><div class="control-card"><small>STABLE GPU</small><b>graphs / kernels 喜欢规则 shape</b><span>框架会用 padding、capture sizes、backend-specific metadata 等方式把动态性压到可执行范围。</span></div></div>
+      </section>
+
+      <section class="article-section" id="source">
+        <div class="section-no">09 · SOURCE MAP</div>
+        <h2>现在才值得打开 ModelRunner。</h2>
+        <div class="source-map-vllm"><div class="source-card"><small>RUNNER</small><b>GPUModelRunner</b><code>vllm/v1/worker/gpu_model_runner.py</code><span>执行层主文件：输入准备、model execute、KV/attention state、sampling 等大量逻辑。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">打开源码 ↗</a></div><div class="source-card"><small>BATCH STATE</small><b>GPUInputBatch</b><code>vllm/v1/worker/gpu_input_batch.py</code><span>动态 request 集如何映射成 GPU batch state。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_input_batch.py">打开源码 ↗</a></div><div class="source-card"><small>ADDRESSING</small><b>BlockTable</b><code>vllm/v1/worker/block_table.py</code><span>block IDs、device buffers、slot mapping 与 kernel block-size 适配。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">打开源码 ↗</a></div><div class="source-card"><small>ATTENTION</small><b>Backend abstraction</b><code>vllm/v1/attention/backend.py</code><span>当前 V1 attention backend 接口；具体实现再去 <code>backends/</code>。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backend.py">打开源码 ↗</a></div></div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.4</span></div><h2>能解释“写哪、读哪”，Paged KV 才真正落地。</h2><div class="quiz-item"><div class="quiz-q">1. BlockTable 和 slot mapping 分别解决什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">BlockTable 主要告诉 attention 一个 request 的逻辑历史块对应哪些 physical blocks，用于读取历史 KV；slot mapping 把本轮 scheduled tokens 映射到具体 KV 写入位置。</div></div><div class="quiz-item"><div class="quiz-q">2. Paged KV 会改变 Attention 数学吗？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">不会。Attention 仍对逻辑上的历史 K/V 做相同计算；改变的是这些 K/V 在 GPU memory 中的存储与寻址方式。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么现在不能把 vLLM 简化成“一个 PagedAttention kernel”？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为当前 vLLM 有 attention backend 抽象，实际 kernel 会按平台、模型和配置变化。Paged/block-based KV 管理和 metadata 仍是核心，但执行后端并不固定为单一 kernel。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 07.5</small><br/><strong>Prefix Cache 与 Preemption：block 不只是存 KV，还会被共享、缓存和淘汰。</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc"><strong>ON THIS PAGE</strong><a href="#contract">执行契约</a><a href="#input-batch">GPUInputBatch</a><a href="#block-table">BlockTable</a><a href="#slot">Slot mapping</a><a href="#paged">Paged Attention</a><a href="#backend">Attention backend</a><a href="#runner-step">一次 decode</a><a href="#cuda-graphs">动态 shape</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((b)=>b.addEventListener('click',()=>{const i=b.closest('.quiz-item');i.classList.toggle('open');b.textContent=i.classList.contains('open')?'收起答案':'看答案';}));</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 07.1：从一次 request 的生命周期理解 vLLM V1 的 EngineCore、Scheduler、KVCacheManager、Executor 与 GPUModelRunner。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>07.1 vLLM Architecture · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./vllm.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 07.1</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>06</b> LLM Inference</div><a class="lesson-link" href="../06-llm-inference/autoregressive-generation.html">06.1–06.3 Inference</a></div>
+      <div class="module-block"><div class="module-name"><b>07</b> vLLM</div><a class="lesson-link current" href="./architecture.html">07.1 Architecture</a><span class="lesson-link locked">07.2 Scheduler / Continuous Batching</span><span class="lesson-link locked">07.3 KV Cache Manager</span><span class="lesson-link locked">07.4 ModelRunner / Paged Attention</span><span class="lesson-link locked">07.5 Prefix Cache / Preemption</span></div>
+      <div class="module-block"><div class="module-name"><b>08</b> KV Connector</div><span class="lesson-link locked">08.1 为什么要搬 KV</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">vLLM</a><span>/</span><span>Architecture</span></div>
+      <div class="lesson-kicker"><span>LESSON 07.1 · VLLM</span><span>约 60 min</span></div>
+      <h1>vLLM Architecture：先顺着一个 request 走完系统，再读任何一个大文件。</h1>
+      <p class="dek">vLLM 的代码量已经很大，直接打开 <code>gpu_model_runner.py</code> 或 <code>scheduler.py</code> 很容易迷路。最好的入口不是“哪个文件最核心”，而是先回答：一个请求进来后，谁把它变成内部 Request？谁决定本轮算多少 token？谁分配 KV blocks？谁真正调用 GPU 模型？结果又怎样回到 scheduler？</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 vLLM V1 粗分成请求/控制层、调度与 KV 管理层、执行层。</li><li>知道 <code>EngineCore</code>、<code>Scheduler</code>、<code>KVCacheManager</code>、executor/worker、<code>GPUModelRunner</code> 的职责边界。</li><li>理解 <code>SchedulerOutput</code> 为什么是“控制层给执行层的本轮计划”。</li><li>知道一次 model execution 完成后，输出还要回到 scheduler 更新 request 状态。</li><li>区分“Request 的逻辑状态”与“GPU 上真正执行的 tensor batch”。</li><li>有一张当前 vLLM V1 源码地图，不再从仓库根目录乱翻。</li></ul></div>
+
+      <section class="article-section" id="one-line">
+        <div class="section-no">01 · ONE SENTENCE FIRST</div>
+        <h2>vLLM 的核心循环可以先压成一句话：调度一批 tokens → 分好 KV → 执行模型 → 更新请求 → 再调度。</h2>
+        <div class="arch-flow">
+          <div class="arch-node engine"><small>REQUEST</small><b>Engine / EngineCore</b><span>接收内部请求，维护 engine 循环。</span></div>
+          <div class="arch-node sched"><small>PLAN</small><b>Scheduler</b><span>决定本轮哪些 requests 各算多少 token。</span></div>
+          <div class="arch-node kv"><small>MEMORY</small><b>KVCacheManager</b><span>查 prefix、申请/回收 KV blocks。</span></div>
+          <div class="arch-node runner"><small>EXECUTE</small><b>Executor / Worker</b><span>把 schedule 送到实际设备执行。</span></div>
+          <div class="arch-node runner"><small>GPU</small><b>GPUModelRunner</b><span>组 batch、准备 block table、跑模型。</span></div>
+          <div class="arch-node engine"><small>UPDATE</small><b>outputs</b><span>采样结果回到 scheduler，request 前进一步。</span></div>
+        </div>
+        <p>真实代码还有 API server、tokenizer、structured output、speculative decoding、multimodal、distributed executor 等很多层。但对“先读懂 vLLM”来说，上面这条数据/控制链是最值得先固定的骨架。</p>
+      </section>
+
+      <section class="article-section" id="control-data">
+        <div class="section-no">02 · CONTROL PLANE VS GPU EXECUTION</div>
+        <h2>先分清“决定算什么”和“真正把 tensor 算掉”。</h2>
+        <div class="control-plane"><div class="control-card"><small>CONTROL SIDE</small><b>Request / Scheduler / KV metadata</b><span>这里主要处理逻辑状态：谁在 waiting、谁 running、已有多少 computed tokens、需要多少新 blocks、本轮 token budget 还剩多少。</span></div><div class="control-card"><small>EXECUTION SIDE</small><b>Worker / ModelRunner / kernels</b><span>这里把 scheduler 的计划变成 GPU tensors、block tables、attention metadata，然后真正运行模型、attention backend 和采样。</span></div></div>
+        <p>这条边界很重要。以后你看到一个性能问题，要先判断它发生在 scheduler 的决策、CPU→GPU metadata 准备，还是实际 CUDA kernel 执行。三种问题的优化方向完全不同。</p>
+      </section>
+
+      <section class="article-section" id="enginecore">
+        <div class="section-no">03 · ENGINECORE OWNS THE LOOP</div>
+        <h2><code>EngineCore</code> 像调度与执行之间的总循环控制器。</h2>
+        <p>当前 vLLM V1 的 <code>vllm/v1/engine/core.py</code> 里可以直接看到核心节奏：当 scheduler 里有请求时，先调用 <code>scheduler.schedule(...)</code> 生成本轮计划，再让 <code>model_executor.execute_model(scheduler_output)</code> 执行；拿到结果后调用 scheduler 的 update 路径，把生成 token、完成状态等写回。</p>
+        <div class="request-life"><div><small>STEP 1</small><b>has requests?</b><span>EngineCore 看 scheduler 是否还有工作。</span></div><div><small>STEP 2</small><b>schedule()</b><span>生成 SchedulerOutput。</span></div><div><small>STEP 3</small><b>execute_model()</b><span>executor / worker 真正运行 GPU。</span></div><div><small>STEP 4</small><b>sample / output</b><span>拿到 token 或模型结果。</span></div><div><small>STEP 5</small><b>update</b><span>状态写回，进入下一 iteration。</span></div></div>
+        <div class="source-note">当前源码入口：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">vllm/v1/engine/core.py</a>。不要一开始试图理解整个文件，只先定位 <code>scheduler.schedule</code>、<code>model_executor.execute_model</code>、scheduler output update 这条主链。</div>
+      </section>
+
+      <section class="article-section" id="scheduler-output">
+        <div class="section-no">04 · SCHEDULEROUTPUT IS A CONTRACT</div>
+        <h2>Scheduler 不负责 GEMM；它负责告诉执行层“这一轮应该怎么组工作”。</h2>
+        <p>Scheduler 的核心产物不是一串 CUDA kernel，而是一份本轮计划。它里面会表达哪些 requests 是新来的/已经缓存的、每个请求要推进多少 token、KV block state、可能的 encoder input、spec decode 信息等。</p>
+        <div class="shape-flow"><div><small>REQUEST STATE</small><code>waiting / running / cached</code></div><span>→</span><div><small>SCHEDULER</small><code>token + KV budgets</code></div><span>→</span><div><small>OUTPUT</small><code>SchedulerOutput</code></div></div>
+        <p>把它理解成“控制平面和数据平面之间的接口”非常有用。之后读 ModelRunner 时，你只需要问：它怎样把这份计划翻译成 GPU batch？</p>
+      </section>
+
+      <section class="article-section" id="kv-manager">
+        <div class="section-no">05 · KVCACHEMANAGER LIVES NEXT TO THE SCHEDULER</div>
+        <h2>Scheduler 想推进 token，必须先证明“有地方放这些 token 的 KV”。</h2>
+        <p>当前 V1 的 <code>KVCacheManager</code> 明确是 scheduler 一侧的内存管理组件。源码里的 <code>KVCacheBlocks</code> 文档甚至直接写着：它是 <code>KVCacheManager</code> 和 <code>Scheduler</code> 之间的 allocation result interface。</p>
+        <div class="control-plane"><div class="control-card"><small>SCHEDULER ASKS</small><b>这个 request 已经缓存多少？还要推进多少？</b><span>先做 prefix hit / computed-block 查询，再算本轮需要新增多少 KV slots。</span></div><div class="control-card"><small>KV MANAGER ANSWERS</small><b>这些 physical block IDs 给你。</b><span>如果 block 不够，scheduler 不能假装显存无限；必须停、跳过或触发 preemption 路径。</span></div></div>
+        <div class="source-note">当前源码：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">vllm/v1/core/kv_cache_manager.py</a>，其中定义了 <code>KVCacheBlocks</code> 与 <code>KVCacheManager</code>。下一课后的 07.3 会专门把这层拆开。</div>
+      </section>
+
+      <section class="article-section" id="runner">
+        <div class="section-no">06 · GPUMODELRUNNER IS WHERE THE PLAN BECOMES TENSORS</div>
+        <h2>真正进入 GPU 前，系统还要把 request 级元数据压成一批连续可执行的 tensor 工作。</h2>
+        <p><code>GPUModelRunner</code> 位于 <code>vllm/v1/worker/gpu_model_runner.py</code>。它会维护 GPU input batch、block table、attention metadata、模型、KV cache 等大量执行期状态。这个文件非常大，所以现在只给它一个角色定义：<strong>把 SchedulerOutput 变成可运行的 GPU batch，并执行模型。</strong></p>
+        <div class="runner-contract"><div><b>输入：逻辑计划</b><span>request IDs、scheduled token counts、KV block IDs、sampling/structured/spec decode 等执行信息。</span></div><div><b>输出：模型结果</b><span>logits / sampled token / hidden or pooling results，以及让 scheduler 能继续更新状态的信息。</span></div></div>
+        <div class="warning-note"><b>不要把“GPUModelRunner 很大”理解成“应该先读它”。</b><p>恰恰相反：先掌握 scheduler、KV blocks、block table 这几个输入对象，再读 ModelRunner，很多代码才有上下文。</p></div>
+      </section>
+
+      <section class="article-section" id="source-map">
+        <div class="section-no">07 · CURRENT V1 SOURCE MAP</div>
+        <h2>第一次打开 vLLM，只先认这些路径。</h2>
+        <div class="source-map-vllm">
+          <div class="source-card"><small>ENGINE LOOP</small><b>EngineCore</b><code>vllm/v1/engine/core.py</code><span>调度 → execute → update 的主循环。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">打开源码 ↗</a></div>
+          <div class="source-card"><small>SCHEDULER</small><b>Scheduler</b><code>vllm/v1/core/sched/scheduler.py</code><span>waiting/running、token budget、KV allocation、preemption、connector hooks。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div>
+          <div class="source-card"><small>KV MEMORY</small><b>KVCacheManager</b><code>vllm/v1/core/kv_cache_manager.py</code><span>computed blocks、allocation、free、prefix cache 相关接口。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">打开源码 ↗</a></div>
+          <div class="source-card"><small>PHYSICAL BLOCKS</small><b>BlockPool</b><code>vllm/v1/core/block_pool.py</code><span>free block queue、hashed block lookup、物理 block 生命周期。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">打开源码 ↗</a></div>
+          <div class="source-card"><small>GPU EXECUTION</small><b>GPUModelRunner</b><code>vllm/v1/worker/gpu_model_runner.py</code><span>构造 GPU batch、执行模型、维护 KV/attention execution state。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">打开源码 ↗</a></div>
+          <div class="source-card"><small>BLOCK TABLE</small><b>BlockTable</b><code>vllm/v1/worker/block_table.py</code><span>把 request 的 block IDs 变成 attention backend 可使用的 table/slot mapping。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">打开源码 ↗</a></div>
+        </div>
+        <p>vLLM 变化很快，所以课程不要求你死记目录永久不变。真正要带走的是职责关系。即使未来文件拆分，<strong>request state → schedule → KV allocation → execution metadata → model run → update</strong> 这条系统链仍然是读代码最可靠的索引。</p>
+      </section>
+
+      <section class="article-section" id="one-request">
+        <div class="section-no">08 · WALK ONE REQUEST</div>
+        <h2>最后用一个 1000-token prompt，把前面的组件串一次。</h2>
+        <div class="cost-panel"><div><small>ARRIVAL</small><b>请求被转换成内部 Request，初始处在等待状态。</b></div><div><small>SCHEDULE</small><b>Scheduler 决定先给它多少 prefill tokens，并检查 token budget / KV capacity。</b></div><div><small>ALLOCATE</small><b>KVCacheManager 返回这批 tokens 将写入的 blocks。</b></div><div><small>EXECUTE</small><b>ModelRunner 根据 SchedulerOutput 构造 input 与 block table，跑 prefill。</b></div><div><small>UPDATE</small><b>请求的 computed-token 进度增加；下一轮可能继续 prefill chunk，也可能开始 decode。</b></div><div><small>REPEAT</small><b>每个 decode iteration 再推进 token，直到 finish，然后释放/缓存对应 KV blocks。</b></div></div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.1</span></div><h2>先会画职责边界，再继续看 scheduler。</h2><div class="quiz-item"><div class="quiz-q">1. Scheduler 和 GPUModelRunner 最本质的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Scheduler 在控制层决定本轮哪些请求各推进多少 token、需要哪些 KV blocks；GPUModelRunner 把这份计划变成 GPU tensors/metadata 并真正执行模型。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 Scheduler 不能只看“有请求就塞进 batch”，还必须问 KVCacheManager？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每推进一个需要缓存的 token，都必须有可写的 KV slot。KV capacity 是硬资源约束，不够时请求就不能按原计划继续运行。</div></div><div class="quiz-item"><div class="quiz-q">3. EngineCore 的主循环可以压成哪四步？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Schedule → Execute → Process/Sample Output → Update request/scheduler state，然后进入下一轮。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 07.2</small><br /><strong>Scheduler 与 Continuous Batching：GPU 下一轮到底算谁？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#one-line">系统一句话</a><a href="#control-data">控制 vs 执行</a><a href="#enginecore">EngineCore</a><a href="#scheduler-output">SchedulerOutput</a><a href="#kv-manager">KVCacheManager</a><a href="#runner">GPUModelRunner</a><a href="#source-map">源码地图</a><a href="#one-request">走一次 request</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((b)=>b.addEventListener('click',()=>{const i=b.closest('.quiz-item');i.classList.toggle('open');b.textContent=i.classList.contains('open')?'收起答案':'看答案';}));</script>
+</body>
+</html>

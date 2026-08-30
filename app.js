@@ -61,6 +61,14 @@ const lessonRoutes = {
   '05.6': 'learn/05-megatron/context-parallel.html',
   '05.7': 'learn/05-megatron/expert-parallel.html',
   '05.8': 'learn/05-megatron/communication-overlap.html',
+  '06.1': 'learn/06-llm-inference/autoregressive-generation.html',
+  '06.2': 'learn/06-llm-inference/prefill-decode.html',
+  '06.3': 'learn/06-llm-inference/kv-cache.html',
+  '07.1': 'learn/07-vllm/architecture.html',
+  '07.2': 'learn/07-vllm/scheduler-continuous-batching.html',
+  '07.3': 'learn/07-vllm/kv-cache-manager.html',
+  '07.4': 'learn/07-vllm/model-runner-paged-attention.html',
+  '07.5': 'learn/07-vllm/prefix-cache-preemption.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {

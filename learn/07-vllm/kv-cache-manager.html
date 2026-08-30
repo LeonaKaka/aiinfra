@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 07.3：理解 vLLM V1 的 KVCacheManager、BlockPool、KVCacheBlock、逻辑 block table 与物理 KV blocks。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>07.3 KV Cache Manager · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./vllm.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header"><a class="brand" href="../../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 07.3</small></span></a><nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav></header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录"><div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a><div class="module-block"><div class="module-name"><b>07</b> vLLM</div><a class="lesson-link" href="./architecture.html">07.1 Architecture</a><a class="lesson-link" href="./scheduler-continuous-batching.html">07.2 Scheduler / Continuous Batching</a><a class="lesson-link current" href="./kv-cache-manager.html">07.3 KV Cache Manager</a><span class="lesson-link locked">07.4 ModelRunner / Paged Attention</span><span class="lesson-link locked">07.5 Prefix Cache / Preemption</span></div><div class="module-block"><div class="module-name"><b>08</b> KV Connector</div><span class="lesson-link locked">08.1 为什么要搬 KV</span></div></aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>KV Cache Manager</span></div>
+      <div class="lesson-kicker"><span>LESSON 07.3 · VLLM</span><span>约 75 min</span></div>
+      <h1>KV Cache Manager：逻辑上连续的 sequence，为什么物理显存可以散着放？</h1>
+      <p class="dek">06.3 已经推导过：每个活跃 request 都有不断增长的 KV Cache。真正困难的是在线服务里请求长度未知、到达时间不同、结束时间不同。如果给每个 request 预留一整段最大连续显存，会浪费大量空间。vLLM 的关键思路是把 KV memory 管成一池固定粒度的 blocks，让逻辑 token 序列和物理地址解耦。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 logical token positions、logical block chain 与 physical KV block IDs。</li><li>理解固定-size block 为什么比“每请求一大段连续 buffer”更适合动态 serving。</li><li>知道 <code>KVCacheManager</code> 与 <code>BlockPool</code> 的职责差异。</li><li>理解 <code>KVCacheBlock</code> 里 block ID、ref count、hash 等元数据为什么存在。</li><li>解释一个 request append 新 token 时，什么时候需要申请新 block。</li><li>知道当前 V1 已支持更复杂的 KV cache groups / hybrid cache，因此“每层永远同一种 block”只是入门模型。</li></ul></div>
+
+      <section class="article-section" id="problem">
+        <div class="section-no">01 · THE CONTIGUOUS BUFFER PROBLEM</div>
+        <h2>在线请求的最终长度未知，所以“先给它一整段最大显存”很浪费。</h2>
+        <p>假设最大上下文 8192 tokens。Request A 最后只用了 300 tokens，B 用了 4000，C 用了 7900。如果每个请求一开始都预留 8192-token 连续 KV 空间，A 的绝大部分 reservation 永远不会被使用。</p>
+        <div class="block-pool"><small>NAIVE PER-REQUEST RESERVATION</small><div class="physical-blocks"><span class="used">A used</span><span class="free">A wasted</span><span class="free">A wasted</span><span class="free">A wasted</span><span class="used">B used</span><span class="used">B used</span><span class="free">B reserve</span><span class="free">C reserve</span></div></div>
+        <p>而且请求长度继续增长时，如果它原来的连续区域不够，可能需要重新申请更大的区域、搬迁，或面对碎片问题。固定-size blocks 把这个问题改写成“需要时再拿下一块”。</p>
+      </section>
+
+      <section class="article-section" id="blocks">
+        <div class="section-no">02 · PHYSICAL BLOCK POOL</div>
+        <h2>把 GPU 上可用于 KV 的内存切成很多编号 blocks。</h2>
+        <div class="block-pool"><small>PHYSICAL KV BLOCK POOL</small><div class="physical-blocks"><span class="used">#0 · A</span><span class="used">#1 · C</span><span class="shared">#2 · prefix</span><span class="used">#3 · B</span><span class="free">#4 · free</span><span class="used">#5 · A</span><span class="free">#6 · free</span><span class="shared">#7 · prefix</span></div></div>
+        <p>逻辑上 A 的 tokens 是连续的，但它的物理 blocks 可以是 <code>#0 → #5 → #12 → ...</code>。只要执行 attention 时有一张表告诉 kernel “这个 sequence 的第 0、1、2 个逻辑块分别在哪里”，物理地址就不必连续。</p>
+      </section>
+
+      <section class="article-section" id="logical">
+        <div class="section-no">03 · LOGICAL CHAIN VS PHYSICAL IDS</div>
+        <h2>一个 sequence 看到的是自己的逻辑 block chain，系统维护的是 physical block IDs。</h2>
+        <div class="logical-table"><small>REQUEST A · LOGICAL</small><div class="block-chain"><span>tokens 0–15 → #8</span><span>16–31 → #2</span><span>32–47 → #19</span><span>48–63 → #5</span><span>64… → next</span></div></div>
+        <p>假设 block size=16 tokens。A 已经有 60 个 cached tokens：它会占 4 个逻辑 blocks，其中最后一个可能只用了 12/16 个 token slots。A 再生成 4 个 token，可以继续写最后一块；再多 1 个 token，就需要申请新的 physical block。</p>
+        <div class="block-math"><div class="block-card"><small>BEFORE</small><b>60 tokens</b><span>ceil(60 / 16) = 4 blocks，最后一块还有 4 个 slots。</span></div><i>→ +5 tokens →</i><div class="block-card"><small>AFTER</small><b>65 tokens</b><span>ceil(65 / 16) = 5 blocks，需要再申请一块。</span></div></div>
+      </section>
+
+      <section class="article-section" id="manager-pool">
+        <div class="section-no">04 · KVCACHEMANAGER VS BLOCKPOOL</div>
+        <h2>一个面向 request 语义，一个面向 physical blocks。</h2>
+        <div class="control-plane"><div class="control-card"><small>KV CACHE MANAGER</small><b>“这个 request 需要什么？”</b><span>根据 request 已计算 tokens、prefix cache 命中、要新增的 tokens 等，组织每个 KV cache group 的 blocks，向 scheduler 提供 allocation/computed-block 结果。</span></div><div class="control-card"><small>BLOCK POOL</small><b>“哪些 physical blocks 现在可拿？”</b><span>维护实际 KVCacheBlock、free block queue、hash→block lookup、ref count 与 eviction 相关状态。</span></div></div>
+        <p>当前源码里 <code>KVCacheManager</code> 会借助 coordinator 和 block pool 等内部组件。不要把类关系死背成永远不变；先记住 <strong>request-level allocation policy</strong> 和 <strong>physical block resource pool</strong> 这两个层级。</p>
+      </section>
+
+      <section class="article-section" id="metadata">
+        <div class="section-no">05 · WHAT A KVCACHEBLOCK KNOWS</div>
+        <h2>一个 block 不只是整数 ID，它还要知道自己能不能被复用、有没有人在用。</h2>
+        <div class="source-map-vllm"><div class="source-card"><small>IDENTITY</small><b>block_id</b><code>0 .. num_gpu_blocks-1</code><span>物理 block 的稳定编号，后面 block table 就靠它指向 KV memory。</span></div><div class="source-card"><small>LIFETIME</small><b>ref_cnt</b><code>reference count</code><span>有多少活跃引用正在使用它；共享 prefix 时尤其重要。</span></div><div class="source-card"><small>PREFIX CACHE</small><b>block_hash</b><code>available when cached</code><span>完整/可缓存 block 可以带 hash，使相同 prefix 查找到已有 block。</span></div><div class="source-card"><small>FREE QUEUE</small><b>prev / next</b><code>doubly linked free list</code><span>当前实现用自维护双向链表组织 free blocks，支持高效删除与 eviction ordering。</span></div></div>
+        <div class="source-note">当前 <code>KVCacheBlock</code> 定义可见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">vllm/v1/core/kv_cache_utils.py</a>。源码明确包含 <code>block_id</code>、<code>ref_cnt</code>、block hash 与 free-list links。</div>
+      </section>
+
+      <section class="article-section" id="allocation">
+        <div class="section-no">06 · ALLOCATING SLOTS FOR NEW TOKENS</div>
+        <h2>Scheduler 想推进 tokens，KV manager 要先把“逻辑增长”翻译成“需要几个新 blocks”。</h2>
+        <div class="iteration-flow"><div class="iteration-card"><small>1</small><b>known progress</b><span>request 已 computed N tokens。</span></div><div class="iteration-card"><small>2</small><b>schedule M more</b><span>本轮打算再推进 M tokens。</span></div><div class="iteration-card"><small>3</small><b>reuse tail</b><span>最后一个 block 有空 slot 就先继续写。</span></div><div class="iteration-card"><small>4</small><b>allocate</b><span>不够时从 pool 取新的 physical blocks。</span></div><div class="iteration-card"><small>5</small><b>emit block IDs</b><span>SchedulerOutput 把相关 block state 交给 worker。</span></div></div>
+        <p>这一步是 scheduler 和 GPU execution 的重要契约：ModelRunner 不应该自己猜“这个请求的 KV 放哪”。它拿到已经决定好的 block IDs，再把它们写入设备侧 block table / slot mapping。</p>
+      </section>
+
+      <section class="article-section" id="waste">
+        <div class="section-no">07 · PAGING DOES NOT MEAN ZERO WASTE</div>
+        <h2>固定 blocks 主要消灭“大段预留”和外部碎片，但最后一块仍可能没填满。</h2>
+        <p>如果 block size=16，一个最终长度 33-token 的 request 要占 3 blocks，最后一块只用 1 个 token slot。这是典型内部碎片。</p>
+        <div class="shape-rule"><code>33 tokens</code><span>→</span><code>3 × 16 slots = 48 slots</code><span>→</span><code>15 slots unused in tail</code></div>
+        <p>Block 越小，尾部浪费通常越低，但 metadata / table 长度和管理开销会增加；block 越大，管理更简单，但 tail waste 可能增大。实际系统还要适配 attention backend 的 block-size 约束。</p>
+      </section>
+
+      <section class="article-section" id="hybrid">
+        <div class="section-no">08 · CURRENT V1 IS MORE GENERAL THAN THE TOY MODEL</div>
+        <h2>现代 vLLM 不只处理“所有层统一一种标准 Attention KV”。</h2>
+        <p>当前 V1 代码里有 <code>KVCacheConfig</code>、多个 KV cache groups、<code>HybridKVCacheCoordinator</code> 等抽象，也要处理 sliding-window attention、Mamba state、cross attention 等不同 cache specs。因此源码中你会看到“group”“coordinator”“spec”比早期 PagedAttention 教程复杂很多。</p>
+        <div class="warning-note"><b>学习顺序不要被复杂度反过来劫持。</b><p>先用“固定 block → block pool → request block chain → block table”理解标准 decoder attention；等这条线稳定，再理解不同 cache groups 为什么需要 coordinator。</p></div>
+      </section>
+
+      <section class="article-section" id="source">
+        <div class="section-no">09 · SOURCE MAP</div>
+        <h2>这四个文件一起看，KV 管理层才完整。</h2>
+        <div class="source-map-vllm"><div class="source-card"><small>REQUEST FACING</small><b>KVCacheManager</b><code>vllm/v1/core/kv_cache_manager.py</code><span>scheduler-facing allocation / computed blocks / free 等接口。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">打开源码 ↗</a></div><div class="source-card"><small>PHYSICAL POOL</small><b>BlockPool</b><code>vllm/v1/core/block_pool.py</code><span>free blocks、hash lookup、physical block reuse。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">打开源码 ↗</a></div><div class="source-card"><small>METADATA</small><b>KVCacheBlock</b><code>vllm/v1/core/kv_cache_utils.py</code><span>block ID / ref count / hash / free queue metadata。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">打开源码 ↗</a></div><div class="source-card"><small>CONFIG / SPECS</small><b>KV cache interface</b><code>vllm/v1/kv_cache_interface.py</code><span>AttentionSpec、MambaSpec、KVCacheConfig 等更一般的 cache layout 描述。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/kv_cache_interface.py">打开源码 ↗</a></div></div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.3</span></div><h2>把 sequence 和 physical memory 分开想。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么一个 request 的逻辑 KV sequence 可以连续，但 physical blocks 不连续？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为系统维护 block IDs / block table，把逻辑块索引映射到任意 physical KV blocks。Attention backend 按映射读取，所以物理地址不必连续。</div></div><div class="quiz-item"><div class="quiz-q">2. KVCacheManager 和 BlockPool 的职责有什么差别？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">KVCacheManager 更面向 request：计算命中/需要多少 blocks、组织 allocation；BlockPool 更面向物理资源：哪些 block 空闲、谁被引用、hash 对应谁、谁可以被回收。</div></div><div class="quiz-item"><div class="quiz-q">3. Paging 是否完全没有内存浪费？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">不是。它显著减少为最大长度预留和外部碎片，但 request 的最后一个 block 可能未填满，形成内部碎片；block size 本身就是 trade-off。</div></div></section>
+
+      <div class="next-lesson muted-next"><div><small>NEXT · 07.4</small><br/><strong>ModelRunner 与 Paged Attention：这些 block IDs 最后怎样变成 GPU attention？</strong></div><span>→</span></div>
+    </main>
+
+    <aside class="toc"><strong>ON THIS PAGE</strong><a href="#problem">连续 buffer 问题</a><a href="#blocks">Physical blocks</a><a href="#logical">逻辑映射</a><a href="#manager-pool">Manager vs Pool</a><a href="#metadata">Block metadata</a><a href="#allocation">Allocation</a><a href="#waste">内部碎片</a><a href="#hybrid">Hybrid KV</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((b)=>b.addEventListener('click',()=>{const i=b.closest('.quiz-item');i.classList.toggle('open');b.textContent=i.classList.contains('open')?'收起答案':'看答案';}));</script>
+</body>
+</html>
