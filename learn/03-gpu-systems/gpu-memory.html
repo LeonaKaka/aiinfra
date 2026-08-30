@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero 03.2：从 Parameters、Gradients、Optimizer States、Activations 到 KV Cache，建立训练与推理显存账本。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>03.2 显存到底花在哪 · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="./gpu.css" />
+</head>
+<body class="lesson-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header lesson-header">
+    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 03.2</small></span></a>
+    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+  </header>
+
+  <div class="lesson-shell">
+    <aside class="course-sidebar" aria-label="课程目录">
+      <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
+      <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1 Attention</a><a class="lesson-link" href="../02-transformer/mha-gqa.html">02.2 MHA / GQA</a><a class="lesson-link" href="../02-transformer/transformer-block.html">02.3 Transformer Block</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="./gpu-mental-model.html">03.1 GPU 心智模型</a><a class="lesson-link current" href="./gpu-memory.html">03.2 显存到底花在哪</a><span class="lesson-link locked">03.3 Compute / Memory / Communication</span></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><span class="lesson-link locked">Collectives 与 NCCL</span></div>
+    </aside>
+
+    <main class="article">
+      <div class="mobile-course-bar"><span>03 · GPU Systems</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>GPU Memory</span></div>
+      <div class="lesson-kicker"><span>LESSON 03.2 · GPU SYSTEMS</span><span>约 50 min</span></div>
+      <h1>显存到底花在哪：先学会给 GPU 做一张账本。</h1>
+      <p class="dek">“模型 7B，为什么 24GB 显卡还训练不了？”“推理明明不反向传播，为什么上下文一长还是 OOM？”这类问题都不能只看参数量。训练和推理会同时占用多种不同寿命、不同形状的数据。把这些账分清，后面你才看得懂 Megatron 为什么要 shard optimizer、vLLM 为什么如此在意 KV Cache。</p>
+
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 GPU 显存拆成 Parameters、Gradients、Optimizer States、Activations、Temporary/Workspace、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个 tensor 或一份模型权重占多少内存。</li><li>理解“16 bytes / parameter”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释 activation checkpointing、distributed optimizer、GQA 分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated</code> 与 <code>memory_reserved</code>，不再把 <code>nvidia-smi</code> 的数字直接等同于活着的 tensor。</li></ul></div>
+
+      <section class="article-section" id="ledger">
+        <div class="section-no">01 · THE MEMORY LEDGER</div>
+        <h2>先别算数字，先把显存里的“住户”认全。</h2>
+        <div class="memory-ledger">
+          <div class="memory-ledger-head"><span>GPU MEMORY LEDGER</span><span>谁会长期占着，谁只在某一阶段出现？</span></div>
+          <div class="memory-row"><b>Parameters</b><span>模型权重。训练和推理都需要，通常是最容易先估算的一类。</span><code>train + infer</code></div>
+          <div class="memory-row train-only"><b>Gradients</b><span>反向传播为可训练参数产生的梯度。训练需要，普通推理不需要。</span><code>train</code></div>
+          <div class="memory-row train-only"><b>Optimizer states</b><span>Adam 的一阶/二阶动量等状态，有时还会有更高精度 master weights。</span><code>train</code></div>
+          <div class="memory-row train-only"><b>Activations</b><span>forward 产生、backward 之后还要用的中间结果。大小和 batch、sequence、hidden、layer 数强相关。</span><code>mostly train</code></div>
+          <div class="memory-row"><b>Temporary / workspace</b><span>算子、kernel、通信库、编译器运行时等为了执行某一步暂时申请的空间。</span><code>both</code></div>
+          <div class="memory-row infer-heavy"><b>KV Cache</b><span>自回归推理为历史 token 保存的 Key / Value。随活跃请求和缓存 token 数增长。</span><code>infer</code></div>
+        </div>
+        <p>真正程序里还会有 CUDA context、allocator 管理的缓存、NCCL 等库自己的分配，以及框架特有的数据结构。所以上面是<strong>理解系统的主要账目</strong>，不是说显存里只有这六种对象。</p>
+      </section>
+
+      <section class="article-section" id="bytes">
+        <div class="section-no">02 · THE ONLY FORMULA YOU NEED FIRST</div>
+        <h2>一个 tensor 占多少内存，第一步就是：元素数 × 每个元素多少 bytes。</h2>
+        <div class="bytes-card"><small>BASIC MEMORY MATH</small><b>memory = numel × bytes_per_element</b><p>FP32 通常 4 bytes；FP16 / BF16 通常 2 bytes；FP8 / INT8 常可按 1 byte 粗算。实际模型还可能有量化 scale、metadata、padding/alignment 等额外开销。</p></div>
+        <p>比如一个 <code>[8, 4096, 4096]</code> 的 BF16 tensor：</p>
+        <div class="code-block"><div class="code-head"><span>mental math</span><span>one activation tensor</span></div><pre><code>numel = 8 × 4096 × 4096
+      = 134,217,728 elements
+
+BF16 = 2 bytes / element
+memory = 268,435,456 bytes
+       = 256 MiB</code></pre></div>
+        <p>注意：这只是<strong>一个</strong> tensor。一个 Transformer layer 的 forward 会产生许多中间结果；几十层叠起来，activation 很快就会成为训练显存大户。</p>
+      </section>
+
+      <section class="article-section" id="parameters">
+        <div class="section-no">03 · PARAMETERS</div>
+        <h2>“7B 模型”先能告诉你的，只是权重这一笔账。</h2>
+        <p>7B 大约表示 70 亿个参数。若所有权重都用 BF16/FP16 存：</p>
+        <div class="code-block"><div class="code-head"><span>rough estimate</span><span>7B weights</span></div><pre><code>7,000,000,000 parameters × 2 bytes
+= 14,000,000,000 bytes
+≈ 14 GB  (decimal)
+≈ 13.0 GiB</code></pre></div>
+        <p>所以“7B × 2 bytes ≈ 14GB”只是<strong>权重常驻显存</strong>的粗估。它还没有包含训练梯度、optimizer states、activation，也没包含推理时的 KV Cache 和运行时开销。</p>
+        <div class="concept-note"><p><strong>参数量不是显存需求。</strong>它只是显存账本里的第一行。</p></div>
+      </section>
+
+      <section class="article-section" id="gradients">
+        <div class="section-no">04 · GRADIENTS</div>
+        <h2>训练时，参数通常还要有一份对应的 gradient。</h2>
+        <p>如果一个可训练参数 tensor 是 <code>W</code>，backward 后 PyTorch 通常会把对应梯度放在 <code>W.grad</code>。梯度 shape 与参数 shape 对应，所以数量级也常和参数相当。</p>
+        <div class="state-stack"><div><small>PARAM</small><b>W</b><code>shape = [H,4H]</code></div><div><small>GRAD</small><b>W.grad</b><code>same shape</code></div><div class="optional"><small>DTYPE</small><b>not universal</b><code>depends on setup</code></div><div class="optional"><small>SHARDING</small><b>can change</b><code>DP / ZeRO / Megatron</code></div></div>
+        <p>不要死记“gradient 永远 2 bytes/参数”或“永远 4 bytes/参数”。混合精度和分布式实现会改变保存 dtype、生命周期与分片方式。我们这里先抓住更稳定的事实：<strong>训练要为梯度付出额外显存，而普通推理没有这笔账。</strong></p>
+      </section>
+
+      <section class="article-section" id="optimizer">
+        <div class="section-no">05 · OPTIMIZER STATES</div>
+        <h2>Adam 为什么显存贵？因为每个参数背后不只存“这个参数自己”。</h2>
+        <p>以常见 Adam/AdamW 心智模型为例，优化器会为参数维护一阶动量 <code>m</code> 和二阶动量 <code>v</code>。很多混合精度训练配置会用 FP32 保存这些状态；某些实现还会保留 FP32 master weight。</p>
+        <div class="state-stack"><div><small>MODEL WEIGHT</small><b>parameter</b><code>e.g. BF16 · 2B</code></div><div><small>GRADIENT</small><b>grad</b><code>e.g. BF16 · 2B</code></div><div><small>ADAM</small><b>m + v</b><code>often 4B + 4B</code></div><div class="optional"><small>SOME SETUPS</small><b>master weight</b><code>possibly FP32 · 4B</code></div></div>
+        <p>于是你会经常听到“混合精度 Adam 训练大约 16 bytes/parameter”这种说法：2B weight + 2B grad + 8B Adam states + 4B master weight = 16B。<strong>这个数字只适用于某些实现假设。</strong>现代优化器、precision 策略、FSDP/ZeRO/Megatron 分片方式都可能让实际账单不同。</p>
+        <div class="concept-note"><p><strong>真正应该记住的不是 16。</strong>应该记住：optimizer states 很大，而且它们天然适合在 data-parallel ranks 之间分片——这正是后面 Distributed Optimizer / ZeRO 的动机。</p></div>
+      </section>
+
+      <section class="article-section" id="activations">
+        <div class="section-no">06 · ACTIVATIONS</div>
+        <h2>Activation 的麻烦在于：它不只和模型大小有关，还和“这次喂多少 token”有关。</h2>
+        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用。batch 越大、sequence 越长、hidden 越宽、layer 越多，activation 的总量通常越大。</p>
+        <div class="activation-lifetime"><div><small>FORWARD</small><b>produce activations</b></div><span>→ keep some →</span><div><small>BACKWARD</small><b>reuse to compute gradients</b></div><span>→</span><div><small>AFTER USE</small><b>eligible to free/reuse</b></div></div>
+        <p>这也解释了 <strong>activation checkpointing</strong> 的基本交易：forward 时少保存一些中间结果，backward 真需要时再重算。你用更多计算，换更低 activation 显存。</p>
+        <div class="compare-limits"><div><small>NO CHECKPOINTING</small><b>save more</b><span>显存更高，backward 少重算</span></div><div><small>CHECKPOINTING</small><b>save less, recompute</b><span>显存更低，计算时间通常增加</span></div></div>
+      </section>
+
+      <section class="article-section" id="allocator">
+        <div class="section-no">07 · WHY NVIDIA-SMI CAN CONFUSE YOU</div>
+        <h2>“PyTorch 没有这么多活 tensor，为什么显存看起来还没还回去？”</h2>
+        <p>PyTorch 为了避免频繁向 CUDA 申请/释放显存，使用 caching allocator。已经不被 tensor 使用的一些块，可以继续留在 allocator 管理的池里，等下次快速复用。</p>
+        <div class="allocator-compare"><div><small>memory_allocated()</small><b>活着的 tensor</b><span>PyTorch 当前由 tensor 占用的 GPU memory。</span></div><div><small>memory_reserved()</small><b>allocator 管理的池</b><span>包含当前 allocated，也可能包含暂时空闲、但仍被 PyTorch 保留用于复用的块。</span></div></div>
+        <div class="code-block"><div class="code-head"><span>python</span><span>memory inspection</span></div><pre><code>print(torch.cuda.memory_allocated() / 1024**3)
+print(torch.cuda.memory_reserved() / 1024**3)
+print(torch.cuda.max_memory_allocated() / 1024**3)
+
+<span class="comment"># 更详细</span>
+print(torch.cuda.memory_summary())</code></pre></div>
+        <p><code>nvidia-smi</code> 看到的进程占用还可能包含 CUDA context、allocator 保留块以及其它库直接分配的内存，因此通常不会和 <code>memory_allocated()</code> 一模一样。</p>
+        <div class="source-note">官方延伸阅读：<a href="https://docs.pytorch.org/docs/stable/torch_cuda_memory.html">PyTorch · Understanding CUDA Memory Usage</a> 与 <a href="https://docs.pytorch.org/docs/stable/notes/cuda.html#memory-management">CUDA memory management</a>。</div>
+      </section>
+
+      <section class="article-section" id="inference">
+        <div class="section-no">08 · INFERENCE HAS A DIFFERENT BILL</div>
+        <h2>推理省掉 gradients 和 optimizer，却多了一个会越聊越大的 KV Cache。</h2>
+        <p>标准 MHA/GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条序列</strong>：</p>
+        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有 block、alignment、metadata 等开销；MLA 等架构的缓存形式也不同。</p></div>
+        <p>做一个纯教学例子：32 层、4096 个 cached tokens、head_dim=128、BF16。</p>
+        <div class="kv-compare"><div><small>MHA · 32 KV HEADS</small><b>≈ 2.0 GiB</b><span>2 × 32 × 4096 × 32 × 128 × 2 bytes</span></div><div><small>GQA · 8 KV HEADS</small><b>≈ 0.5 GiB</b><span>其它条件不变，只把 KV heads 从 32 降到 8。</span></div></div>
+        <p>这就是上一模块讲 GQA 时那个“KV heads 少了，推理会更省”的具体显存账。服务系统同时跑很多 request 时，每个 request 都在占一段 KV，KV Cache 很容易从“附属开销”变成<strong>决定并发量的主资源</strong>。</p>
+      </section>
+
+      <section class="article-section" id="oom">
+        <div class="section-no">09 · DEBUG AN OOM LIKE AN INFRA ENGINEER</div>
+        <h2>看到 OOM，先问“哪一类账爆了”，而不是立刻把 batch 降到 1。</h2>
+        <div class="oom-flow"><div><small>1</small><b>Weights?</b><span>模型本身就放不下？dtype / quantization / model parallel。</span></div><div><small>2</small><b>Activations?</b><span>batch / sequence / hidden 太大？checkpointing 是否能换计算省显存？</span></div><div><small>3</small><b>Optimizer?</b><span>训练 states 太大？是否需要 shard / offload / distributed optimizer？</span></div><div><small>4</small><b>KV / runtime?</b><span>推理 context / concurrency 太高？allocator、workspace、NCCL 是否也在占？</span></div></div>
+        <p>一个非常实用的习惯是记录<strong>峰值</strong>而不是只看某个时刻。很多 OOM 发生在 backward、optimizer step 或某个临时 workspace 峰值，而不是 forward 一开始。</p>
+      </section>
+
+      <section class="article-section" id="bridge">
+        <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
+        <h2>现在你已经能看懂两条路线为什么会选择完全不同的省显存技术。</h2>
+        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard model states</b><span>TP 切参数/GEMM；Sequence/Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer states / gradients / parameters 的不同阶段。</span></div><div><small>vLLM · INFERENCE</small><b>manage KV as a first-class resource</b><span>Paged KV blocks、continuous batching、prefix reuse、KV transfer 都围绕“有限 HBM 怎样服务更多 token / request”。</span></div></div>
+        <div class="concept-note"><p><strong>后面读源码时始终问：</strong>这个优化到底是在减少 Parameters、Gradients、Optimizer States、Activations、KV Cache，还是只是在改变它们“放在哪里”？</p></div>
+      </section>
+
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.2</span></div><h2>能把显存账算明白，再进性能瓶颈。</h2><div class="quiz-item"><div class="quiz-q">1. 7B BF16 模型权重大约 14GB，为什么不能因此断言“24GB 显卡一定能训练 7B”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">14GB 只是权重粗估。训练还要支付 gradients、optimizer states、activations、workspace/allocator 等显存；峰值通常远高于纯权重。</div></div><div class="quiz-item"><div class="quiz-q">2. activation checkpointing 和 distributed optimizer 分别主要在省哪类账？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">activation checkpointing 主要减少保存的 activations，用重计算换显存；distributed optimizer/ZeRO 类方法主要通过跨 data-parallel ranks 分片 optimizer states，并可进一步分片 gradients/parameters，减少每张卡重复保存的 model states。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 GQA 会直接影响 vLLM 的并发能力？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">标准 KV Cache 的大小与 n_kv_heads 近似成正比。KV heads 更少，每个 request 的 KV 占用更低，同样 HBM 往往能容纳更多缓存 token / 活跃请求。</div></div></section>
+
+      <a class="next-lesson muted-next" href="#"><div><small>NEXT · 03.3</small><br /><strong>Compute-bound、Memory-bound、Communication-bound：GPU 到底在等什么？</strong></div><span>→</span></a>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#ledger">显存账本</a><a href="#bytes">内存公式</a><a href="#parameters">Parameters</a><a href="#gradients">Gradients</a><a href="#optimizer">Optimizer</a><a href="#activations">Activations</a><a href="#allocator">Allocator</a><a href="#inference">KV Cache</a><a href="#oom">OOM 排查</a><a href="#bridge">连接两条路线</a><a href="#checkpoint">Checkpoint</a></aside>
+  </div>
+  <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+</body>
+</html>
