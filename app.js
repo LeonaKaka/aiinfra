@@ -46,6 +46,7 @@ const lessonRoutes = {
   '01.4': 'learn/01-foundations/autograd-optimizer.html',
   '02.1': 'learn/02-transformer/attention.html',
   '02.2': 'learn/02-transformer/mha-gqa.html',
+  '02.3': 'learn/02-transformer/transformer-block.html',
 };
 
 document.querySelectorAll('.lesson-link.locked').forEach((item) => {
