@@ -40,6 +40,12 @@ torchrun --standalone --nproc-per-node=4 labs/code/mini_tp_dp_2d.py
 ```
 4 ranks 组成 TP=2 × DP=2。脚本分别创建 TP groups `[[0,1],[2,3]]` 与 DP groups `[[0,2],[1,3]]`，验证 TP layer communication 与 DP gradient sync 只能发生在各自的 process group。
 
+### Lab A7 — Profiler-ready Overlap
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_profiler_overlap.py --trace-dir profiler_traces
+```
+用 `torch.profiler` 标记 forward、W2 gradient ready、async reduce-scatter、继续 backward 与最终 wait，并导出每个 rank 的 Chrome trace。CPU/Gloo 已验证 correctness 与 range 顺序；只有 GPU/NCCL trace 出现 NCCL kernel 与 compute kernel 时间重叠时，才可以宣称真实 overlap。
+
 ## Inference Infra
 
 ### Lab B1 — Mini KV Handoff
@@ -64,7 +70,7 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_async_kv_transfer.py
 ```bash
 torchrun --standalone --nproc-per-node=2 labs/code/mini_layerwise_kv_stream.py
 ```
-Prefill 每算完一层 KV 就立即发送；Decode 只在真正进入 layer L 前等待 KV[L] ready。该实验直接对应 `KVConnectorBase_V1` 的 per-layer load/wait dependency。
+Prefill 每算完一层 KV 就立即发送；Decode 只在真正进入 layer L 前等待 KV[L] ready。该实验直接对应 `KVConnectorBase_V1` 的 `start_load_kv()` / `wait_for_layer_load(layer_name)` 这类 per-layer dependency。
 
 ### Lab B5 — KV Handshake + Lifetime
 ```bash
@@ -72,12 +78,18 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_handshake_lifetime.py
 ```
 用 toy control-plane descriptor 表达 protocol/request/shape/bytes，Consumer 先验证再接收 K/V，最后发送 completion，Producer 才允许 region generation 前进。该脚本明确不模拟真实 RDMA registration/rkey，只教学 handshake 与 lifetime contract。
 
+### Lab B6 — Registered Region Descriptor
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_registered_region_descriptor.py
+```
+用一个底层 storage allocation 承载多个 layer KV views，分别计算 region offset、block length、block stride，再交换几何 metadata 并验证 block transfer。对应当前 vLLM NIXL `register_kv_caches()` 里“allocation registration 与 logical transfer regions 分开”的设计，但不模拟真实 `register_memory`、rkey、UCX 或 RDMA。
+
 ## Environment
 
 需要 Python 3.10+ 与带 `torch.distributed` 的 PyTorch。
 
 - CPU：自动使用 Gloo。
-- CUDA：当可见 GPU 数量不少于实验的 `WORLD_SIZE` 时自动使用 NCCL，每个 rank 一张 GPU。
+- 至少 2 张 CUDA GPU：自动使用 NCCL，每个 rank 一张 GPU。
 - 本仓库不固定 CUDA wheel；PyTorch GPU 安装方式应与本机 CUDA / driver 匹配。
 
 ## Validation rule
@@ -86,4 +98,4 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_handshake_lifetime.py
 2. **再 system semantics**：明确每个 rank 持有什么、哪个 collective/transfer 必须发生、什么时候必须等待。
 3. **最后 performance**：只有在 workload、backend、GPU topology 与 profiler 都明确时才解释 timing。
 
-下一阶段：GPU profiler timeline、TP/DP bucket overlap，以及更深入的 NIXL memory registration / remote descriptor / lease 源码实验。
+下一阶段：在真实 GPU/NCCL 上验证 profiler overlap；Inference 软件线再补 lease / expiry 状态机，然后进入真实 NIXL/UCX/RDMA 硬件验证。

@@ -46,15 +46,15 @@ PASS</pre></div>
     </section>
 
     <section class="lab-section" id="real"><div class="lab-kicker">04 · WHAT CURRENT VLLM REALLY EXCHANGES</div><h2>现在看 NIXL metadata，字段不再是一堆莫名其妙的工程噪声。</h2>
-      <div class="result-grid"><div class="result-card"><small>COMPATIBILITY</small><b>NixlHandshakePayload</b><span>先带 compatibility hash，再带 encoded agent metadata；源码明确用两阶段解码避免不兼容 schema 直接导致解码失败。</span></div><div class="result-card"><small>MEMORY / LAYOUT</small><b>NixlAgentMetadata</b><span>包含 engine id、agent metadata、KV base addresses、device、block 数量/长度/stride、KV layout、block size 等。</span></div><div class="result-card"><small>REQUEST</small><b>RemoteMeta / ReqMeta</b><span>把 remote block ids、engine/request identity、host/port、expiry 与本地 block mapping 连到某次请求。</span></div></div>
+      <div class="result-grid"><div class="result-card"><small>COMPATIBILITY</small><b>NixlHandshakePayload</b><span>先带 compatibility hash，再带 encoded agent metadata；源码明确用两阶段解码避免不兼容 schema 直接炸掉。</span></div><div class="result-card"><small>MEMORY / LAYOUT</small><b>NixlAgentMetadata</b><span>包含 engine id、agent metadata、KV base addresses、device、block 数量/长度/stride、KV layout、block size 等。</span></div><div class="result-card"><small>REQUEST</small><b>RemoteMeta / ReqMeta</b><span>把 remote block ids、engine/request identity、host/port、expiry 与本地 block mapping 连到某次请求。</span></div></div>
       <p>注意这里的关键升级：B2 的 block table 解决“逻辑 KV 放在本机哪里”；B5 开始回答“远端哪个 engine 的哪些 blocks、以什么 layout、在什么生命周期内，能被我安全地搬过来”。</p>
     </section>
 
     <section class="lab-section" id="source"><div class="lab-kicker">05 · SOURCE READING ORDER</div><h2>进入 NIXL 时先看 metadata，再看 transport；否则很容易只剩 API 名词。</h2>
-      <div class="check-list"><div>① <code>v1/base.py</code>：看 <code>register_kv_caches()</code>、handshake metadata、load/save/completion 的抽象契约。</div><div>② <code>nixl/metadata.py</code>：看 compatibility hash、<code>NixlAgentMetadata</code>、<code>NixlHandshakePayload</code>、request remote metadata。</div><div>③ <code>nixl/base_worker.py</code>：再追 memory registration、peer metadata、TP mapping、transfer handle 与 lease/completion。</div><div>④ 最后才问 UCX/RDMA/GPUDirect 怎么把这些 descriptor 变成真正的数据移动。</div></div>
+      <div class="check-list"><div>① <code>v1/base.py</code>：看 <code>register_kv_caches()</code>、<code>get_handshake_metadata()</code>、load/save/completion 的抽象契约。</div><div>② <code>nixl/metadata.py</code>：看 compatibility hash、<code>NixlAgentMetadata</code>、<code>NixlHandshakePayload</code>、request remote metadata。</div><div>③ <code>nixl/base_worker.py</code>：再追 memory registration、peer metadata、TP mapping、transfer handle 与 lease/completion。</div><div>④ 最后才问 UCX/RDMA/GPUDirect 怎么把这些 descriptor 变成真正的数据移动。</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-layerwise-kv-stream.html">← Lab B4 · Layer-wise KV Streaming</a><a href="../source-map/index.html#vllm">进入 vLLM / NIXL Source Map →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-layerwise-kv-stream.html">← Lab B4 · Layer-wise KV Streaming</a><a href="./mini-registered-region-descriptor.html">Lab B6 · Registered Region →</a></nav>
   </main>
   <script src="../app.js"></script>
 </body>

@@ -29,7 +29,7 @@ DP replica 1        R2  ←──TP──→  R3
 
 TP groups = [0,1] [2,3]
 DP groups = [0,2] [1,3]</pre></div>
-      <p>R0 的身份不是单纯“global rank 0”。它同时是 <strong>TP group [0,1] 的 TP-rank 0</strong>，也是 <strong>DP group [0,2] 的 DP-rank 0</strong>。后面看 Megatron 的 tensor-model-parallel group / data-parallel group 时，必须带着这种二维坐标思考。</p>
+      <p>R0 的身份不是单纯“global rank 0”。它同时是 <strong>TP group [0,1] 的 TP-rank 0</strong>，也是 <strong>DP group [0,2] 的 DP-rank 0</strong>。后面看 Megatron 的 <code>get_tensor_model_parallel_group()</code> / data-parallel group 时，必须带着这种二维坐标思考。</p>
     </section>
 
     <section class="lab-section" id="flows"><div class="lab-kicker">02 · TWO DIFFERENT COLLECTIVES</div><h2>同一个 backward 里，两个 all-reduce 回答的是完全不同的问题。</h2>
@@ -64,7 +64,7 @@ PASS</pre></div>
       <div class="check-list"><div>① R1 的 TP peers 是谁？DP peers 又是谁？</div><div>② Row Parallel 的 partial output 为什么不能去 DP group 求和？</div><div>③ R0 的 dW1 shard 应该和 R1 还是 R2 同步？为什么？</div><div>④ 如果再加 PP=2，global world size 至少怎样继续乘上去？</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-bucketed-reduce-scatter.html">← Lab A5 · Bucketed Reduce-Scatter</a><a href="../source-map/index.html#megatron">进入 Megatron Source Map →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-bucketed-reduce-scatter.html">← Lab A5 · Bucketed Reduce-Scatter</a><a href="./mini-profiler-overlap.html">Lab A7 · Profiler-ready Overlap →</a></nav>
   </main>
   <script src="../app.js"></script>
 </body>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Profiler-ready Overlap：用 torch.profiler 和显式 range 标记 backward、async reduce-scatter 与 wait，在 GPU 上真正判断 communication/compute 是否重叠。" />
+  <title>Lab A7 · Profiler-ready Overlap</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A7</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Profiler-ready Overlap</span></div>
+    <div class="lab-kicker">LAB A7 · PROVE THE OVERLAP</div>
+    <h1><code>async_op=True</code> 只能制造机会。<br />Profiler 才能告诉你机会有没有变成真实重叠。</h1>
+    <p class="dek">A5 已经把 W2 bucket 的 reduce-scatter 提前到 W1 backward 之前，A6 又加入 TP×DP process groups。现在补上最重要的证据层：脚本用 <code>torch.profiler</code> 和 <code>record_function()</code> 把 forward、gradient-ready、collective launch、继续 backward、wait 全部标到时间线上。CPU/Gloo 只验证事件顺序；只有 GPU/NCCL timeline 真正出现通信 kernel 与 compute kernel 时间区间重叠，才可以说 overlap 发生了。</p>
+
+    <section class="lab-section" id="markers"><div class="lab-kicker">01 · MARK THE DEPENDENCIES</div><h2>先标“语义边界”，再去看底层 kernel。</h2>
+      <div class="command"><div class="command-head"><span>TRACE RANGE ORDER</span><span>per rank</span></div><pre>forward
+backward_w2_ready
+launch_reduce_scatter_w2
+backward_hidden_and_w1
+launch_reduce_scatter_w1
+wait_for_gradient_shards</pre></div>
+      <p>这些 range 不是为了美化 trace，而是给你一把尺子：<strong>W2 collective launch 之后，到最终 wait 之前，中间确实存在一段不依赖 W2 shard 的 backward compute。</strong>这段区间就是通信可能被隐藏的窗口。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">02 · RUN + EXPORT TRACE</div><h2>同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_profiler_overlap.py \
+  --trace-dir profiler_traces</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>backend=gloo device=cpu world_size=2
+trace markers: forward → W2 ready → launch RS → backward W1 → launch RS → wait
+max W2 shard error : 1.788e-07
+max W1 shard error : 1.192e-07
+trace files        : profiler_traces/overlap_rank*_{cpu|cuda}.json
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_profiler_overlap.py"><div><small>FULL SOURCE</small><b>打开 mini_profiler_overlap.py</b></div><span>→</span></a>
+      <div class="truth-note"><b>CPU trace 仍然不能证明 GPU overlap。</b><p>本地检查只确认两个 rank 都能导出 Chrome trace，而且六个自定义 range 都真实存在。Gloo 的 progress、CPU 调度与 GPU/NCCL 完全不是一回事，所以这里只把 profiler 工作流跑通，不把 CPU timing 当性能结论。</p></div>
+    </section>
+
+    <section class="lab-section" id="gpu"><div class="lab-kicker">03 · WHAT COUNTS AS PROOF</div><h2>GPU 上至少要同时满足三件事，才值得写“communication overlap”。</h2>
+      <div class="result-grid"><div class="result-card"><small>LAUNCH</small><b>collective returns early</b><span>W2 reduce-scatter 被发起后，CPU/host 没有立即在同一位置把整个操作等完。</span></div><div class="result-card"><small>TIMELINE</small><b>NCCL ∩ compute</b><span>NCCL reduce-scatter kernel 与后续 backward GEMM / elementwise kernel 在时间轴上真的有重叠区间。</span></div><div class="result-card"><small>CRITICAL PATH</small><b>wait shrinks</b><span>最终 wait 不再承担完整通信时间；最好再比较同步版本与 overlap 版本的 step time。</span></div></div>
+      <p>如果只看到异步 API，却没有第二条 stream 上的 NCCL kernel 与 compute 同时存在，就只能说“代码允许异步”，不能说“性能上隐藏了通信”。</p>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO CURRENT MEGATRON</div><h2>Megatron 的 bucket group 正是在追踪“什么时候 ready、什么时候 dispatch、什么时候 wait”。</h2>
+      <div class="source-bridge"><div><small>OUR LAB</small><b>W2 ready → async RS → later wait</b><code>record_function + Work handle</code></div><span>same scheduling question →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket group · register_grad_ready · start_grad_sync · finish_grad_sync</code></div></div>
+      <p>当前 Megatron 源码会在 bucket group 的参数梯度全部 ready 后发起 gradient reduction；启用 distributed optimizer 时是 reduce-scatter，否则是 all-reduce。<code>overlap_grad_reduce</code> 决定通信是否异步 dispatch。读这里时应把 A7 的时间线放在脑子里，而不是只看函数调用。</p>
+    </section>
+
+    <section class="lab-section" id="close"><div class="lab-kicker">05 · TRAINING SOFTWARE CAPSTONE</div><h2>到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</h2>
+      <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认 backend=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与 backward compute 是否重叠。</div><div>③ 再把 A6 的 TP×DP group 加进 profiler，区分 TP collective 与 DP reduce-scatter。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对 overlap window 的影响。</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-tp-dp-2d.html">← Lab A6 · TP × DP Topology</a><a href="../source-map/index.html#megatron">进入 Megatron Source Map →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
