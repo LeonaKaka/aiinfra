@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini TP × DP：用 4 ranks 建立 TP=2、DP=2 二维进程拓扑，并验证 layer 内 TP collective 与数据副本间 DP gradient sync 属于不同 process group。" />
+  <title>Lab A6 · TP × DP 2D Topology</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A6</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>TP × DP</span></div>
+    <div class="lab-kicker">LAB A6 · 2D PROCESS GROUPS</div>
+    <h1>一个 global rank 可以同时属于多个“世界”。<br />TP 通信和 DP 通信绝不能混在一起。</h1>
+    <p class="dek">前五个 Training Labs 每次只盯一个并行维度。真正的 Megatron 会同时有 TP、DP、PP、CP、EP。这里先做最小二维拓扑：4 个进程组成 TP=2 × DP=2。每个 DP replica 内，两张卡一起算同一个样本的 TP layer；而相同 TP shard 的两个 replica，再通过另一组 DP group 同步参数梯度。</p>
+
+    <section class="lab-section" id="topology"><div class="lab-kicker">01 · DRAW THE GROUPS</div><h2>同样四个 rank，按不同问题会被切成两套 group。</h2>
+      <div class="command"><div class="command-head"><span>GLOBAL RANKS</span><span>TP=2 · DP=2</span></div><pre>                 TP rank 0     TP rank 1
+DP replica 0        R0  ←──TP──→  R1
+                    ↑             ↑
+                    DP            DP
+                    ↓             ↓
+DP replica 1        R2  ←──TP──→  R3
+
+TP groups = [0,1] [2,3]
+DP groups = [0,2] [1,3]</pre></div>
+      <p>R0 的身份不是单纯“global rank 0”。它同时是 <strong>TP group [0,1] 的 TP-rank 0</strong>，也是 <strong>DP group [0,2] 的 DP-rank 0</strong>。后面看 Megatron 的 tensor-model-parallel group / data-parallel group 时，必须带着这种二维坐标思考。</p>
+    </section>
+
+    <section class="lab-section" id="flows"><div class="lab-kicker">02 · TWO DIFFERENT COLLECTIVES</div><h2>同一个 backward 里，两个 all-reduce 回答的是完全不同的问题。</h2>
+      <div class="stage-flow">
+        <div class="stage-card train"><small>TP GROUP</small><b>[0,1] or [2,3]</b><span>Row-parallel 输出 partial y 要求和；dX 也是来自不同 weight shard 的 contribution，要在 replica 内求和。</span></div>
+        <div class="stage-card comm"><small>LOCAL SHARD GRAD</small><b>dW1[t] · dW2[t]</b><span>参数 gradient 本身仍属于 TP shard t，不需要和另一个 TP shard 拼成同一个 gradient tensor。</span></div>
+        <div class="stage-card train"><small>DP GROUP</small><b>[0,2] or [1,3]</b><span>相同 TP shard 在不同数据 replica 上得到不同 dW；只和“同 shard 的副本”做 DP gradient sync。</span></div>
+      </div>
+      <p>这是理解多维并行最重要的一条：<strong>先问这次 collective 在哪个 process group 里，再问它是什么 collective。</strong>只看到 <code>all_reduce</code> 这个函数名，不足以知道它在解决什么问题。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>4 个 Gloo ranks 实际跑通，两个 TP shard 的 global gradient 都与 dense reference 对齐。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>4 ranks</span></div><pre>torchrun --standalone --nproc-per-node=4 \
+  labs/code/mini_tp_dp_2d.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>backend=gloo world_size=4 TP=2 DP=2
+TP groups: [[0, 1], [2, 3]]
+DP groups: [[0, 2], [1, 3]]
+TP collective : y partials + dX contributions
+DP collective : same TP shard's dW1 / dW2 across data replicas
+max dW1 shard error : 5.960e-08
+max dW2 shard error : 7.451e-08
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_tp_dp_2d.py"><div><small>FULL SOURCE</small><b>打开 mini_tp_dp_2d.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>现在 <code>parallel_state.py</code> 不再是“初始化样板代码”，而是一张通信坐标系。</h2>
+      <div class="source-bridge"><div><small>OUR LAB</small><b>global rank → (dp_rank, tp_rank)</b><code>new_group(TP rows) · new_group(DP columns)</code></div><span>maps to →</span><div><small>MEGATRON</small><b>core/parallel_state.py</b><code>TP / DP / PP / CP / EP groups and ranks</code></div></div>
+      <p>之后读 <code>tensor_parallel/</code> 时只盯 TP group；读 <code>distributed_data_parallel.py</code> / distributed optimizer 时，再追 DP / DP+CP 等 group。真实 Megatron 的拓扑远比 2×2 丰富，但所有复杂组合都建立在“一个 rank 同时处于多个正交 group”这个概念上。</p>
+    </section>
+
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>如果这四问能不看答案说清，Megatron 的并行坐标系就真正建立了。</h2>
+      <div class="check-list"><div>① R1 的 TP peers 是谁？DP peers 又是谁？</div><div>② Row Parallel 的 partial output 为什么不能去 DP group 求和？</div><div>③ R0 的 dW1 shard 应该和 R1 还是 R2 同步？为什么？</div><div>④ 如果再加 PP=2，global world size 至少怎样继续乘上去？</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-bucketed-reduce-scatter.html">← Lab A5 · Bucketed Reduce-Scatter</a><a href="../source-map/index.html#megatron">进入 Megatron Source Map →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

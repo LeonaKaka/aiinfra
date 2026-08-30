@@ -20,11 +20,7 @@
     <p class="dek">B3 已经把 transfer 拆成 launch 与 wait，但仍然把整个 KV 当一个阶段。真实模型有几十层，每层都有自己的 KV。当前 vLLM <code>KVConnectorBase_V1</code> 明确提供 <code>start_load_kv()</code> 与 <code>wait_for_layer_load(layer_name)</code>，并说明后者用于 layer-by-layer pipelining。这个实验把那条依赖关系单独做出来。</p>
 
     <section class="lab-section" id="pipeline"><div class="lab-kicker">01 · PER-LAYER DEPENDENCY</div><h2>Prefill 生产得越早，Decode 就越不需要等“整车货物”。</h2>
-      <div class="stage-flow">
-        <div class="stage-card train"><small>PREFILL</small><b>compute KV[L]</b><span>第 L 层 prompt KV 一算完，立即 isend；然后 Prefill 继续算 L+1。</span></div>
-        <div class="stage-card comm"><small>TRANSFER</small><b>KV[L] in flight</b><span>后续层的 Prefill compute 与前一层 KV 传输存在并行机会。</span></div>
-        <div class="stage-card infer"><small>DECODE</small><b>wait only for layer L</b><span>真正进入 attention layer L 前，才要求 KV[L] 已经 ready。</span></div>
-      </div>
+      <div class="stage-flow"><div class="stage-card train"><small>PREFILL</small><b>compute KV[L]</b><span>第 L 层 prompt KV 一算完，立即 isend；然后 Prefill 继续算 L+1。</span></div><div class="stage-card comm"><small>TRANSFER</small><b>KV[L] in flight</b><span>后续层的 Prefill compute 与前一层 KV 传输存在并行机会。</span></div><div class="stage-card infer"><small>DECODE</small><b>wait only for layer L</b><span>真正进入 attention layer L 前，才要求 KV[L] 已经 ready。</span></div></div>
       <p>依赖从“Decode 必须等所有 KV 完成”变成“Decode layer L 只依赖 KV layer L”。这给系统调度出了更多 overlap 空间。</p>
     </section>
 
@@ -58,7 +54,7 @@ PASS</pre></div>
       <div class="check-list"><div>① 为什么远端不能只收到“一个 Python tensor”？</div><div>② memory region 为什么要预先 registration？</div><div>③ peer/agent metadata 里需要交换什么地址与能力信息？</div><div>④ transfer handle、completion 与 request lifetime 如何避免 KV 被提前复用或覆盖？</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-async-kv-transfer.html">← Lab B3 · Async KV Transfer</a><a href="../learn/08-kv-connector/nixl-rdma.html">回 08.4 NIXL / RDMA →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-async-kv-transfer.html">← Lab B3 · Async KV Transfer</a><a href="./mini-kv-handshake-lifetime.html">Lab B5 · Handshake + Lifetime →</a></nav>
   </main>
   <script src="../app.js"></script>
 </body>

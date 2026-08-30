@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini KV Handshake + Lifetime：在进入 NIXL/RDMA 前，先用可运行 toy protocol 理解 compatibility metadata、data plane、completion 与 memory lifetime。" />
+  <title>Lab B5 · KV Handshake + Lifetime</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab B5</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>KV Handshake + Lifetime</span></div>
+    <div class="lab-kicker">LAB B5 · CONTROL PLANE BEFORE RDMA</div>
+    <h1>高速搬内存之前，双方必须先回答：<br />“你是谁、这块数据是什么、我能不能接、什么时候才能复用？”</h1>
+    <p class="dek">B4 已经能 layer-by-layer 地搬 KV，但仍默认两边天然兼容。真实跨实例传输不能这么乐观：模型/KV layout/协议不兼容就不能直接读；远端还要知道 block/地址相关 metadata；Producer 也不能在 Consumer 尚未完成读取时把同一块 KV memory 提前复用。本实验先用一个很小的 control-plane protocol 把这些约束跑通，再对照 NIXL 源码。</p>
+
+    <section class="lab-section" id="planes"><div class="lab-kicker">01 · CONTROL BEFORE DATA</div><h2>Handshake 不是“多余的小包”，它决定大 tensor 能不能安全开始传。</h2>
+      <div class="stage-flow">
+        <div class="stage-card comm"><small>DESCRIPTOR</small><b>version · request · shape · bytes</b><span>Producer 先描述本次 handoff。Consumer 检查协议版本、shape/capacity 等是否兼容。</span></div>
+        <div class="stage-card infer"><small>ACCEPT</small><b>compatible?</b><span>只有控制面验证通过，Consumer 才接受后续 K/V data plane。</span></div>
+        <div class="stage-card train"><small>DATA</small><b>K/V transfer</b><span>真正的大 tensor 在后面走；control metadata 和 data bytes 是两条不同职责的路径。</span></div>
+      </div>
+      <p>toy 脚本的 descriptor 只是几个整数，故意不使用真实地址、rkey 或 NIXL descriptor。它只负责教学：<strong>先协商语义，再搬字节。</strong></p>
+    </section>
+
+    <section class="lab-section" id="lifetime"><div class="lab-kicker">02 · COMPLETION IS A MEMORY RULE</div><h2>“send() 已经调用”不等于 source KV 现在就能被覆盖。</h2>
+      <div class="source-bridge"><div><small>GENERATION 1</small><b>region 7 owns request 501</b><code>descriptor → accept → transfer</code></div><span>must wait →</span><div><small>COMPLETION</small><b>consumer done</b><code>ack(request, region, generation)</code></div></div>
+      <p>Producer 只有收到 completion 后，才把 toy region 从 generation 1 推进到 generation 2。这里的 <code>region_id / generation</code> 是我们人为设计的教学协议，但它表达的生命周期约束是真实的：异步 transfer 尚未结束时，源/目标 memory 不能被 allocator 当成普通空闲空间随意复用。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>Control handshake、K/V data plane、completion 三段全部跑通。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_kv_handshake_lifetime.py</pre></div>
+      <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>descriptor accepted      : True
+completion acknowledged  : True
+region generation        : 1 → 2
+max attention error      : 0.000e+00
+PASS</pre></div>
+      <a class="code-link" href="./code/mini_kv_handshake_lifetime.py"><div><small>FULL SOURCE</small><b>打开 mini_kv_handshake_lifetime.py</b></div><span>→</span></a>
+      <div class="truth-note"><b>这不是 RDMA memory registration 模拟器。</b><p>真实 NIXL registration 会把可传输 memory region 注册给实际 transport，并产生真实 agent/descriptor 信息。这里没有 rkey、NIC、UCX、GPU Direct，也不尝试伪装成它们；只把 handshake 与 lifetime 的必要性变成可执行状态机。</p></div>
+    </section>
+
+    <section class="lab-section" id="real"><div class="lab-kicker">04 · WHAT CURRENT VLLM REALLY EXCHANGES</div><h2>现在看 NIXL metadata，字段不再是一堆莫名其妙的工程噪声。</h2>
+      <div class="result-grid"><div class="result-card"><small>COMPATIBILITY</small><b>NixlHandshakePayload</b><span>先带 compatibility hash，再带 encoded agent metadata；源码明确用两阶段解码避免不兼容 schema 直接导致解码失败。</span></div><div class="result-card"><small>MEMORY / LAYOUT</small><b>NixlAgentMetadata</b><span>包含 engine id、agent metadata、KV base addresses、device、block 数量/长度/stride、KV layout、block size 等。</span></div><div class="result-card"><small>REQUEST</small><b>RemoteMeta / ReqMeta</b><span>把 remote block ids、engine/request identity、host/port、expiry 与本地 block mapping 连到某次请求。</span></div></div>
+      <p>注意这里的关键升级：B2 的 block table 解决“逻辑 KV 放在本机哪里”；B5 开始回答“远端哪个 engine 的哪些 blocks、以什么 layout、在什么生命周期内，能被我安全地搬过来”。</p>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">05 · SOURCE READING ORDER</div><h2>进入 NIXL 时先看 metadata，再看 transport；否则很容易只剩 API 名词。</h2>
+      <div class="check-list"><div>① <code>v1/base.py</code>：看 <code>register_kv_caches()</code>、handshake metadata、load/save/completion 的抽象契约。</div><div>② <code>nixl/metadata.py</code>：看 compatibility hash、<code>NixlAgentMetadata</code>、<code>NixlHandshakePayload</code>、request remote metadata。</div><div>③ <code>nixl/base_worker.py</code>：再追 memory registration、peer metadata、TP mapping、transfer handle 与 lease/completion。</div><div>④ 最后才问 UCX/RDMA/GPUDirect 怎么把这些 descriptor 变成真正的数据移动。</div></div>
+    </section>
+
+    <nav class="lab-footer-nav"><a href="./mini-layerwise-kv-stream.html">← Lab B4 · Layer-wise KV Streaming</a><a href="../source-map/index.html#vllm">进入 vLLM / NIXL Source Map →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
