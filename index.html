@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Infra from Zero：从基础知识一路学到 Megatron Core 与 vLLM KV Connector。" />
+  <meta name="theme-color" content="#f7f7f3" />
+  <title>AI Infra from Zero</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="AI Infra from Zero 首页">
+      <span class="brand-mark">AI</span>
+      <span class="brand-copy">
+        <strong>Infra from Zero</strong>
+        <small>Megatron · vLLM</small>
+      </span>
+    </a>
+
+    <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav">菜单</button>
+    <nav class="site-nav" id="siteNav">
+      <a href="#roadmap">学习路线</a>
+      <a href="#destinations">目标源码</a>
+      <a href="#method">学习方法</a>
+      <a href="#first-step" class="nav-cta">开始学习</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero shell">
+      <div class="hero-copy">
+        <div class="eyebrow"><span></span> AI INFRA SELF-STUDY MAP</div>
+        <h1>从零基础开始，<br />直到你敢打开 <em>Megatron</em> 和 <em>vLLM</em> 的源码。</h1>
+        <p class="hero-lead">
+          这不是一份名词表，也不是“七天速通”。我们从 Tensor、GPU、通信这些地基开始，
+          一层一层搭到分布式训练与现代推理系统。每学一个概念，都知道它最终会落到哪段真实源码里。
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#first-step">从第一课开始 <span>→</span></a>
+          <a class="button ghost" href="#roadmap">先看完整路线</a>
+        </div>
+        <div class="hero-meta" aria-label="课程概览">
+          <div><strong>8</strong><span>核心模块</span></div>
+          <div><strong>2</strong><span>目标代码库</span></div>
+          <div><strong>2</strong><span>毕业项目</span></div>
+        </div>
+      </div>
+
+      <div class="hero-map" aria-label="AI Infra 学习路线示意图">
+        <div class="map-caption">THE ROUTE</div>
+        <div class="map-node foundation">
+          <span class="node-index">01–04</span>
+          <div><strong>Foundations</strong><small>Python · Transformer · GPU · Distributed</small></div>
+        </div>
+        <div class="map-branch">
+          <span></span><i></i><span></span>
+        </div>
+        <div class="map-grid">
+          <div class="map-node training">
+            <span class="node-index">05</span>
+            <div><strong>Training Infra</strong><small>Megatron Core</small></div>
+          </div>
+          <div class="map-node inference">
+            <span class="node-index">06–08</span>
+            <div><strong>Inference Infra</strong><small>vLLM · KV Connector</small></div>
+          </div>
+        </div>
+        <div class="map-terminal">
+          <div class="terminal-head"><span></span><span></span><span></span><code>goal.txt</code></div>
+          <pre><span class="muted">$</span> explain tensor parallel
+<span class="ok">✓</span> where is the tensor split?
+<span class="ok">✓</span> which collective is required?
+<span class="ok">✓</span> what does it cost?
+
+<span class="muted">$</span> read kv_connector
+<span class="ok">✓</span> follow KV from prefill → decode</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="principle-strip">
+      <div class="shell principle-inner">
+        <p>学习原则</p>
+        <div><span>01</span>先问“为什么需要它”</div>
+        <div><span>02</span>再画数据怎么流</div>
+        <div><span>03</span>最后进入真实源码</div>
+      </div>
+    </section>
+
+    <section class="section shell" id="destinations">
+      <div class="section-heading split-heading">
+        <div>
+          <div class="eyebrow"><span></span> TWO DESTINATIONS</div>
+          <h2>我们最终要读懂的，不是 PPT。</h2>
+        </div>
+        <p>两个终点分别代表训练 Infra 与推理 Infra。前面的所有基础知识，都是为了让你到这里时不再只看见一堆 class 和缩写。</p>
+      </div>
+
+      <div class="destination-grid">
+        <article class="destination-card training-card">
+          <div class="card-topline"><span>TRAINING INFRA</span><code>05</code></div>
+          <h3>Megatron Core</h3>
+          <p>从一个矩阵怎么切，走到多维并行、分布式优化器和通信计算重叠。</p>
+          <div class="chip-row">
+            <span>TP</span><span>SP</span><span>PP</span><span>CP</span><span>EP</span>
+          </div>
+          <div class="mini-diagram parallel-diagram" aria-hidden="true">
+            <div class="tensor source">W</div>
+            <div class="arrow">→</div>
+            <div class="gpu-stack"><span>GPU 0 · W₀</span><span>GPU 1 · W₁</span><span>GPU 2 · W₂</span></div>
+            <div class="collective"><b>collective</b><small>all-reduce / all-gather</small></div>
+          </div>
+          <footer><span>你最终能回答</span><strong>“为什么这里必须通信？”</strong></footer>
+        </article>
+
+        <article class="destination-card inference-card">
+          <div class="card-topline"><span>INFERENCE INFRA</span><code>08</code></div>
+          <h3>vLLM · KV Connector</h3>
+          <p>从自回归生成和 KV Cache，走到跨 GPU / 跨节点的 Prefill–Decode 分离。</p>
+          <div class="chip-row">
+            <span>KV Cache</span><span>Scheduler</span><span>PagedAttention</span><span>NIXL</span>
+          </div>
+          <div class="mini-diagram kv-diagram" aria-hidden="true">
+            <div class="stage"><small>GPU A</small><b>Prefill</b></div>
+            <div class="kv-flow"><span>KV</span><i></i><em>Connector</em><i></i></div>
+            <div class="stage"><small>GPU B</small><b>Decode</b></div>
+          </div>
+          <footer><span>你最终能回答</span><strong>“KV 到底从哪里搬到哪里？”</strong></footer>
+        </article>
+      </div>
+    </section>
+
+    <section class="section roadmap-section" id="roadmap">
+      <div class="shell">
+        <div class="section-heading roadmap-heading">
+          <div>
+            <div class="eyebrow"><span></span> CURRICULUM</div>
+            <h2>8 个模块，只保留后面真正用得到的基础。</h2>
+          </div>
+          <div class="legend"><span class="dot base"></span>地基 <span class="dot train"></span>训练 <span class="dot infer"></span>推理</div>
+        </div>
+
+        <div class="roadmap">
+          <article class="roadmap-item base-item">
+            <div class="road-index">01</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>Foundations</h3><span>零基础入口</span></div>
+              <p>只学读 Infra 源码真正需要的 Python、Tensor、PyTorch 与训练循环。</p>
+              <div class="road-tags"><span>class</span><span>tensor shape</span><span>autograd</span><span>optimizer</span></div>
+              <div class="road-outcome"><small>完成后</small> 能顺着一个最小训练循环追踪数据、参数和梯度。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item base-item">
+            <div class="road-index">02</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>Transformer Fundamentals</h3><span>模型是怎么计算的</span></div>
+              <p>围绕 shape 和数据流理解 Linear、Attention、MHA/GQA 与 Transformer Block。</p>
+              <div class="road-tags"><span>[B,S,H]</span><span>GEMM</span><span>Q/K/V</span><span>attention</span></div>
+              <div class="road-outcome"><small>完成后</small> 知道一个 token 经过 Transformer 时每一步发生了什么。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item base-item">
+            <div class="road-index">03</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>GPU Systems</h3><span>算力与显存</span></div>
+              <p>建立 GPU 心智模型：HBM、kernel、Tensor Core、显存组成，以及不同瓶颈。</p>
+              <div class="road-tags"><span>HBM</span><span>CUDA kernel</span><span>memory bound</span><span>compute bound</span></div>
+              <div class="road-outcome"><small>完成后</small> 能估算“这个模型为什么塞不进一张 GPU”。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item base-item">
+            <div class="road-index">04</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>Distributed Systems for AI</h3><span>多 GPU 怎么协作</span></div>
+              <p>从 process group 到 NCCL，把常见 collective 真正画出来、算一次通信量。</p>
+              <div class="road-tags"><span>all-reduce</span><span>all-gather</span><span>reduce-scatter</span><span>all-to-all</span></div>
+              <div class="road-outcome"><small>完成后</small> 面对并行算法会先问：数据在哪、搬多少、谁在等谁。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item train-item major">
+            <div class="road-index">05</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>Megatron Core</h3><span>Training Infra 主线</span></div>
+              <p>不按仓库目录硬啃，而是按“问题 → 并行策略 → 通信 → 源码”逐层进入。</p>
+              <div class="road-tags"><span>Data Parallel</span><span>Tensor Parallel</span><span>Pipeline</span><span>Distributed Optimizer</span><span>Context / Expert</span><span>Overlap</span></div>
+              <div class="road-outcome"><small>阶段项目</small> 写一个 2–4 GPU 的 Mini Megatron，并用 profiler 看计算与通信。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item infer-item">
+            <div class="road-index">06</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>LLM Inference</h3><span>从训练切到生成</span></div>
+              <p>理解 autoregressive decode、Prefill / Decode 的计算差异，以及 KV Cache 为什么存在。</p>
+              <div class="road-tags"><span>prefill</span><span>decode</span><span>TTFT</span><span>ITL</span><span>KV memory</span></div>
+              <div class="road-outcome"><small>完成后</small> 能解释推理系统为什么和训练系统是两种不同的工程问题。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item infer-item">
+            <div class="road-index">07</div>
+            <div class="road-line"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>vLLM</h3><span>Inference Infra 主线</span></div>
+              <p>先理解 Scheduler、Continuous Batching、KV Cache Manager 与 PagedAttention，再读实现。</p>
+              <div class="road-tags"><span>scheduler</span><span>blocks</span><span>continuous batching</span><span>PagedAttention</span></div>
+              <div class="road-outcome"><small>完成后</small> 能沿着一次 request 追踪调度、KV block 分配与生成。</div>
+            </div>
+          </article>
+
+          <article class="roadmap-item infer-item major">
+            <div class="road-index">08</div>
+            <div class="road-line last"><span></span></div>
+            <div class="road-content">
+              <div class="road-title"><h3>KV Connector</h3><span>最终 Boss</span></div>
+              <p>从单机 KV 传输一路进入多节点：P/D disaggregation、RDMA、GPUDirect 与 NIXL。</p>
+              <div class="road-tags"><span>KV transfer</span><span>P/D disaggregation</span><span>RDMA</span><span>GPUDirect</span><span>NIXL</span></div>
+              <div class="road-outcome"><small>毕业项目</small> Mini KV Connector：Prefill GPU → KV transfer → Decode GPU，并测延迟。</div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="method">
+      <div class="section-heading split-heading">
+        <div>
+          <div class="eyebrow"><span></span> HOW EACH LESSON WORKS</div>
+          <h2>每一课固定六层，不靠死记。</h2>
+        </div>
+        <p>目标不是“看完”，而是让一个抽象概念经过图、数字、最小实现和真实源码后变成可解释的系统组件。</p>
+      </div>
+      <div class="method-grid">
+        <article><span>01</span><h3>Why</h3><p>先建立问题：它不出现会怎样？</p></article>
+        <article><span>02</span><h3>Picture</h3><p>用数据流和显存图建立直觉。</p></article>
+        <article><span>03</span><h3>Numbers</h3><p>亲手算 shape、显存和通信量。</p></article>
+        <article><span>04</span><h3>Mini Build</h3><p>几十行代码做一个最小版本。</p></article>
+        <article><span>05</span><h3>Source Map</h3><p>把最小实现映射到真实仓库。</p></article>
+        <article><span>06</span><h3>Checkpoint</h3><p>能解释清楚，才进入下一层。</p></article>
+      </div>
+    </section>
+
+    <section class="section shell first-step" id="first-step">
+      <div class="first-step-card">
+        <div>
+          <div class="eyebrow light"><span></span> NEXT UP</div>
+          <h2>第一课：Tensor 到底是什么？</h2>
+          <p>不从 Python 语法大全开始。第一课直接回答一个以后会反复遇到的问题：<code>[B, S, H]</code> 到底表示什么，为什么 Infra 工程里 shape 是第一语言。</p>
+        </div>
+        <div class="lesson-preview">
+          <div class="preview-head"><span>lesson / 01.1</span><span>约 25 min</span></div>
+          <pre><code>X.shape = [B, S, H]
+
+B  → batch
+S  → sequence length
+H  → hidden size
+
+# 下一步：X @ W 会发生什么？</code></pre>
+          <button type="button" disabled>课程正文即将加入</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer shell">
+    <div><strong>AI Infra from Zero</strong><span>从地基，到源码。</span></div>
+    <p>Built as a learning map for Megatron Core &amp; vLLM.</p>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
