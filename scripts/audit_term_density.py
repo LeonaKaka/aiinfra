@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Report potentially heavy first-use terminology without failing CI.
 
-This is a reading-quality audit, not a correctness guard. It highlights:
-1. many canonical expansions packed near the beginning of a lesson; and
-2. a first expansion placed inside compact UI text such as <span>/<small>.
+This is a reading-quality audit, not a correctness guard. It highlights only
+signals that map reasonably well to visible friction:
+1. too many canonical expansions packed into the lesson dek; and
+2. a long first expansion placed inside compact <span> card text.
 
-The thresholds are deliberately conservative and the script always returns 0.
-Use the report for human review before turning any pattern into a hard rule.
+The script always returns 0. Review warnings manually before changing prose or
+promoting any pattern to a hard rule.
 """
 from __future__ import annotations
 
-import re
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -19,9 +19,8 @@ from lesson_terms import MAIN_RE, TERM_SECTION_RE, TERMS, normalized_form
 ROOT = Path(__file__).resolve().parents[1]
 LESSONS = ROOT / "learn"
 
-OPENING_CHAR_BUDGET = 1000
-OPENING_TERM_WARNING = 6
-COMPACT_TAGS = {"span", "small"}
+DEK_TERM_WARNING = 5
+LONG_COMPACT_PHRASE = 46
 SKIP_TAGS = {"code", "pre", "script", "style", "svg"}
 SKIP_CLASSES = {"lesson-kicker", "section-no", "breadcrumb", "mobile-course-bar", "lesson-terms", "toc"}
 
@@ -30,8 +29,7 @@ class ProseParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.stack: list[tuple[str, set[str]]] = []
-        self.visible_offset = 0
-        self.first_use: dict[str, tuple[int, str, tuple[str, ...]]] = {}
+        self.first_use: dict[str, tuple[str, tuple[tuple[str, frozenset[str]], ...]]] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         classes: set[str] = set()
@@ -63,18 +61,21 @@ class ProseParser(HTMLParser):
         if not text:
             return
 
-        tags = tuple(tag for tag, _ in self.stack)
+        ancestry = tuple((tag, frozenset(classes)) for tag, classes in self.stack)
         for term, (_, _, _, expand) in TERMS.items():
             if not expand or term in self.first_use:
                 continue
             phrase = normalized_form(term)
-            idx = text.find(phrase)
-            if idx >= 0:
-                self.first_use[term] = (self.visible_offset + idx, phrase, tags)
+            if phrase in text:
+                self.first_use[term] = (phrase, ancestry)
 
-        # Count visible characters rather than raw HTML bytes. This treats Chinese
-        # prose naturally and is stable enough for a warning-only opening window.
-        self.visible_offset += len(text) + 1
+
+def has_class(ancestry: tuple[tuple[str, frozenset[str]], ...], class_name: str) -> bool:
+    return any(class_name in classes for _, classes in ancestry)
+
+
+def inside_tag(ancestry: tuple[tuple[str, frozenset[str]], ...], tag_name: str) -> bool:
+    return any(tag == tag_name for tag, _ in ancestry)
 
 
 def scan(path: Path) -> list[str]:
@@ -87,28 +88,23 @@ def scan(path: Path) -> list[str]:
     parser.feed(body)
 
     warnings: list[str] = []
-    opening = sorted(
-        (
-            (offset, term)
-            for term, (offset, _, _) in parser.first_use.items()
-            if offset < OPENING_CHAR_BUDGET
-        ),
-        key=lambda item: item[0],
+    dek_terms = sorted(
+        term
+        for term, (_, ancestry) in parser.first_use.items()
+        if has_class(ancestry, "dek")
     )
-    if len(opening) >= OPENING_TERM_WARNING:
-        terms = ", ".join(term for _, term in opening)
+    if len(dek_terms) >= DEK_TERM_WARNING:
         warnings.append(
-            f"opening density: {len(opening)} expansions in first "
-            f"~{OPENING_CHAR_BUDGET} visible chars ({terms})"
+            f"dek density: {len(dek_terms)} first-use expansions "
+            f"({', '.join(dek_terms)})"
         )
 
     compact = []
-    for term, (_, _, tags) in sorted(parser.first_use.items()):
-        compact_ancestors = [tag for tag in tags if tag in COMPACT_TAGS]
-        if compact_ancestors:
-            compact.append(f"{term}<{compact_ancestors[-1]}>")
+    for term, (phrase, ancestry) in sorted(parser.first_use.items()):
+        if inside_tag(ancestry, "span") and len(phrase) >= LONG_COMPACT_PHRASE:
+            compact.append(f"{term} ({len(phrase)} chars)")
     if compact:
-        warnings.append("compact first-use: " + ", ".join(compact))
+        warnings.append("long compact first-use: " + ", ".join(compact))
 
     return warnings
 
