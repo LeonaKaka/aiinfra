@@ -116,9 +116,9 @@
         </div>
         <div class="source-row">
           <span class="order">04</span>
-          <div><em class="phase-label">STATE · ADDRESSING</em><b>Block pool + block table</b><code>vllm/v1/core/block_pool.py · vllm/v1/worker/block_table.py</code></div>
-          <p>把 logical token block 与 physical KV slot 分开。prefix hash、free queue、reference 状态与 slot mapping 都是在为“KV 不必连续放在一块显存里”服务。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">block pool ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">block table ↗</a><a href="../labs/mini-block-kv-handoff.html">B2 →</a></div>
+          <div><em class="phase-label">STATE · ADDRESSING</em><b>Block pool + execution block tables</b><code>core/block_pool.py · worker/gpu/block_table.py | worker/block_table.py</code></div>
+          <p>先把 scheduler-side physical block ownership 与 runner-side addressing 分开：<code>BlockPool</code> 管 physical block 生命周期；V2 runner 使用 <code>worker/gpu/block_table.py</code> 的 <code>BlockTables</code>，旧 V1 runner 使用 <code>worker/block_table.py</code> 的 <code>BlockTable</code>/<code>MultiGroupBlockTable</code>。两条路径都在解决“逻辑 cache blocks 怎样变成设备可用地址表”。</p>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">block pool ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/block_table.py">V2 tables ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">V1 table ↗</a><a href="../learn/07-vllm/model-runner-paged-attention.html">07.4 →</a><a href="../labs/mini-block-kv-handoff.html">B2 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">05</span>
