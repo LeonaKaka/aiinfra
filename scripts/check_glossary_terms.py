@@ -17,36 +17,36 @@ from lesson_terms import TERMS
 ROOT = Path(__file__).resolve().parents[1]
 GLOSSARY = ROOT / "glossary" / "index.html"
 
-# Keep this list selective: cross-lesson concepts, common confusion points, and
-# version-sensitive names that materially affect source reading.
-CURATED_GLOSSARY_TERMS = (
-    "GEMM",
-    "GQA",
-    "DRAM",
-    "HBM",
-    "GDDR",
-    "NCCL",
-    "SGD",
-    "DP",
-    "TP",
-    "PP",
-    "VPP",
-    "SP",
-    "CP",
-    "EP",
-    "1F1B",
-    "ZeRO",
-    "GTP",
-    "TTFT",
-    "ITL",
-    "TPOT",
-    "APC",
-    "IOMMU",
-    "MTU",
-    "RDMA",
-    "UCX",
-    "NIXL",
-)
+# Explicit label identity avoids substring ambiguity such as RDMA vs
+# GPUDIRECT RDMA while keeping the curated set small and readable.
+CURATED_GLOSSARY_CARDS = {
+    "GEMM": "GEMM",
+    "GQA": "GQA",
+    "DRAM": "DRAM",
+    "HBM": "HBM",
+    "GDDR": "GDDR",
+    "NCCL": "NCCL",
+    "SGD": "SGD",
+    "DP": "DP",
+    "TP": "TP",
+    "PP": "PP",
+    "VPP": "VPP",
+    "SP": "SP",
+    "CP": "CP",
+    "EP": "EP",
+    "1F1B": "1F1B",
+    "ZeRO": "ZeRO",
+    "GTP": "GTP",
+    "TTFT": "TTFT",
+    "ITL": "ITL",
+    "TPOT": "TPOT",
+    "APC": "APC / PREFIX CACHE",
+    "IOMMU": "IOMMU",
+    "MTU": "MTU",
+    "RDMA": "RDMA",
+    "UCX": "UCX",
+    "NIXL": "NIXL",
+}
 
 CARD_RE = re.compile(
     r'<div class="term">\s*<small>(?P<label>.*?)</small>\s*'
@@ -60,12 +60,6 @@ def plain(text: str) -> str:
     return " ".join(html.unescape(TAG_RE.sub(" ", text)).split())
 
 
-def label_has_term(label: str, term: str) -> bool:
-    return re.search(
-        rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])", label
-    ) is not None
-
-
 def main() -> int:
     source = GLOSSARY.read_text(encoding="utf-8")
     cards = [
@@ -76,20 +70,22 @@ def main() -> int:
         }
         for m in CARD_RE.finditer(source)
     ]
+    by_label: dict[str, list[dict[str, str]]] = {}
+    for card in cards:
+        by_label.setdefault(card["label"], []).append(card)
 
     errors: list[str] = []
-    for term in CURATED_GLOSSARY_TERMS:
+    for term, label in CURATED_GLOSSARY_CARDS.items():
         if term not in TERMS:
             errors.append(f"{term}: curated but missing from canonical TERMS registry")
             continue
 
-        matches = [card for card in cards if label_has_term(card["label"], term)]
+        matches = by_label.get(label, [])
         if not matches:
-            errors.append(f"{term}: missing curated Glossary card")
+            errors.append(f"{term}: missing Glossary card with label {label!r}")
             continue
         if len(matches) > 1:
-            labels = ", ".join(card["label"] for card in matches)
-            errors.append(f"{term}: appears in multiple Glossary labels: {labels}")
+            errors.append(f"{term}: duplicate Glossary cards with label {label!r}")
             continue
 
         english = TERMS[term][0]
@@ -106,7 +102,7 @@ def main() -> int:
 
     print(
         "Global glossary checked: "
-        f"{len(CURATED_GLOSSARY_TERMS)} curated terms; canonical names aligned."
+        f"{len(CURATED_GLOSSARY_CARDS)} curated terms; canonical names aligned."
     )
     return 0
 
