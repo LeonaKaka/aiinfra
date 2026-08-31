@@ -1,0 +1,63 @@
+name: One-time homepage roadmap entry patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/home-roadmap-entry-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Add module entry links
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index = Path('index.html')
+          text = index.read_text(encoding='utf-8')
+          replacements = [
+              ('<div class="road-outcome"><small>完成后</small> 能顺着一个最小训练循环追踪数据、参数和梯度。</div>', '<div class="road-outcome"><small>完成后</small> 能顺着一个最小训练循环追踪数据、参数和梯度。</div>\n              <a class="road-enter" href="./learn/01-foundations/tensor.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>完成后</small> 知道一个 token 经过 Transformer 时每一步发生了什么。</div>', '<div class="road-outcome"><small>完成后</small> 知道一个 token 经过 Transformer 时每一步发生了什么。</div>\n              <a class="road-enter" href="./learn/02-transformer/attention.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>完成后</small> 能估算“这个模型为什么塞不进一张 GPU”。</div>', '<div class="road-outcome"><small>完成后</small> 能估算“这个模型为什么塞不进一张 GPU”。</div>\n              <a class="road-enter" href="./learn/03-gpu-systems/gpu-mental-model.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>完成后</small> 面对并行算法会先问：数据在哪、搬多少、谁在等谁。</div>', '<div class="road-outcome"><small>完成后</small> 面对并行算法会先问：数据在哪、搬多少、谁在等谁。</div>\n              <a class="road-enter" href="./learn/04-distributed/process-rank.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>阶段项目</small> Mini Megatron 系列从 TP 一路做到 TP×DP 与 profiler evidence。</div>', '<div class="road-outcome"><small>阶段项目</small> Mini Megatron 系列从 TP 一路做到 TP×DP 与 profiler evidence。</div>\n              <a class="road-enter" href="./learn/05-megatron/why-model-parallel.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>完成后</small> 能解释推理系统为什么和训练系统是两种不同的工程问题。</div>', '<div class="road-outcome"><small>完成后</small> 能解释推理系统为什么和训练系统是两种不同的工程问题。</div>\n              <a class="road-enter" href="./learn/06-llm-inference/autoregressive-generation.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>完成后</small> 能沿着一次 request 追踪调度、KV block 分配与生成。</div>', '<div class="road-outcome"><small>完成后</small> 能沿着一次 request 追踪调度、KV block 分配与生成。</div>\n              <a class="road-enter" href="./learn/07-vllm/architecture.html">进入模块 <span>→</span></a>'),
+              ('<div class="road-outcome"><small>毕业项目</small> B1–B7 从 raw KV handoff 一路做到 registration、handshake 与 lease/expiry 生命周期。</div>', '<div class="road-outcome"><small>毕业项目</small> B1–B7 从 raw KV handoff 一路做到 registration、handshake 与 lease/expiry 生命周期。</div>\n              <a class="road-enter" href="./learn/08-kv-connector/why-move-kv.html">进入模块 <span>→</span></a>'),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'index.html: expected exactly one match, got {count}: {old[:70]}')
+              text = text.replace(old, new, 1)
+          index.write_text(text, encoding='utf-8')
+
+          css = Path('styles.css')
+          ctext = css.read_text(encoding='utf-8')
+          anchor = '.road-outcome small { display: inline-block; margin-right: 8px; color: #90938c; font-size: 10px; }\n'
+          addition = '''.road-enter {\n  display: inline-flex; align-items: center; gap: 7px; margin-top: 14px;\n  color: #47514a; font: 700 10px/1.2 ui-monospace, monospace; letter-spacing: .04em;\n  text-decoration: none; border-bottom: 1px solid #aeb5ad; padding-bottom: 3px;\n}\n.road-enter span { transition: transform .16s ease; }\n.road-enter:hover { color: var(--ink); border-bottom-color: #697269; }\n.road-enter:hover span { transform: translateX(3px); }\n'''
+          if ctext.count(anchor) != 1:
+              raise SystemExit('styles.css: road-outcome anchor mismatch')
+          ctext = ctext.replace(anchor, anchor + addition, 1)
+          css.write_text(ctext, encoding='utf-8')
+          PY
+      - name: Verify site
+        run: |
+          python scripts/check_site.py
+          python scripts/normalize_navigation.py
+          python scripts/check_diagrams.py
+      - name: Commit patch and remove one-time workflow
+        run: |
+          git config user.name 'LeonaKaka QA Bot'
+          git config user.email '124779759+LeonaKaka@users.noreply.github.com'
+          git rm .github/workflows/home-roadmap-entry-once.yml
+          git add index.html styles.css
+          git commit -m 'Add direct entries to homepage roadmap'
+          git push origin HEAD:main
