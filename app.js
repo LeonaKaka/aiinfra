@@ -112,13 +112,16 @@ const firstLessonRouteByModule = Object.fromEntries(
     .map(([key, route]) => [key.slice(0, 2), route])
 );
 
+function resolveRouteFromText(text) {
+  const key = text.match(/(\d{2}\.\d)/)?.[1];
+  if (key && lessonRoutes[key]) return lessonRoutes[key];
+  return capstoneRoutes.find(({ pattern }) => pattern.test(text))?.route;
+}
+
 function resolveLockedLessonRoute(item) {
   const label = item.textContent.trim();
-  const key = label.match(/^(\d{2}\.\d)/)?.[1];
-  if (key && lessonRoutes[key]) return lessonRoutes[key];
-
-  const capstoneRoute = capstoneRoutes.find(({ pattern }) => pattern.test(label))?.route;
-  if (capstoneRoute) return capstoneRoute;
+  const directRoute = resolveRouteFromText(label);
+  if (directRoute) return directRoute;
 
   // Older lesson sidebars sometimes used one generic locked label for an entire
   // module (for example “GPU、显存与 kernel” or “Scheduler · Paged KV”). The
@@ -145,8 +148,7 @@ document.querySelectorAll('.lesson-link.locked').forEach((item) => {
 
 const nextLesson = document.querySelector('.next-lesson.muted-next');
 if (nextLesson) {
-  const key = nextLesson.querySelector('small')?.textContent.match(/(\d{2}\.\d)/)?.[1];
-  const route = key && lessonRoutes[key];
+  const route = resolveRouteFromText(nextLesson.textContent);
   if (route) {
     const link = document.createElement('a');
     link.className = 'next-lesson';
