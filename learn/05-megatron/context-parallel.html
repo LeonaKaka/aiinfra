@@ -142,6 +142,7 @@
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>CP</code></td><td>Context Parallel</td><td>上下文并行</td><td>让 Attention 沿 context/sequence 维跨 ranks 工作并交换必要上下文。</td></tr>
         <tr><td><code>SP</code></td><td>Sequence Parallel</td><td>序列并行</td><td>在 TP 域内沿 sequence 维分片部分 activation，减少重复保存。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
@@ -154,7 +155,6 @@
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>A2A</code></td><td>All-to-All</td><td>全对全通信</td><td>每个 rank 给不同 peers 发送不同数据；MoE dispatch 中很典型。</td></tr>
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
-        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
           </tbody>

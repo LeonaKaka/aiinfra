@@ -34,7 +34,7 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用直觉解释“梯度”而不是只背“导数”。</li><li>看懂一个最小 autograd 计算图，以及 <code>.grad</code> 是什么时候出现的。</li><li>区分 autograd 负责“算梯度”和 optimizer 负责“用梯度更新参数”。</li><li>理解 Adam 为什么需要额外 optimizer states，以及为什么它们值得被分片。</li></ul></div>
 
-      <section class="article-section" id="gradient"><div class="section-no">01 · WHAT A GRADIENT TELLS YOU</div><h2>梯度先理解成：“参数轻轻动一下，loss 会往哪边变？”</h2><p>假设只有一个参数 <code>w</code>。当前 loss 是由 <code>w</code> 决定的。梯度 <code>dL/dw</code> 告诉你：如果 w 增加一点，loss 大约会增加还是减少，以及变化有多敏感。</p><div class="equation-card"><code>w = current parameter</code><span>→</span><code>gradient = dL/dw</code><b>gradient &gt; 0：把 w 往小方向推一点，通常能让 loss 降低</b></div><p>所以最朴素的 SGD 更新可以写成：</p><div class="shape-rule"><code>w_new</code><span>=</span><code>w_old</code><span>−</span><code>lr × gradient</code></div><p><code>lr</code> 是 learning rate。它控制每次沿“降低 loss 的方向”走多大一步。</p><div class="concept-note"><p><strong>现在不需要微积分证明。</strong>你只需要建立方向感：gradient 是 optimizer 的导航信息；没有 gradient，optimizer 就不知道参数该怎么改。</p></div></section>
+      <section class="article-section" id="gradient"><div class="section-no">01 · WHAT A GRADIENT TELLS YOU</div><h2>梯度先理解成：“参数轻轻动一下，loss 会往哪边变？”</h2><p>假设只有一个参数 <code>w</code>。当前 loss 是由 <code>w</code> 决定的。梯度 <code>dL/dw</code> 告诉你：如果 w 增加一点，loss 大约会增加还是减少，以及变化有多敏感。</p><div class="equation-card"><code>w = current parameter</code><span>→</span><code>gradient = dL/dw</code><b>gradient &gt; 0：把 w 往小方向推一点，通常能让 loss 降低</b></div><p>所以最朴素的 Stochastic Gradient Descent (SGD，随机梯度下降) 更新可以写成：</p><div class="shape-rule"><code>w_new</code><span>=</span><code>w_old</code><span>−</span><code>lr × gradient</code></div><p><code>lr</code> 是 learning rate。它控制每次沿“降低 loss 的方向”走多大一步。</p><div class="concept-note"><p><strong>现在不需要微积分证明。</strong>你只需要建立方向感：gradient 是 optimizer 的导航信息；没有 gradient，optimizer 就不知道参数该怎么改。</p></div></section>
 
       <section class="article-section" id="graph"><div class="section-no">02 · COMPUTATION GRAPH</div><h2>autograd 为什么能知道每个参数的梯度？因为 forward 时留下了计算关系。</h2><p>看一个极小例子：</p><div class="shape-flow"><div><small>PARAMETER</small><code>w</code></div><span>→</span><div><small>FORWARD</small><code>ŷ = w × x</code></div><span>→</span><div><small>LOSS</small><code>(ŷ-y)²</code></div></div><p>当参与计算的 tensor 需要梯度时，PyTorch 会跟踪这些操作之间的关系。执行 <code>loss.backward()</code> 后，它从 loss 往回走，利用链式法则把影响一路传回 w。</p><div class="code-block"><div class="code-head"><span>python</span><span>autograd_minimal.py</span></div><pre><code>import torch
 
@@ -75,8 +75,11 @@ optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>SGD</code></td><td>Stochastic Gradient Descent</td><td>随机梯度下降</td><td>按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
           </tbody>
         </table></div>
       </section>

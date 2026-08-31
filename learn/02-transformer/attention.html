@@ -92,6 +92,7 @@ print(Q.shape, scores.shape, context.shape)</code></pre></div><p>这段代码只
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
         <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
         <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>

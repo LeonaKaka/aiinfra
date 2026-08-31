@@ -113,15 +113,16 @@
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
         <tr><td><code>SLO</code></td><td>Service Level Objective</td><td>服务级目标</td><td>系统希望达到的延迟、可用性或吞吐目标。</td></tr>
         <tr><td><code>RDMA</code></td><td>Remote Direct Memory Access</td><td>远程直接内存访问</td><td>允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。</td></tr>
         <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
         <tr><td><code>ITL</code></td><td>Inter-Token Latency</td><td>Token 间延迟</td><td>流式生成时相邻可见输出 token 之间的时间间隔。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
-        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
         <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
-        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
         <tr><td><code>MLA</code></td><td>Multi-head Latent Attention</td><td>多头潜在注意力</td><td>通过潜在表示压缩注意力状态的模型结构；会影响 KV 表示与兼容性。</td></tr>
         <tr><td><code>QPS</code></td><td>Queries Per Second</td><td>每秒查询数</td><td>系统每秒处理请求/查询数量的吞吐指标。</td></tr>

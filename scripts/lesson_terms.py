@@ -46,6 +46,9 @@ TERMS = {
     "KV": ("Key-Value", "键-值", "自回归 Attention 需要复用的历史 Key/Value 状态。", True),
     "RoPE": ("Rotary Position Embedding", "旋转位置编码", "把位置信息注入 Query/Key 的常见位置编码方法。", True),
     "GELU": ("Gaussian Error Linear Unit", "高斯误差线性单元", "Transformer/MLP 中常见的非线性激活函数。", True),
+    "MSE": ("Mean Squared Error", "均方误差", "用预测值与目标值之差的平方衡量误差；基础训练课用它作为最小 loss 示例。", True),
+    "SGD": ("Stochastic Gradient Descent", "随机梯度下降", "按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。", True),
+    "FFN": ("Feed-Forward Network", "前馈网络", "Transformer / MoE 中按 token 独立应用的前馈子网络；MoE expert 通常就是一类 FFN。", True),
     "FP32": ("32-bit Floating Point", "32 位浮点", "常见高精度浮点格式，元素通常占 4 bytes。", True),
     "FP16": ("16-bit Floating Point", "16 位浮点", "半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。", True),
     "BF16": ("Brain Floating Point 16", "BF16 16 位浮点", "与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。", True),
@@ -69,6 +72,7 @@ TERMS = {
     "AG": ("All-Gather", "全收集", "把各 rank 的 shard 收集成完整结果并让参与者获得。", True),
     "RS": ("Reduce-Scatter", "归约分散", "先做 reduction，再让每个 rank 只保留一个 reduced shard。", True),
     "NCCL": ("NVIDIA Collective Communications Library", "NVIDIA 集体通信库", "GPU 集群中常用的 collective / P2P 通信软件库。", True),
+    "NVLS": ("NVLink Sharp", "NVLink Sharp 算法", "NCCL 在支持的平台上可选择的 NVLink/NVSwitch 相关 collective 加速算法族。", True),
     "1F1B": ("One Forward One Backward", "一前向一反向", "Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。", True),
     "OOM": ("Out Of Memory", "内存不足/显存不足", "所需内存超过可用容量时的失败状态。", True),
     "TTFT": ("Time To First Token", "首 Token 延迟", "从请求进入系统到第一个输出 token 可见的端到端时间。", True),
@@ -85,6 +89,7 @@ TERMS = {
     "IPC": ("Inter-Process Communication", "进程间通信", "同机或跨边界进程交换控制/数据的通用机制。", True),
     "NIC": ("Network Interface Card", "网络接口卡", "主机连接网络 fabric 的硬件接口。", True),
     "IB": ("InfiniBand", "InfiniBand 高速互连", "HPC/AI 集群常见的低延迟高带宽网络技术。", True),
+    "TCP": ("Transmission Control Protocol", "传输控制协议", "可靠的字节流传输协议；分布式初始化/控制面可能通过 TCP 网络完成 rendezvous 或消息交换。", True),
     "RDMA": ("Remote Direct Memory Access", "远程直接内存访问", "允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。", True),
     "RoCE": ("RDMA over Converged Ethernet", "基于融合以太网的 RDMA", "在以太网上承载 RDMA 语义的网络技术。", True),
     "UCX": ("Unified Communication X", "统一通信 X", "为 HPC/AI 提供多种传输后端抽象的通信框架。", True),
@@ -93,6 +98,11 @@ TERMS = {
     "DCP": ("Decode Context Parallelism", "Decode 上下文并行", "在 Decode 阶段沿上下文维并行 Attention 的执行策略。", True),
     "LBHNC": ("LBHNC KV layout", "LBHNC KV 布局", "当前 NIXL/vLLM 文档中的 KV cache 维度布局记号，本身不是需要强行展开的英文缩写。", False),
     "LBNHC": ("LBNHC KV layout", "LBNHC KV 布局", "另一种 KV cache 维度布局记号，本身是维度顺序代码。", False),
+}
+
+# Discovery aliases cover API/container spellings without rewriting code.
+TERM_ALIASES = {
+    "MSE": ("MSE", "MSELoss"),
 }
 
 SKIP_TAGS = {"code", "pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
@@ -110,6 +120,12 @@ def term_pattern(abbr: str) -> re.Pattern[str]:
     if abbr == "P/D":
         return re.compile(r"(?<![A-Za-z0-9])P/D(?![A-Za-z0-9])")
     return re.compile(rf"(?<![A-Za-z0-9]){re.escape(abbr)}(?![A-Za-z0-9])")
+
+
+def discovery_pattern(abbr: str) -> re.Pattern[str]:
+    aliases = TERM_ALIASES.get(abbr, (abbr,))
+    body = "|".join(re.escape(alias) for alias in sorted(aliases, key=len, reverse=True))
+    return re.compile(rf"(?<![A-Za-z0-9])(?:{body})(?![A-Za-z0-9])")
 
 
 def normalized_form(abbr: str) -> str:
@@ -211,11 +227,23 @@ def visible_text(body: str) -> str:
     return " ".join(chunks)
 
 
+def discovery_text(body: str) -> str:
+    """Text a learner can encounter inside the article, including headings/code.
+
+    This is intentionally broader than first-use expansion. Generated term tables
+    are removed before this function is called; HTML tags/attributes are stripped
+    so code and headings count without mutating them.
+    """
+    text = re.sub(r"<script\b.*?</script>|<style\b.*?</style>|<svg\b.*?</svg>", " ", body, flags=re.S | re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return semanticize_text(html_lib.unescape(text))
+
+
 def found_terms(body: str) -> list[str]:
-    text = visible_text(body)
+    text = discovery_text(body)
     positions = []
     for order, abbr in enumerate(TERMS):
-        m = term_pattern(abbr).search(text)
+        m = discovery_pattern(abbr).search(text)
         if m:
             positions.append((m.start(), order, abbr))
     return [abbr for _, _, abbr in sorted(positions)]

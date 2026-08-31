@@ -101,10 +101,10 @@ V_for_q = V.repeat_interleave(group_size, dim=<span class="num">1</span>)
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
+        <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
         <tr><td><code>LLM</code></td><td>Large Language Model</td><td>大语言模型</td><td>本课程训练与推理系统的主要模型对象。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
-        <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
-        <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
         <tr><td><code>MQA</code></td><td>Multi-Query Attention</td><td>多查询注意力</td><td>所有 Query heads 共享单组 K/V 的 Attention 变体。</td></tr>
         <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>

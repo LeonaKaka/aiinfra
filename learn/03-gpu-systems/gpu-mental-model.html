@@ -133,14 +133,15 @@ elapsed = time.perf_counter() - start</code></pre></div>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
         <tr><td><code>GDDR</code></td><td>Graphics Double Data Rate</td><td>图形双倍数据速率存储器</td><td>很多消费级/工作站 GPU 使用的显存技术。</td></tr>
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
         <tr><td><code>SM</code></td><td>Streaming Multiprocessor</td><td>流式多处理器</td><td>NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元。</td></tr>
         <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>RAM</code></td><td>Random Access Memory</td><td>随机存取存储器</td><td>这里通常指主机侧系统内存。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>

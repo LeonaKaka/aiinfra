@@ -112,6 +112,7 @@
         <tr><td><code>APC</code></td><td>Automatic Prefix Caching</td><td>自动前缀缓存</td><td>vLLM 中复用完整缓存 block 的前缀缓存机制。</td></tr>
         <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
         <tr><td><code>OOM</code></td><td>Out Of Memory</td><td>内存不足/显存不足</td><td>所需内存超过可用容量时的失败状态。</td></tr>
+        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
           </tbody>
         </table></div>

@@ -36,7 +36,7 @@
       <h1>NCCL 与拓扑：同一个 all-reduce，为什么换台机器就可能差很多？</h1>
       <p class="dek">上一课只讲“collective 的语义”。但真实系统还要回答：这些 bytes 到底走哪条链路？四张 Graphics Processing Unit (GPU，图形处理器) 是通过 NVLink 连着，还是绕 Peripheral Component Interconnect Express (PCIe，高速外设组件互连)？跨节点时 GPU 数据是不是要先经过 host staging？NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) 的价值，就是把 collective contract 映射到真实 GPU 拓扑和通信链路上，并选择合适的算法与 transport。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 NCCL 是什么，也解释它不是什么。</li><li>区分 NVLink/NVSwitch、PCIe、InfiniBand/RDMA over Converged Ethernet (RoCE，基于融合以太网的 RDMA) 这些链路大致处在什么层级。</li><li>把“collective 的数学语义”和“NCCL 实际怎样走硬件”分成两层思考。</li><li>用 ring 的直觉理解 all-reduce 为什么能拆成 reduce-scatter + all-gather。</li><li>知道 NCCL 并不永远固定用 ring；现代版本会根据 collective、拓扑、消息大小和平台选择 Ring、Tree、NVLS 等算法。</li><li>理解 GPUDirect Remote Direct Memory Access (RDMA，远程直接内存访问) 为什么能减少跨节点 GPU 通信中的 host staging。</li><li>知道如何用 <code>nvidia-smi topo -m</code>、<code>NCCL_DEBUG=INFO</code>、<code>nccl-tests</code> 开始定位通信问题。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 NCCL 是什么，也解释它不是什么。</li><li>区分 NVLink/NVSwitch、PCIe、InfiniBand/RDMA over Converged Ethernet (RoCE，基于融合以太网的 RDMA) 这些链路大致处在什么层级。</li><li>把“collective 的数学语义”和“NCCL 实际怎样走硬件”分成两层思考。</li><li>用 ring 的直觉理解 all-reduce 为什么能拆成 reduce-scatter + all-gather。</li><li>知道 NCCL 并不永远固定用 ring；现代版本会根据 collective、拓扑、消息大小和平台选择 Ring、Tree、NVLink Sharp (NVLS，NVLink Sharp 算法) 等算法。</li><li>理解 GPUDirect Remote Direct Memory Access (RDMA，远程直接内存访问) 为什么能减少跨节点 GPU 通信中的 host staging。</li><li>知道如何用 <code>nvidia-smi topo -m</code>、<code>NCCL_DEBUG=INFO</code>、<code>nccl-tests</code> 开始定位通信问题。</li></ul></div>
 
       <section class="article-section" id="what">
         <div class="section-no">01 · WHAT NCCL IS</div>
@@ -152,10 +152,11 @@ NIC0    ...   ...   ...   ...    X
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
-        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>RoCE</code></td><td>RDMA over Converged Ethernet</td><td>基于融合以太网的 RDMA</td><td>在以太网上承载 RDMA 语义的网络技术。</td></tr>
+        <tr><td><code>NVLS</code></td><td>NVLink Sharp</td><td>NVLink Sharp 算法</td><td>NCCL 在支持的平台上可选择的 NVLink/NVSwitch 相关 collective 加速算法族。</td></tr>
         <tr><td><code>RDMA</code></td><td>Remote Direct Memory Access</td><td>远程直接内存访问</td><td>允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。</td></tr>
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>

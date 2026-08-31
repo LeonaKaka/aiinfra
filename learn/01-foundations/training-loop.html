@@ -145,7 +145,7 @@ print(model.weight.item(), model.bias.item())
         </div>
         <div class="why-grid">
           <div class="why-card"><b>④ Backward</b><p><code>loss.backward()</code> 从 loss 反向沿计算图计算每个可训练参数的梯度，结果放到参数的 <code>.grad</code> 中。</p></div>
-          <div class="why-card"><b>⑤ Optimizer step</b><p><code>optimizer.step()</code> 读取这些梯度，再按 SGD 的更新规则修改参数。参数真的在这一行发生改变。</p></div>
+          <div class="why-card"><b>⑤ Optimizer step</b><p><code>optimizer.step()</code> 读取这些梯度，再按 Stochastic Gradient Descent (SGD，随机梯度下降) 的更新规则修改参数。参数真的在这一行发生改变。</p></div>
           <div class="why-card"><b>⑥ Repeat</b><p>参数变了一点，下一轮 forward 的 prediction 就会不同。只要更新方向总体有效，loss 会逐渐下降。</p></div>
         </div>
       </section>
@@ -223,6 +223,8 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>MSE</code></td><td>Mean Squared Error</td><td>均方误差</td><td>用预测值与目标值之差的平方衡量误差；基础训练课用它作为最小 loss 示例。</td></tr>
+        <tr><td><code>SGD</code></td><td>Stochastic Gradient Descent</td><td>随机梯度下降</td><td>按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>

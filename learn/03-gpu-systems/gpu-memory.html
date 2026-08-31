@@ -150,9 +150,9 @@ print(torch.cuda.memory_summary())</code></pre></div>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>OOM</code></td><td>Out Of Memory</td><td>内存不足/显存不足</td><td>所需内存超过可用容量时的失败状态。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
-        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
@@ -160,6 +160,7 @@ print(torch.cuda.memory_summary())</code></pre></div>
         <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
         <tr><td><code>FP8</code></td><td>8-bit Floating Point</td><td>8 位浮点</td><td>更低精度的浮点表示，需要硬件与数值策略共同支持。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
         <tr><td><code>FSDP</code></td><td>Fully Sharded Data Parallel</td><td>全分片数据并行</td><td>在数据并行域进一步分片参数、梯度或优化器状态的训练方式。</td></tr>
         <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
         <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
