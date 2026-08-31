@@ -73,6 +73,7 @@ Do not mark a diagram complete after code generation alone.
 
 ## 8. Current reference implementations
 
+- `learn/04-distributed/collectives.html` — one fixed process group shown as BEFORE → group-level CONTRACT → AFTER for broadcast, all-reduce, all-gather, and reduce-scatter. Distinguish numeric reduction, shard collection, replication, and result sharding before mapping the same primitives into Megatron.
 - `learn/04-distributed/nccl-topology.html` — logical collective contract → NCCL algorithm/transport selection → intra-node GPU fabric or cross-node GPU↔NIC/network path; keep mathematical collective semantics separate from physical topology cost and never imply GPUDirect removes topology/network cost.
 - `learn/05-megatron/tensor-parallel.html` — replicated input → two TP rank lanes → Column shards → local hidden shards → Row shards → partial outputs → SUM reduction; the no-gather boundary must not cross either rank's data path.
 - `learn/05-megatron/sequence-parallel.html` — sequence-sharded state → central all-gather → separate per-rank TP compute windows → Row-parallel partials → central reduce-scatter → local sequence-sharded state; collective boundaries stay distinct from rank-local compute.
