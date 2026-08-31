@@ -20,17 +20,26 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Make Source Map anchor unique
+      - name: Make Source Map anchors unique
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('scripts/apply_lab_curriculum_sync.py')
           s = p.read_text(encoding='utf-8')
-          old = "'<a href=\"../labs/mini-tp-backward.html\">A2 →</a></div>',\n        '<a href=\"../labs/mini-tp-backward.html\">A2 →</a><a href=\"../labs/mini-sequence-parallel.html\">A8 SP →</a></div>',"
-          new = "'<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py\">源码 ↗</a><a href=\"../labs/mini-tp-backward.html\">A2 →</a></div>',\n        '<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py\">源码 ↗</a><a href=\"../labs/mini-tp-backward.html\">A2 →</a><a href=\"../labs/mini-sequence-parallel.html\">A8 SP →</a></div>',"
-          if old not in s:
+
+          old_sp = "'<a href=\"../labs/mini-tp-backward.html\">A2 →</a></div>',\n        '<a href=\"../labs/mini-tp-backward.html\">A2 →</a><a href=\"../labs/mini-sequence-parallel.html\">A8 SP →</a></div>',"
+          new_sp = "'<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py\">源码 ↗</a><a href=\"../labs/mini-tp-backward.html\">A2 →</a></div>',\n        '<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py\">源码 ↗</a><a href=\"../labs/mini-tp-backward.html\">A2 →</a><a href=\"../labs/mini-sequence-parallel.html\">A8 SP →</a></div>',"
+          if old_sp not in s:
               raise SystemExit('expected generic SP anchor not found')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          s = s.replace(old_sp, new_sp, 1)
+
+          old_pp = "'<a href=\"../learn/05-megatron/pipeline-parallel.html\">05.4 →</a></div>',\n        '<a href=\"../learn/05-megatron/pipeline-parallel.html\">05.4 →</a><a href=\"../labs/mini-pipeline-parallel.html\">A9 →</a></div>',\n        \"source map PP schedule link\","
+          new_pp = "'<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py\">源码 ↗</a><a href=\"../learn/05-megatron/pipeline-parallel.html\">05.4 →</a></div>',\n        '<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py\">源码 ↗</a><a href=\"../learn/05-megatron/pipeline-parallel.html\">05.4 →</a><a href=\"../labs/mini-pipeline-parallel.html\">A9 →</a></div>',\n        \"source map PP schedule link\","
+          if old_pp not in s:
+              raise SystemExit('expected generic PP schedule anchor not found')
+          s = s.replace(old_pp, new_pp, 1)
+
+          p.write_text(s, encoding='utf-8')
           PY
       - name: Sync curriculum surfaces
         run: python scripts/apply_lab_curriculum_sync.py
