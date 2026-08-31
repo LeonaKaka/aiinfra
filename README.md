@@ -67,10 +67,10 @@ vLLM / NIXL 主线：
 
 最近一次系统复查（2026-08-31）对照：
 
-- vLLM `main`: `44fe2a392b71d52a8d72faf2f8278834379482c9`
-- NVIDIA/Megatron-LM `main`: `713ea6ad3f373235bab32faa60ab6d470ab698c3`
+- vLLM `main`: `dafbef15a1c879c64ebb99427917e4ca8d5bca1e`
+- NVIDIA/Megatron-LM `main`: `a3344a6fa2031770855f203d991a31cebc89a23b`
 
-网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
+这轮特别复核了 vLLM GPU runner selector / V1-V2 runner 分流、KV Connector / NIXL lifecycle，以及 Megatron Expert Parallel dispatcher 与 communication-overlap 生命周期。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
 
 ## Reading tools
 
@@ -80,7 +80,7 @@ vLLM / NIXL 主线：
 
 ## Quality checks
 
-每次 push 会运行站点检查，验证：HTML 阅读元数据、重复 ID、本地页面/fragment/asset 链接、CSS imports/`url(...)`、`app.js` 动态 lesson/Lab routes、已知语义回归字符串、过期 placeholder，以及所有 Lab Python 源码的语法编译。
+每次 push 会运行站点检查，验证：HTML 阅读元数据、重复 ID、本地页面/fragment/asset 链接、CSS imports/`url(...)`、`app.js` 动态 lesson/Lab routes、已发布课程的旧 `locked` / `muted-next` 导航能否解析到真实目标、已知语义回归字符串、过期 placeholder，以及所有 Lab Python 源码的语法编译。
 
 这个轻量 CI 不会伪装成 GPU/NCCL/NIXL 性能测试；需要真实硬件才能下结论的内容，在课程和 Lab 中会显式标出。
 
