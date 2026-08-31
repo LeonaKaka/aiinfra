@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SKIP_SCHEMES = {"http", "https", "mailto", "tel", "data", "javascript"}
 CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 CSS_IMPORT_RE = re.compile(r"@import\s+(['\"])(.*?)\1", re.IGNORECASE)
+LESSON_ROUTE_RE = re.compile(r"['\"](?P<key>\d{2}\.\d+)['\"]\s*:\s*['\"](?P<path>[^'\"]+)['\"]")
+CAPSTONE_ROUTE_RE = re.compile(r"route\s*:\s*['\"](?P<path>labs/[^'\"]+\.html)['\"]")
+STALE_PLACEHOLDERS = (
+    "课程正文即将加入",
+    "lesson coming soon",
+)
 
 
 class PageParser(HTMLParser):
@@ -74,6 +80,37 @@ def css_refs(path: Path) -> list[str]:
     return list(dict.fromkeys(refs))
 
 
+def check_dynamic_routes(failures: list[str]) -> tuple[int, int]:
+    """Validate lesson/lab paths that only become hrefs at runtime in app.js."""
+    app_js = ROOT / "app.js"
+    if not app_js.exists():
+        failures.append("app.js: missing dynamic route registry")
+        return 0, 0
+
+    text = app_js.read_text(encoding="utf-8")
+    lesson_routes = list(LESSON_ROUTE_RE.finditer(text))
+    capstone_routes = list(CAPSTONE_ROUTE_RE.finditer(text))
+
+    keys = [match.group("key") for match in lesson_routes]
+    if len(keys) != len(set(keys)):
+        failures.append("app.js: duplicate lessonRoutes key")
+
+    for match in lesson_routes:
+        key = match.group("key")
+        raw = match.group("path")
+        target = ROOT / raw
+        if not target.exists():
+            failures.append(f"app.js: lesson route {key} points to missing target: {raw}")
+
+    for match in capstone_routes:
+        raw = match.group("path")
+        target = ROOT / raw
+        if not target.exists():
+            failures.append(f"app.js: capstone route points to missing target: {raw}")
+
+    return len(lesson_routes), len(capstone_routes)
+
+
 def main() -> int:
     html_files = sorted(ROOT.rglob("*.html"))
     css_files = sorted(ROOT.rglob("*.css"))
@@ -82,7 +119,9 @@ def main() -> int:
     cache: dict[Path, PageParser] = {}
 
     for page in html_files:
-        parser = parse_page(page)
+        text = page.read_text(encoding="utf-8")
+        parser = PageParser()
+        parser.feed(text)
         cache[page.resolve()] = parser
         rel = page.relative_to(ROOT)
 
@@ -96,6 +135,11 @@ def main() -> int:
             failures.append(f"{rel}: expected exactly one <h1>, found {parser.h1s}")
         if len(parser.ids) != len(set(parser.ids)):
             failures.append(f"{rel}: duplicate id attribute")
+
+        lowered = text.lower()
+        for placeholder in STALE_PLACEHOLDERS:
+            if placeholder.lower() in lowered:
+                failures.append(f"{rel}: stale placeholder text remains: {placeholder!r}")
 
         for attr, raw in parser.refs:
             target, fragment = resolve_local(page.resolve(), raw)
@@ -137,6 +181,8 @@ def main() -> int:
             if not target.exists():
                 failures.append(f"{rel}: missing local CSS asset/import: {raw}")
 
+    lesson_route_count, capstone_route_count = check_dynamic_routes(failures)
+
     # The lab scripts depend on PyTorch at runtime, which is intentionally not
     # installed by this lightweight site workflow. Still compile every script so
     # syntax regressions never reach the published learning site unnoticed.
@@ -157,8 +203,9 @@ def main() -> int:
 
     print(
         f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files, "
-        f"{len(lab_python_files)} lab scripts; local refs/imports, reading metadata, "
-        "and lab Python syntax are valid."
+        f"{len(lab_python_files)} lab scripts, {lesson_route_count} lesson routes, "
+        f"{capstone_route_count} capstone routes; local refs/imports, reading metadata, "
+        "dynamic routes, stale placeholders, and lab Python syntax are valid."
     )
     return 0
 
