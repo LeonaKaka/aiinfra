@@ -22,8 +22,8 @@
       <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
       <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
       <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1 Attention</a><a class="lesson-link" href="../02-transformer/mha-gqa.html">02.2 MHA / GQA</a><a class="lesson-link" href="../02-transformer/transformer-block.html">02.3 Transformer Block</a></div>
-      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="./gpu-mental-model.html">03.1 GPU 心智模型</a><a class="lesson-link current" href="./gpu-memory.html">03.2 显存到底花在哪</a><span class="lesson-link locked">03.3 Compute / Memory / Communication</span></div>
-      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><span class="lesson-link locked">Collectives 与 NCCL</span></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="./gpu-mental-model.html">03.1 GPU 心智模型</a><a class="lesson-link current" href="./gpu-memory.html">03.2 显存到底花在哪</a><a class="lesson-link" href="./gpu-bottlenecks.html">03.3 Compute / Memory / Communication</a></div>
+      <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">Collectives 与 NCCL</a></div>
     </aside>
 
     <main class="article">
@@ -143,7 +143,7 @@ print(torch.cuda.memory_summary())</code></pre></div>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.2</span></div><h2>能把显存账算明白，再进性能瓶颈。</h2><div class="quiz-item"><div class="quiz-q">1. 7B BF16 模型权重大约 14GB，为什么不能因此断言“24GB 显卡一定能训练 7B”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">14GB 只是权重粗估。训练还要支付 gradients、optimizer states、activations、workspace/allocator 等显存；峰值通常远高于纯权重。</div></div><div class="quiz-item"><div class="quiz-q">2. activation checkpointing 和 distributed optimizer 分别主要在省哪类账？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">activation checkpointing 主要减少保存的 activations，用重计算换显存；distributed optimizer/ZeRO 类方法主要通过跨 data-parallel ranks 分片 optimizer states，并可进一步分片 gradients/parameters，减少每张卡重复保存的 model states。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 GQA 会直接影响 vLLM 的并发能力？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">标准 KV Cache 的大小与 n_kv_heads 近似成正比。KV heads 更少，每个 request 的 KV 占用更低，同样 HBM 往往能容纳更多缓存 token / 活跃请求。</div></div></section>
 
-      <a class="next-lesson muted-next" href="#"><div><small>NEXT · 03.3</small><br /><strong>Compute-bound、Memory-bound、Communication-bound：GPU 到底在等什么？</strong></div><span>→</span></a>
+      <a class="next-lesson" href="./gpu-bottlenecks.html"><div><small>NEXT · 03.3</small><br /><strong>Compute-bound、Memory-bound、Communication-bound：GPU 到底在等什么？</strong></div><span>→</span></a>
     </main>
 
     <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#ledger">显存账本</a><a href="#bytes">内存公式</a><a href="#parameters">Parameters</a><a href="#gradients">Gradients</a><a href="#optimizer">Optimizer</a><a href="#activations">Activations</a><a href="#allocator">Allocator</a><a href="#inference">KV Cache</a><a href="#oom">OOM 排查</a><a href="#bridge">连接两条路线</a><a href="#checkpoint">Checkpoint</a></aside>
