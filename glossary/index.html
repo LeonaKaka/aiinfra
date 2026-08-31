@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero Glossary：按学习路径整理 GPU、分布式训练、推理、KV Connector 常用术语。" />
+  <meta name="description" content="AI Infra from Zero Glossary：按学习路径整理 GPU、分布式训练、推理、KV Connector 常用术语，并标出容易混淆的工程语义。" />
   <title>Glossary · AI Infra from Zero</title>
   <link rel="stylesheet" href="../styles.css" />
   <link rel="stylesheet" href="../source-map/reference.css" />
@@ -20,9 +20,9 @@
       <div>
         <div class="reference-kicker">GLOSSARY · NOT A WORD LIST</div>
         <h1>术语只记一句话：<br />它解决什么问题。</h1>
-        <p>下面不是百科全书式定义，而是这门课里的“工作定义”。当你在 Megatron / vLLM 源码里撞到一个词，先用这一句恢复上下文，再回对应课程页深挖。</p>
+        <p>下面不是百科全书式定义，而是这门课里的“工作定义”。当你在 Megatron / vLLM 源码里撞到一个词，先用这一句恢复上下文，再回对应课程页深挖。遇到版本相关实现时，以当前源码为准，不把一个版本的细节背成永久定义。</p>
       </div>
-      <aside class="rule-card"><small>HOW TO USE</small><b>先找类别，再找词。</b><span>模型与张量 → GPU → 分布式 → Megatron → 推理 → vLLM / KV Connector。不要按字母顺序背。</span></aside>
+      <aside class="rule-card"><small>HOW TO USE</small><b>先找类别，再找词。</b><span>模型与张量 → GPU → 分布式 → Megatron → 推理 → vLLM / KV Connector。重点看每项最下面那句“别混淆什么”。</span></aside>
     </section>
 
     <nav class="alpha-nav">
@@ -32,57 +32,61 @@
     <section class="glossary-group" id="tensor"><h2>Tensor / Model</h2><div class="term-grid">
       <div class="term"><small>SHAPE</small><b>[B, S, H]</b><p>Batch、Sequence、Hidden 三个最常见维度；后面几乎所有切分、显存和通信分析都从 shape 开始。</p><em>先问：哪个维度被切了？</em></div>
       <div class="term"><small>GEMM</small><b>General Matrix Multiply</b><p>大多数 Linear / MLP 的核心矩阵乘；LLM 训练与 Prefill 的大量算力最终都落成 GEMM。</p><em>不要把“模型层”与“GPU kernel”混成一个层级。</em></div>
-      <div class="term"><small>ATTENTION</small><b>Q / K / V</b><p>Query 用来查询历史，Key 用来匹配，Value 提供被聚合的信息；KV Cache 保存的是历史 token 的 K/V。</p><em>Decode 时新 token 的 Q 是新的，历史 K/V 可以复用。</em></div>
-      <div class="term"><small>GQA</small><b>Grouped-Query Attention</b><p>多个 Q heads 共享更少的 KV heads，用较小 KV Cache 换取近似的注意力能力。</p><em>影响 KV Cache 大小，也影响 TP / KV layout。</em></div>
+      <div class="term"><small>ATTENTION</small><b>Q / K / V</b><p>Query 表示当前查询，Key 用来匹配，Value 提供被聚合的信息；自回归推理的 KV Cache 保存历史 token 的 K/V。</p><em>概念上 Q/K/V 分开，高性能实现可能把 QKV projection 融合。</em></div>
+      <div class="term"><small>GQA</small><b>Grouped-Query Attention</b><p>多个 Q heads 共享更少的 KV heads，用更窄的 K/V 表示降低 KV Cache 与 KV 数据移动成本。</p><em>影响 KV Cache 大小，也会影响 TP / KV layout；不要默认 K/V heads 与 Q heads 一样多。</em></div>
     </div></section>
 
     <section class="glossary-group" id="gpu"><h2>GPU Systems</h2><div class="term-grid">
-      <div class="term"><small>HBM</small><b>High Bandwidth Memory</b><p>GPU 主显存。容量决定“塞不塞得下”，带宽常决定 Decode / memory-bound kernel 能跑多快。</p><em>容量和带宽是两个不同问题。</em></div>
-      <div class="term"><small>KERNEL</small><b>CUDA kernel</b><p>真正被 GPU 执行的一段并行程序。一个 PyTorch op 可能触发一个或多个 kernel。</p><em>Python function 不等于一次 GPU kernel。</em></div>
-      <div class="term"><small>COMPUTE BOUND</small><b>算力受限</b><p>瓶颈主要在数学运算吞吐，例如大型 GEMM 已经把 Tensor Cores 吃满。</p><em>加带宽不一定有用。</em></div>
-      <div class="term"><small>MEMORY BOUND</small><b>带宽受限</b><p>GPU 大量时间在搬数据而不是做算术；Decode 小 batch 常更容易落到这里。</p><em>这也是 KV Cache 工程重要的原因。</em></div>
+      <div class="term"><small>DEVICE MEMORY / VRAM</small><b>GPU 可直接访问的主设备内存</b><p>权重、activation、KV Cache 等通常常驻这里。VRAM 常被当作 GPU 显存的泛称，但它不指定具体物理内存技术。</p><em>“GPU 显存”是角色；HBM / GDDR 是具体实现。</em></div>
+      <div class="term"><small>HBM</small><b>High Bandwidth Memory</b><p>一种高带宽显存技术，常见于数据中心 GPU / AI 加速器。它不是所有 GPU device memory 的通用名称。</p><em>消费级 GPU 很多使用 GDDR；先确认具体硬件再谈带宽。</em></div>
+      <div class="term"><small>GDDR</small><b>Graphics Double Data Rate memory</b><p>另一类常见 GPU 显存技术，很多消费级/工作站显卡使用它。容量、带宽与 HBM 产品线不同。</p><em>不能因为代码写着 <code>cuda</code> 就假设显存一定是 HBM。</em></div>
+      <div class="term"><small>KERNEL</small><b>CUDA kernel</b><p>真正被 GPU 执行的一段并行程序。一个 PyTorch op 可能触发一个或多个 kernel，也可能由库调用走融合路径。</p><em>Python function 不等于一次 GPU kernel。</em></div>
+      <div class="term"><small>COMPUTE BOUND</small><b>算力受限</b><p>瓶颈主要在数学运算吞吐，例如大型 GEMM 已经把主要计算单元吃满。</p><em>加显存带宽不一定有用。</em></div>
+      <div class="term"><small>MEMORY BOUND</small><b>数据移动/带宽受限</b><p>GPU 大量时间花在取数和写回，而不是算术；Decode 小 batch 常更容易接近这一类瓶颈。</p><em>“显存够用”和“显存带宽够快”是两个问题。</em></div>
     </div></section>
 
     <section class="glossary-group" id="distributed"><h2>Distributed</h2><div class="term-grid">
-      <div class="term"><small>RANK</small><b>进程编号</b><p>分布式进程在某个 process group 里的身份。global rank 与 TP/DP/PP group rank 可能不同。</p><em>先问“在哪个 group 里的 rank”。</em></div>
-      <div class="term"><small>ALL-REDUCE</small><b>聚合后每个 rank 都拿到结果</b><p>典型用途是 DP 梯度同步，或 Row Parallel 输出求和。</p><em>通信结果是 replicated。</em></div>
-      <div class="term"><small>ALL-GATHER</small><b>把各 rank 的 shard 拼回来</b><p>每个 rank 提供一块，最后大家都得到完整结果。</p><em>常见代价是临时显存上升。</em></div>
-      <div class="term"><small>REDUCE-SCATTER</small><b>先聚合，再把结果切开</b><p>非常适合“结果本来就不需要每个 rank 都完整保存”的场景，例如 sharded optimizer / sequence parallel。</p><em>可以看成 all-reduce 的“只留自己那片”。</em></div>
-      <div class="term"><small>ALL-TO-ALL</small><b>每个 rank 给每个 rank 发不同数据</b><p>MoE token dispatch 的典型通信模式，因为不同 token 会被路由到不同 expert。</p><em>比 all-reduce 更依赖流量分布与负载均衡。</em></div>
-      <div class="term"><small>NCCL</small><b>NVIDIA Collective Communications Library</b><p>GPU 集群里常用的 collective / P2P 通信库，PyTorch distributed 与 Megatron 都大量依赖它。</p><em>NCCL 不是网络硬件本身。</em></div>
+      <div class="term"><small>RANK</small><b>进程在某个通信域中的编号</b><p>global rank 与 TP/DP/PP/CP/EP group 内的 rank 可能不同；同一个进程也可能同时属于多个 process group。</p><em>看到 rank 先问：“在哪个 group 里？”</em></div>
+      <div class="term"><small>ALL-REDUCE</small><b>聚合后每个 rank 都拿到结果</b><p>典型用途是普通 DP 梯度同步，或不启用 sequence-parallel output sharding 时的 Row Parallel partial-output 求和。</p><em>通信结果是 replicated；具体算子不必永远使用它。</em></div>
+      <div class="term"><small>ALL-GATHER</small><b>把各 rank 的 shard 拼回来</b><p>每个 rank 提供一块，最后参与者得到拼接后的完整结果。</p><em>完整结果会提高瞬时数据量/显存压力。</em></div>
+      <div class="term"><small>REDUCE-SCATTER</small><b>聚合后只保留各自 shard</b><p>适合“数学上需要归约，但结果不需要在每个 rank 完整复制”的场景，例如 distributed optimizer 与 sequence parallel。</p><em>语义上同时做 reduction + sharding，不只是“更快的 all-reduce”。</em></div>
+      <div class="term"><small>ALL-TO-ALL</small><b>每个 rank 给不同 rank 发不同数据</b><p>MoE token dispatch 的典型模式，因为不同 token 会被路由到不同 expert。</p><em>流量可以高度不均匀，负载均衡比单纯总字节数更重要。</em></div>
+      <div class="term"><small>NCCL</small><b>NVIDIA Collective Communications Library</b><p>GPU 系统里常用的 collective / P2P 通信库，PyTorch distributed 与 Megatron 大量依赖它。</p><em>NCCL 是通信软件库，不是 NVLink、InfiniBand 或以太网本身。</em></div>
     </div></section>
 
     <section class="glossary-group" id="training"><h2>Megatron / Training</h2><div class="term-grid">
-      <div class="term"><small>DP</small><b>Data Parallel</b><p>每个 rank 有模型副本，吃不同数据，再同步梯度。</p><em>主要切 batch，不切单个 layer 的权重。</em></div>
-      <div class="term"><small>TP</small><b>Tensor Parallel</b><p>把一个 layer 内的大矩阵按维度切到多张 GPU，让单层也能并行和分摊显存。</p><em>代价是 layer 内出现 collective。</em></div>
-      <div class="term"><small>PP</small><b>Pipeline Parallel</b><p>把不同层放到不同 stage，通过 microbatch 让多个 stage 同时工作。</p><em>核心敌人是 pipeline bubble。</em></div>
-      <div class="term"><small>SP</small><b>Sequence Parallel</b><p>在 TP 基础上进一步减少某些 activation 的复制，让 sequence 相关张量分片保存。</p><em>常与 reduce-scatter / all-gather 配对。</em></div>
-      <div class="term"><small>CP</small><b>Context Parallel</b><p>针对长上下文，把 sequence/context 维度的 attention 工作和状态分到多 GPU。</p><em>目标不是一般 activation，而是长 context 的 attention 成本。</em></div>
-      <div class="term"><small>EP</small><b>Expert Parallel</b><p>MoE 的 experts 分散在不同 rank，token 按 router 结果跨 rank dispatch。</p><em>通常会引入 all-to-all。</em></div>
-      <div class="term"><small>1F1B</small><b>One Forward One Backward</b><p>Pipeline steady state 里交替做一个 microbatch forward 与一个 backward，以降低 bubble / activation 峰值。</p><em>这是调度策略，不是新的并行维度。</em></div>
-      <div class="term"><small>DISTRIBUTED OPTIMIZER</small><b>优化器状态分片</b><p>让 DP ranks 不再各自保存完整 optimizer state / grad buffer，从而显著降低显存复制。</p><em>与 ZeRO 思路相近，但要看具体实现细节。</em></div>
+      <div class="term"><small>DP</small><b>Data Parallel</b><p>不同 replica 处理不同数据，再让模型更新保持一致。</p><em>主要分数据；单层权重是否再切由 TP/EP 等其它维度决定。</em></div>
+      <div class="term"><small>TP</small><b>Tensor Parallel</b><p>把一个 layer 内的大矩阵/计算按维度分给多个 ranks，让单层也能分摊参数和 GEMM。</p><em>collective 的位置取决于相邻算子和是否启用 SP，不能背成“每层一次 all-reduce”。</em></div>
+      <div class="term"><small>PP</small><b>Pipeline Parallel</b><p>把不同层放到不同 stage，通过 microbatch 让多个 stage 流水工作。</p><em>核心问题是 stage 间依赖、bubble 与 activation/gradient P2P。</em></div>
+      <div class="term"><small>SP</small><b>Sequence Parallel</b><p>在 TP group 内沿 sequence 维分片一部分原本会重复的 activation，并把 all-gather / reduce-scatter 放到合适边界。</p><em>它主要减少 TP 区域之间的 activation replication，不等于把 Attention 本身做 context parallel。</em></div>
+      <div class="term"><small>CP</small><b>Context Parallel</b><p>让 Attention 也沿 context/sequence 维跨 ranks 工作；local Q 需要通过通信获得其它 context chunks 的 K/V 信息。</p><em>Megatron 当前可选 p2p ring、all_gather、a2a、a2a+p2p 等通信方式，不要把 CP 永久等同于 ring。</em></div>
+      <div class="term"><small>EP</small><b>Expert Parallel</b><p>MoE 的 experts 分布在不同 ranks，router 决定 token 去哪个 expert，再完成 dispatch、expert compute 和 combine。</p><em>All-to-All 很典型，但 Megatron 也有 allgather / flex 等 dispatcher；EP 不等于“固定只能 A2A”。</em></div>
+      <div class="term"><small>1F1B</small><b>One Forward One Backward</b><p>Pipeline steady state 里交替推进 forward / backward microbatch，降低 bubble 与 activation 峰值。</p><em>这是 pipeline schedule，不是新的并行维度。</em></div>
+      <div class="term"><small>DISTRIBUTED OPTIMIZER</small><b>沿 DP 域分片训练状态与更新责任</b><p>每个 DP rank 只负责一部分 reduced gradients、main parameters / optimizer states 的更新范围，再通过参数同步恢复下一轮需要的一致模型视图。</p><em>与 ZeRO 思路相关，但具体哪些 bytes 被 shard、何时 all-gather 要看 Megatron 当前实现与 dtype。</em></div>
     </div></section>
 
     <section class="glossary-group" id="inference"><h2>Inference / vLLM</h2><div class="term-grid">
-      <div class="term"><small>PREFILL</small><b>一次处理整个 prompt</b><p>prompt token 并行进入 Transformer，通常更像大矩阵计算，主要产出首轮 hidden 与 KV Cache。</p><em>常直接影响 TTFT。</em></div>
-      <div class="term"><small>DECODE</small><b>一次生成一个新 token</b><p>每步只新增少量计算，但要持续读取历史 KV，因此经常更受 memory bandwidth / batching 影响。</p><em>常直接影响 ITL。</em></div>
-      <div class="term"><small>TTFT</small><b>Time To First Token</b><p>从请求进入系统到用户看到第一个 token 的端到端延迟。</p><em>包含 queue、Prefill、KV handoff、Decode admission 等。</em></div>
-      <div class="term"><small>ITL / TPOT</small><b>Inter-Token Latency</b><p>生成阶段相邻 token 的延迟，用来描述用户看到流式输出有多“顺”。</p><em>平均值之外还要看 p95/p99。</em></div>
-      <div class="term"><small>CONTINUOUS BATCHING</small><b>动态重组正在生成的请求</b><p>请求不用等整批一起结束；每个 step 都可以让新请求加入、旧请求退出。</p><em>它把调度变成推理性能核心。</em></div>
-      <div class="term"><small>PAGED KV</small><b>把 KV Cache 按 block 管理</b><p>请求的逻辑 token 序列不要求占一大段连续 GPU 显存，而是映射到物理 KV blocks。</p><em>类似虚拟内存思想，但不是操作系统页表本身。</em></div>
-      <div class="term"><small>PREFIX CACHE</small><b>复用已算过的前缀 KV</b><p>多个请求共享相同 prompt prefix 时，不必重复做全部 Prefill。</p><em>需要 block hash、引用计数与正确的失效逻辑。</em></div>
-      <div class="term"><small>PREEMPTION</small><b>为了资源让某请求暂时退出运行</b><p>KV block 不够或调度压力过大时，系统可能回收资源并让请求以后 resume / recompute。</p><em>会直接影响 tail latency。</em></div>
+      <div class="term"><small>PREFILL</small><b>处理 prompt tokens、建立上下文状态的阶段</b><p>大量 prompt tokens 可以并行计算，通常更偏 GEMM/compute-heavy，并产生后续 Decode 要复用的 KV。</p><em>不一定“一次吃完整个 prompt”：vLLM V1 的 chunked prefill 在可用时默认启用，可把长 prefill 拆成多个调度 chunk。</em></div>
+      <div class="term"><small>DECODE</small><b>基线自回归生成阶段</b><p>经典逐 token 模型里，每个 active sequence 每一步推进一个新 token，并反复读取历史 KV，因此容易受 memory bandwidth 与 batching 影响。</p><em>这是基础心智模型；speculative decoding 等机制可能一次接受多个 token，别把“一步一个”当成所有实现的铁律。</em></div>
+      <div class="term"><small>TTFT</small><b>Time To First Token</b><p>从请求进入系统到第一个输出 token 可见的端到端延迟。</p><em>可能包含 queue、Prefill、P/D handoff、Decode admission 等，不只是模型 forward 时间。</em></div>
+      <div class="term"><small>ITL</small><b>Inter-Token Latency</b><p>流式生成时，相邻可见 output tokens 之间的时间间隔；它天然是一组逐 token / 逐请求的延迟样本。</p><em>看交互顺滑度时要关心分布和 p95/p99，不应与 TPOT 当成同一个定义。</em></div>
+      <div class="term"><small>TPOT</small><b>Time Per Output Token</b><p>常用来概括生成阶段平均每个输出 token 的耗时；具体 benchmark 的分母和是否排除首 token 要看定义。</p><em>TPOT 是聚合指标；ITL 是相邻 token 的实际间隔，两者相关但不等价。</em></div>
+      <div class="term"><small>CONTINUOUS BATCHING</small><b>每个调度 step 动态组合活跃请求</b><p>请求不用等固定 batch 整体结束；新请求可加入，完成/抢占的请求可退出。</p><em>因此 Scheduler、token budget 与 KV capacity 会直接影响吞吐和尾延迟。</em></div>
+      <div class="term"><small>PAGED KV</small><b>把 KV Cache 按 block 管理</b><p>请求的逻辑 token 序列不要求占一大段连续 GPU device memory，而是映射到物理 KV blocks。</p><em>借鉴分页思想，但不是操作系统页表本身。</em></div>
+      <div class="term"><small>PREFIX CACHE</small><b>复用已经计算过的前缀 KV</b><p>共享相同 prefix 的请求可以跳过一部分重复 Prefill 计算。</p><em>需要正确的 block hash、引用/占用状态和失效逻辑；“命中缓存”不等于零调度成本。</em></div>
+      <div class="term"><small>PREEMPTION</small><b>KV capacity 不足时让请求暂时退出运行</b><p>vLLM V1 当前默认使用 RECOMPUTE：释放 KV 后，资源足够时重新计算被抢占请求所需状态。</p><em>不要沿用旧 V0/SWAP 心智模型；preemption 会增加端到端延迟和重复计算。</em></div>
     </div></section>
 
     <section class="glossary-group" id="kv"><h2>KV Connector / Network</h2><div class="term-grid">
-      <div class="term"><small>KV CONNECTOR</small><b>跨执行实体加载 / 保存 KV 的接口层</b><p>把 Scheduler 的“外部 KV 在哪里”与 Worker 的“怎么实际搬 KV”连接起来。</p><em>Connector 不等于某一种 transport。</em></div>
-      <div class="term"><small>P/D DISAGGREGATION</small><b>Prefill / Decode 分离</b><p>让不同实例专门做 Prefill 与 Decode，并通过 KV handoff 连接两阶段。</p><em>主要用于独立调 TTFT / ITL 与尾延迟，不会天然提高吞吐。</em></div>
-      <div class="term"><small>RDMA</small><b>Remote Direct Memory Access</b><p>让一台机器直接读写另一台机器注册好的内存区域，尽量绕开远端 CPU 的数据复制路径。</p><em>它是一类远程内存访问机制，不是单一产品名。</em></div>
-      <div class="term"><small>GPUDIRECT RDMA</small><b>NIC 直接访问 GPU memory</b><p>减少 GPU↔CPU staging，让跨节点 GPU tensor 传输更直接。</p><em>需要硬件、驱动、NIC、拓扑和软件栈共同支持。</em></div>
-      <div class="term"><small>UCX</small><b>Unified Communication X</b><p>统一多种高速 transport 的通信框架，NIXL 可以用它作为后端之一。</p><em>UCX 与 NCCL 解决的抽象层次不同。</em></div>
-      <div class="term"><small>NIXL</small><b>NVIDIA Inference Xfer Library</b><p>为 AI inference 数据传输提供 memory registration、agent / metadata、异步 transfer 等能力，vLLM NixlConnector 用它搬 KV。</p><em>在 vLLM 里还要叠加 Scheduler / Connector 协议。</em></div>
-      <div class="term"><small>HANDSHAKE</small><b>传输前交换能力与地址信息</b><p>双方确认 engine、rank、memory region、layout、compatibility 等，才能安全建立后续 transfer。</p><em>控制面成功不代表数据面一定成功。</em></div>
-      <div class="term"><small>LEASE / TTL</small><b>远端 KV 的生命周期</b><p>Producer 不能无限期占着 blocks 等 Consumer；lease / TTL 用来决定什么时候可以安全回收。</p><em>这是 correctness + capacity 问题，不只是超时参数。</em></div>
+      <div class="term"><small>KV CONNECTOR</small><b>外部 KV 的控制面 + Worker 传输接口层</b><p>把 Scheduler 的“哪些 tokens/blocks 可从外部获得”与 Worker 的“怎样实际 load / save / complete”连接起来。</p><em>Connector 不等于某一种 transport，也不只是一条 memcpy。</em></div>
+      <div class="term"><small>P/D DISAGGREGATION</small><b>Prefill / Decode 分离</b><p>让不同实例专门处理 Prefill 与 Decode，再通过 KV handoff 衔接两个阶段。</p><em>核心价值是资源隔离和 TTFT/ITL 独立调优；不会天然提高总吞吐。</em></div>
+      <div class="term"><small>RDMA</small><b>Remote Direct Memory Access</b><p>让一台机器直接访问另一台机器预先注册的内存区域，减少远端 CPU 参与的数据路径。</p><em>它是一类远程内存访问机制，不是单一产品名。</em></div>
+      <div class="term"><small>GPUDIRECT RDMA</small><b>让 NIC 数据路径直接触达 GPU memory</b><p>减少经 host staging 的额外拷贝，使跨节点 GPU tensor / KV 传输更直接。</p><em>需要 GPU、NIC、拓扑、驱动与软件栈共同支持；有 RDMA NIC 不代表自动拥有 GPUDirect RDMA。</em></div>
+      <div class="term"><small>UCX</small><b>Unified Communication X</b><p>统一多种高速 transport 的通信框架，NIXL 可以使用它作为传输后端之一。</p><em>UCX 与 NCCL 的抽象层次和使用模式不同。</em></div>
+      <div class="term"><small>NIXL</small><b>NVIDIA Inference Xfer Library</b><p>为 inference data transfer 提供 agent metadata、memory registration、异步 transfer 等能力；vLLM NixlConnector 在其上再实现 request/KV 协议。</p><em>NIXL 解决数据传输基础设施，不替 vLLM Scheduler 决定 request 生命周期。</em></div>
+      <div class="term"><small>PULL / PUSH</small><b>READ-based 与 WRITE-based KV transfer mode</b><p>Pull 由接收侧发起读取，Push 由发送侧写向对端。当前 vLLM NIXL 会把 transfer mode 纳入兼容性检查，因为两种协议不能混着握手。</p><em>“谁拥有 KV”与“谁发起数据动作”是两个不同问题。</em></div>
+      <div class="term"><small>HANDSHAKE</small><b>传输前交换兼容性与远端 agent / memory 信息</b><p>双方先确认协议版本、模型/KV 相关兼容因素与远端 transfer metadata，再建立后续数据路径。</p><em>握手成功只说明控制面允许继续，不代表某次实际 transfer 已完成。</em></div>
+      <div class="term"><small>LEASE / TTL</small><b>远端 KV blocks 的有限生命周期</b><p>Producer 不能在 Consumer 仍可能读取时提前 free，也不能在对端失联后永久 pin 住 blocks；heartbeat、completion 与 expiry 一起解决这两个方向的风险。</p><em>跨进程/节点时钟不能随便直接比较本地 <code>perf_counter()</code> deadline，需要显式的时钟/TTL 处理。</em></div>
     </div></section>
 
     <footer class="reference-footer"><a href="../source-map/index.html">← Source Map</a><a href="../index.html#roadmap">回课程地图 →</a></footer>
