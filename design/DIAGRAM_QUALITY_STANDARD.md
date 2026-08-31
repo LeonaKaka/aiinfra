@@ -73,6 +73,7 @@ Do not mark a diagram complete after code generation alone.
 
 ## 8. Current reference implementations
 
+- `learn/04-distributed/nccl-topology.html` — logical collective contract → NCCL algorithm/transport selection → intra-node GPU fabric or cross-node GPU↔NIC/network path; keep mathematical collective semantics separate from physical topology cost and never imply GPUDirect removes topology/network cost.
 - `learn/05-megatron/tensor-parallel.html` — replicated input → two TP rank lanes → Column shards → local hidden shards → Row shards → partial outputs → SUM reduction; the no-gather boundary must not cross either rank's data path.
 - `learn/05-megatron/sequence-parallel.html` — sequence-sharded state → central all-gather → separate per-rank TP compute windows → Row-parallel partials → central reduce-scatter → local sequence-sharded state; collective boundaries stay distinct from rank-local compute.
 - `learn/05-megatron/pipeline-parallel.html` — stage × time schedule with forward/backward microbatch cells, dependency-created idle holes, and warmup/steady/cooldown bands; never imply all stages synchronously switch F/B together.
@@ -94,4 +95,4 @@ Do not mark a diagram complete after code generation alone.
 - `learn/08-kv-connector/nixl-rdma.html` — side-channel handshake is visually separated from registered-memory bulk KV transfer through NIXL / UCX / RDMA layers.
 - `learn/08-kv-connector/production-pd.html` — Router + P/D queues + Prefill + pinned source KV + handoff + Decode paged KV + heartbeat + TTFT/ITL on one end-to-end production canvas.
 
-The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, ownership transitions, critical-path wait points, request-state feedback loops, cache identity vs physical ownership, and user-visible SLOs must remain visually distinct.
+The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, ownership transitions, critical-path wait points, request-state feedback loops, cache identity vs physical ownership, logical semantics vs physical execution paths, and user-visible SLOs must remain visually distinct.
