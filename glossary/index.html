@@ -20,7 +20,7 @@
       <div>
         <div class="reference-kicker">GLOSSARY · NOT A WORD LIST</div>
         <h1>术语只记一句话：<br />它解决什么问题。</h1>
-        <p>下面不是百科全书式定义，而是这门课里的“工作定义”。当你在 Megatron / vLLM 源码里撞到一个词，先用这一句恢复上下文，再回对应课程页深挖。遇到版本相关实现时，以当前源码为准，不把一个版本的细节背成永久定义。</p>
+        <p>下面不是百科全书式定义，而是这门课里的“工作定义”。当你在 Megatron / vLLM 源码里撞到一个词，先用这一句恢复上下文，再回对应课程页深挖。总站只精选跨课程反复出现、容易混淆或会影响源码阅读的核心词；完整课内术语仍以每课末尾术语表为准。遇到版本相关实现时，以当前源码为准，不把一个版本的细节背成永久定义。</p>
       </div>
       <aside class="rule-card"><small>HOW TO USE</small><b>先找类别，再找词。</b><span>模型与张量 → GPU → 分布式 → Megatron → 推理 → vLLM / KV Connector。重点看每项最下面那句“别混淆什么”。</span></aside>
     </section>
@@ -38,6 +38,7 @@
 
     <section class="glossary-group" id="gpu"><h2>GPU Systems</h2><div class="term-grid">
       <div class="term"><small>DEVICE MEMORY / VRAM</small><b>GPU 可直接访问的主设备内存</b><p>权重、activation、KV Cache 等通常常驻这里。VRAM 常被当作 GPU 显存的泛称，但它不指定具体物理内存技术。</p><em>“GPU 显存”是角色；HBM / GDDR 是具体实现。</em></div>
+      <div class="term"><small>DRAM</small><b>Dynamic Random-Access Memory</b><p>主机内存最常见的易失性存储技术之一；host staging、CPU memory 与设备注册讨论里经常会遇到。</p><em>DRAM 是存储技术，不等于“CPU 上所有 memory”的抽象角色；GPU device memory 也要看具体硬件实现。</em></div>
       <div class="term"><small>HBM</small><b>High Bandwidth Memory</b><p>一种高带宽显存技术，常见于数据中心 GPU / AI 加速器。它不是所有 GPU device memory 的通用名称。</p><em>消费级 GPU 很多使用 GDDR；先确认具体硬件再谈带宽。</em></div>
       <div class="term"><small>GDDR</small><b>Graphics Double Data Rate memory</b><p>另一类常见 GPU 显存技术，很多消费级/工作站显卡使用它。容量、带宽与 HBM 产品线不同。</p><em>不能因为代码写着 <code>cuda</code> 就假设显存一定是 HBM。</em></div>
       <div class="term"><small>KERNEL</small><b>CUDA kernel</b><p>真正被 GPU 执行的一段并行程序。一个 PyTorch op 可能触发一个或多个 kernel，也可能由库调用走融合路径。</p><em>Python function 不等于一次 GPU kernel。</em></div>
@@ -55,13 +56,17 @@
     </div></section>
 
     <section class="glossary-group" id="training"><h2>Megatron / Training</h2><div class="term-grid">
+      <div class="term"><small>SGD</small><b>Stochastic Gradient Descent</b><p>按梯度更新参数的经典优化方法；基础课用它把 autograd 产生的 gradient 与 optimizer step 接起来。</p><em>SGD 是优化算法；Data Parallel、Distributed Optimizer、ZeRO 讨论的是训练状态怎样跨 ranks 组织。</em></div>
       <div class="term"><small>DP</small><b>Data Parallel</b><p>不同 replica 处理不同数据，再让模型更新保持一致。</p><em>主要分数据；单层权重是否再切由 TP/EP 等其它维度决定。</em></div>
       <div class="term"><small>TP</small><b>Tensor Parallel</b><p>把一个 layer 内的大矩阵/计算按维度分给多个 ranks，让单层也能分摊参数和 GEMM。</p><em>collective 的位置取决于相邻算子和是否启用 SP，不能背成“每层一次 all-reduce”。</em></div>
       <div class="term"><small>PP</small><b>Pipeline Parallel</b><p>把不同层放到不同 stage，通过 microbatch 让多个 stage 流水工作。</p><em>核心问题是 stage 间依赖、bubble 与 activation/gradient P2P。</em></div>
+      <div class="term"><small>VPP</small><b>Virtual Pipeline Parallelism</b><p>一个物理 pipeline rank 承载多个模型分段，并通过更细的 interleaving 缩短部分 pipeline bubble。</p><em>VPP 是 PP schedule/layout 的扩展，不是再乘一个独立的物理通信域就能解释完。</em></div>
       <div class="term"><small>SP</small><b>Sequence Parallel</b><p>在 TP group 内沿 sequence 维分片一部分原本会重复的 activation，并把 all-gather / reduce-scatter 放到合适边界。</p><em>它主要减少 TP 区域之间的 activation replication，不等于把 Attention 本身做 context parallel。</em></div>
       <div class="term"><small>CP</small><b>Context Parallel</b><p>让 Attention 也沿 context/sequence 维跨 ranks 工作；local Q 需要通过通信获得其它 context chunks 的 K/V 信息。</p><em>Megatron 当前可选 p2p ring、all_gather、a2a、a2a+p2p 等通信方式，不要把 CP 永久等同于 ring。</em></div>
       <div class="term"><small>EP</small><b>Expert Parallel</b><p>MoE 的 experts 分布在不同 ranks，router 决定 token 去哪个 expert，再完成 dispatch、expert compute 和 combine。</p><em>All-to-All 很典型，但 Megatron 也有 allgather / flex 等 dispatcher；EP 不等于“固定只能 A2A”。</em></div>
       <div class="term"><small>1F1B</small><b>One Forward One Backward</b><p>Pipeline steady state 里交替推进 forward / backward microbatch，降低 bubble 与 activation 峰值。</p><em>这是 pipeline schedule，不是新的并行维度。</em></div>
+      <div class="term"><small>ZeRO</small><b>Zero Redundancy Optimizer</b><p>通过 Data Parallel ranks 分片 optimizer state、gradient 或 parameter，减少训练状态冗余的一类方法族。</p><em>Megatron Distributed Optimizer 与 ZeRO 思路相关，但不要直接用某个 ZeRO stage 名替代当前 Megatron 的实际 buffer/collective 生命周期。</em></div>
+      <div class="term"><small>GTP</small><b>Generalized Tensor Parallelism</b><p>当前 Megatron 中新增的广义张量并行路径，带有自己的 remat、replica 与通信生命周期。</p><em>这是版本敏感的当前实现概念；不要把 GTP 当成经典 TP 的永久同义词，也不要把 <code>gtp_remat</code> 随手塞进旧的 world-size 乘法口诀。</em></div>
       <div class="term"><small>DISTRIBUTED OPTIMIZER</small><b>沿 DP 域分片训练状态与更新责任</b><p>每个 DP rank 只负责一部分 reduced gradients、main parameters / optimizer states 的更新范围，再通过参数同步恢复下一轮需要的一致模型视图。</p><em>与 ZeRO 思路相关，但具体哪些 bytes 被 shard、何时 all-gather 要看 Megatron 当前实现与 dtype。</em></div>
     </div></section>
 
@@ -73,13 +78,15 @@
       <div class="term"><small>TPOT</small><b>Time Per Output Token</b><p>常用来概括生成阶段平均每个输出 token 的耗时；具体 benchmark 的分母和是否排除首 token 要看定义。</p><em>TPOT 是聚合指标；ITL 是相邻 token 的实际间隔，两者相关但不等价。</em></div>
       <div class="term"><small>CONTINUOUS BATCHING</small><b>每个调度 step 动态组合活跃请求</b><p>请求不用等固定 batch 整体结束；新请求可加入，完成/抢占的请求可退出。</p><em>因此 Scheduler、token budget 与 KV capacity 会直接影响吞吐和尾延迟。</em></div>
       <div class="term"><small>PAGED KV</small><b>把 KV Cache 按 block 管理</b><p>请求的逻辑 token 序列不要求占一大段连续 GPU device memory，而是映射到物理 KV blocks。</p><em>借鉴分页思想，但不是操作系统页表本身。</em></div>
-      <div class="term"><small>PREFIX CACHE</small><b>复用已经计算过的前缀 KV</b><p>共享相同 prefix 的请求可以跳过一部分重复 Prefill 计算。</p><em>需要正确的 block hash、引用/占用状态和失效逻辑；“命中缓存”不等于零调度成本。</em></div>
+      <div class="term"><small>APC / PREFIX CACHE</small><b>Automatic Prefix Caching</b><p>用 prefix hash identity 复用已经计算过的 KV，减少共享前缀的重复 Prefill。</p><em>普通 full-attention 路径可先用“完整 hash block 命中”建立心智模型；当前 hybrid full-attention + Mamba <code>align</code> 已存在 fine-grained partial-hit 例外，不能把完整 physical block 命中当全局不变量。</em></div>
       <div class="term"><small>PREEMPTION</small><b>KV capacity 不足时让请求暂时退出运行</b><p>vLLM V1 当前默认使用 RECOMPUTE：释放 KV 后，资源足够时重新计算被抢占请求所需状态。</p><em>不要沿用旧 V0/SWAP 心智模型；preemption 会增加端到端延迟和重复计算。</em></div>
     </div></section>
 
     <section class="glossary-group" id="kv"><h2>KV Connector / Network</h2><div class="term-grid">
       <div class="term"><small>KV CONNECTOR</small><b>外部 KV 的控制面 + Worker 传输接口层</b><p>把 Scheduler 的“哪些 tokens/blocks 可从外部获得”与 Worker 的“怎样实际 load / save / complete”连接起来。</p><em>Connector 不等于某一种 transport，也不只是一条 memcpy。</em></div>
       <div class="term"><small>P/D DISAGGREGATION</small><b>Prefill / Decode 分离</b><p>让不同实例专门处理 Prefill 与 Decode，再通过 KV handoff 衔接两个阶段。</p><em>核心价值是资源隔离和 TTFT/ITL 独立调优；不会天然提高总吞吐。</em></div>
+      <div class="term"><small>IOMMU</small><b>Input-Output Memory Management Unit</b><p>为设备 DMA 提供地址转换与访问隔离；GPU/NIC 直通、memory registration 与 RDMA 数据路径排障时经常需要确认这一层。</p><em>IOMMU 是地址转换/隔离硬件，不是传输协议；配置正确也不代表网络链路本身已经高效。</em></div>
+      <div class="term"><small>MTU</small><b>Maximum Transmission Unit</b><p>网络链路一次可承载的数据包大小上限；RoCE/RDMA 环境里端到端配置不一致会直接制造性能或连通性问题。</p><em>MTU 是网络参数，不决定 KV block、NIXL descriptor 或 application chunk 的逻辑大小。</em></div>
       <div class="term"><small>RDMA</small><b>Remote Direct Memory Access</b><p>让一台机器直接访问另一台机器预先注册的内存区域，减少远端 CPU 参与的数据路径。</p><em>它是一类远程内存访问机制，不是单一产品名。</em></div>
       <div class="term"><small>GPUDIRECT RDMA</small><b>让 NIC 数据路径直接触达 GPU memory</b><p>减少经 host staging 的额外拷贝，使跨节点 GPU tensor / KV 传输更直接。</p><em>需要 GPU、NIC、拓扑、驱动与软件栈共同支持；有 RDMA NIC 不代表自动拥有 GPUDirect RDMA。</em></div>
       <div class="term"><small>UCX</small><b>Unified Communication X</b><p>统一多种高速 transport 的通信框架，NIXL 可以使用它作为传输后端之一。</p><em>UCX 与 NCCL 的抽象层次和使用模式不同。</em></div>
