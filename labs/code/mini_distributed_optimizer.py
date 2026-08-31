@@ -40,14 +40,14 @@ def reduce_scatter_average(full_grad: torch.Tensor, world_size: int) -> torch.Te
     if full_grad.numel() % world_size != 0:
         raise ValueError("parameter count must be divisible by WORLD_SIZE")
     shard = torch.empty(full_grad.numel() // world_size, device=full_grad.device, dtype=full_grad.dtype)
-    dist.reduce_scatter_tensor(shard, full_grad.contiguous(), op=dist.ReduceOp.SUM)
+    dist.reduce_scatter_single(shard, full_grad.contiguous(), op=dist.ReduceOp.SUM)
     shard.div_(world_size)
     return shard
 
 
 def all_gather_flat(shard: torch.Tensor, world_size: int) -> torch.Tensor:
     full = torch.empty(shard.numel() * world_size, device=shard.device, dtype=shard.dtype)
-    dist.all_gather_into_tensor(full, shard.contiguous())
+    dist.all_gather_single(full, shard.contiguous())
     return full
 
 
