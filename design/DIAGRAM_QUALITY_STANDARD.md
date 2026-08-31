@@ -74,6 +74,8 @@ Do not mark a diagram complete after code generation alone.
 ## 8. Current reference implementations
 
 - `learn/05-megatron/tensor-parallel.html` — replicated input → two TP rank lanes → Column shards → local hidden shards → Row shards → partial outputs → SUM reduction; the no-gather boundary must not cross either rank's data path.
+- `learn/05-megatron/sequence-parallel.html` — sequence-sharded state → central all-gather → separate per-rank TP compute windows → Row-parallel partials → central reduce-scatter → local sequence-sharded state; collective boundaries stay distinct from rank-local compute.
+- `learn/05-megatron/pipeline-parallel.html` — stage × time schedule with forward/backward microbatch cells, dependency-created idle holes, and warmup/steady/cooldown bands; never imply all stages synchronously switch F/B together.
 - `learn/06-llm-inference/kv-cache.html` — autoregressive loop + one attention layer + persistent KV + cache growth.
 - `learn/07-vllm/kv-cache-manager.html` — logical blocks + block table + BlockPool + scattered physical KV + append rule.
 - `learn/07-vllm/model-runner-paged-attention.html` — separate KV write lane and paged-attention read lane; block-table selection stays visually distinct from data movement.
@@ -83,4 +85,4 @@ Do not mark a diagram complete after code generation alone.
 - `learn/08-kv-connector/nixl-rdma.html` — side-channel handshake is visually separated from registered-memory bulk KV transfer through NIXL / UCX / RDMA layers.
 - `learn/08-kv-connector/production-pd.html` — Router + P/D queues + Prefill + pinned source KV + handoff + Decode paged KV + heartbeat + TTFT/ITL on one end-to-end production canvas.
 
-The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, and user-visible SLOs must remain visually distinct.
+The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, and user-visible SLOs must remain visually distinct.
