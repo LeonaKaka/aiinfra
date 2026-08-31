@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../../lesson.css" />
   <link rel="stylesheet" href="./megatron.css" />
   <link rel="stylesheet" href="./context-parallel.css" />
+  <link rel="stylesheet" href="./megatron-diagrams.css" />
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -33,9 +34,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Context Parallel</span></div>
       <div class="lesson-kicker"><span>LESSON 05.6 · MEGATRON</span><span>约 65 min</span></div>
       <h1>Context Parallel：当 sequence 长到一张 GPU 连 Attention activation 都放不下。</h1>
-      <p class="dek">Sequence Parallel 已经在 LayerNorm、dropout、residual 等区域把 tokens 分着放，但 Attention 仍然需要跨 token 的全局 context。Context Parallel 再往前一步：让不同 ranks 负责不同 sequence chunks，连 Attention 本身也跨 chunks 并行；至于 chunks 怎样交换，并不只有 ring 一种实现。</p>
+      <p class="dek">Sequence Parallel 已经在 LayerNorm、dropout、residual 等区域把 tokens 分着放，但 Attention 仍然需要跨 token 的全局 context。Context Parallel 再往前一步：让不同 ranks 负责不同 sequence partitions，连 Attention 本身也跨 partitions 并行；至于远端 context 怎样交换，并不只有 ring 一种实现。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 CP 和 SP 都切 sequence，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一段 query tokens。</li><li>解释为什么 local Q 仍然需要整个可见 context 的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时 ring KV exchange 的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成 ring。</li><li>知道 GQA/MQA 为什么能直接降低以 K/V 为主的数据交换量。</li><li>正确计算 dense Transformer grid 的 TP/PP/CP/DP rank 关系，并把 EP 当成另一套 expert grid 来理解。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 CP 和 SP 都切 sequence，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一部分 query tokens。</li><li>解释为什么 local Q 仍然需要整个可见 context 的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时 ring KV exchange 的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成 ring。</li><li>知道 current MCore 对 causal attention 常用 zigzag partition 做负载均衡，不能把“CP rank = 单个连续 token 区间”当成实现不变量。</li><li>知道 GQA/MQA 为什么能直接降低以 K/V 为主的数据交换量。</li><li>正确计算 dense Transformer grid 的 TP/PP/CP/DP rank 关系，并把 EP 当成另一套 expert grid 来理解。</li></ul></div>
 
       <section class="article-section" id="problem">
         <div class="section-no">01 · LONG CONTEXT CHANGES THE MEMORY SCALE</div>
@@ -47,25 +48,28 @@
 
       <section class="article-section" id="split">
         <div class="section-no">02 · CP SPLITS THE NETWORK INPUT AND ACTIVATIONS</div>
-        <h2>CP=2：一条 8K sequence，每个 CP rank 先只处理 4K tokens。</h2>
-        <div class="cp-ranks"><div class="cp-rank"><small>CP RANK 0</small><b>local sequence chunk A</b><code>tokens 0…4095</code></div><div class="cp-rank"><small>CP RANK 1</small><b>local sequence chunk B</b><code>tokens 4096…8191</code></div></div>
-        <p>Linear、LayerNorm、MLP 这些没有跨 token 依赖的模块，可以直接对 local sequence chunk 工作。真正特殊的是 Attention：rank 0 的 query tokens 不能只看 chunk A；只要 causal/window mask 允许，它们还需要其它 chunks 对应的 K/V 信息。</p>
+        <h2>先用“每 rank 一部分 tokens”建立数学模型，再看 current MCore 为什么常把它做成 zigzag。</h2>
+        <p>最简单的教学图可以把 8K sequence 直接切成两个连续 4K chunks。但对 causal attention 来说，越靠后的 query 通常能看到越长的 prefix；如果简单连续切，后半段 rank 的 attention 工作会更重。当前 MCore 的常见 per-sequence 路径会先切成 <code>2 × CP</code> 个等长 chunks，再做 zigzag 分配。</p>
+        <div class="cp-ranks"><div class="cp-rank"><small>CP=2 · RANK 0</small><b>chunk 0 + chunk 3</b><code>early + late tokens</code></div><div class="cp-rank"><small>CP=2 · RANK 1</small><b>chunk 1 + chunk 2</b><code>middle partitions</code></div></div>
+        <p>也就是说，<strong>CP 的 invariant 是“每个 rank 只负责 sequence 的一部分”</strong>，不是“每个 rank 永远拿一个连续区间”。具体 partition 还会随 packed sequence、hybrid CP、contiguous CP 等路径变化。</p>
         <div class="concept-note"><p><strong>CP 的难点不是 split 本身。</strong>难点是怎样让 local Q 获得正确的 global-context K/V，同时不把每张卡重新撑成“持有完整 sequence 的单卡 Attention”。</p></div>
+        <div class="source-note">当前 <code>get_batch_on_this_cp_rank()</code> 会在 per-sequence zigzag、per-document zigzag、hybrid CP 与 contiguous CP 等路径间分派；per-sequence zigzag 的源码例子明确写着 CP=2 时 <code>(chunk0, chunk3) → GPU0</code>、<code>(chunk1, chunk2) → GPU1</code>。</div>
       </section>
 
       <section class="article-section" id="qkv">
         <div class="section-no">03 · LOCAL Q, GLOBAL-CONTEXT KV</div>
-        <h2>每张 GPU 保留自己的 Q chunk，但要通过 CP 通信获得其它 context chunks 的 K/V 信息。</h2>
-        <div class="attention-local"><div><small>LOCAL QUERY</small><b>Q₀ for chunk A</b><code>[S/CP, heads, d]</code></div><span>attends to →<br/>visible context KV</span><div><small>KV CONTEXT</small><b>K/V from A + B + ...</b><code>stream / gather / redistribute</code></div></div>
+        <h2>每张 GPU 保留自己的 Q partition，但要通过 CP 通信获得其它 context partitions 的 K/V 信息。</h2>
+        <div class="attention-local"><div><small>LOCAL QUERY</small><b>Qlocal</b><code>~ [S/CP, heads, d]</code></div><span>attends to →<br/>visible context KV</span><div><small>KV CONTEXT</small><b>local + remote partitions</b><code>stream / gather / redistribute</code></div></div>
         <p>最容易理解的教学版是先 all-gather K/V，再算 attention。它很直观，但会让每个 rank 临时拿到更大的 K/V view。另一类做法是流式交换 K/V；还有 Ulysses 风格的 A2A 重排。<strong>这些是不同通信算法，都可以服务同一个 CP 数学目标。</strong></p>
       </section>
 
       <section class="article-section" id="ring">
         <div class="section-no">04 · P2P MODE: RING KV EXCHANGE</div>
-        <h2>当 <code>cp_comm_type='p2p'</code> 时，可以把 K/V 一块块沿 ring 流过来。</h2>
-        <div class="kv-ring"><div class="kv-ring-head"><small>CP=4 · P2P MODE · ONE RANK'S VIEW</small><small>local Q stays; KV chunks rotate</small></div><div class="kv-rounds"><div class="kv-round active"><small>ROUND 0</small><b>local KV₀</b><span>Q₀ × KV₀</span></div><div class="kv-round"><small>ROUND 1</small><b>receive KV₁</b><span>Q₀ × KV₁</span></div><div class="kv-round"><small>ROUND 2</small><b>receive KV₂</b><span>Q₀ × KV₂</span></div><div class="kv-round"><small>ROUND 3</small><b>receive KV₃</b><span>Q₀ × KV₃</span></div></div></div>
-        <p>这个模式的直觉是：本地 Q 不动，K/V chunks 轮转；收到一块就消费一块，而不是要求长期常驻全部 K/V。Backward 还要处理对应的 K/V gradient 聚合与分片。它是理解 CP 最好的第一张图，但不是 CP 的定义本身。</p>
-        <div class="source-note">官方说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/context_parallel.html">Megatron Core · Context Parallel</a>；当前配置中的具体通信模式见 <code>TransformerConfig.cp_comm_type</code>。</div>
+        <h2><code>cp_comm_type='p2p'</code>：Q 留在本地，KV 沿 ring 流动；每收到一块，就把它并入本地 attention 结果。</h2>
+        <p>下面画的是<strong>逻辑数据流</strong>：四个 CP ranks 各自保留 local Q 与 attention accumulator，只把当前 K/V partition 传给下一个 rank。Rank 0 的例子里，KV₀、KV₃、KV₂、KV₁ 依次到达；实际哪些 token pair 需要计算、每轮工作量多少，仍由 causal/window mask 与具体 CP partition 决定。</p>
+        <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>CONTEXT PARALLEL · CP=4</span><span>P2P ring · logical KV movement</span></div><img class="megatron-core-svg" src="./context-parallel-ring.svg" alt="Context Parallel P2P ring：四个 CP ranks 的 Query 保持本地，KV partition 沿环形拓扑轮转；每个 rank 收到远端 KV 后用本地 Query 计算并更新数值稳定的 attention accumulator。下方展示 rank 0 跨四轮看到不同 KV partitions 的逻辑过程。" /></div>
+        <div class="megatron-core-takeaway"><strong>Ring 的核心不是“把完整 KV gather 到每张卡”。</strong>它让 local Q 保持原地，远端 K/V 逐块经过；attention kernel 对每块做局部贡献并用稳定的分块 softmax/accumulation 逻辑合并，因此完整 context 的数学结果可以在不长期常驻完整 K/V 的情况下得到。</div>
+        <div class="source-note">当前 <code>TransformerConfig.cp_comm_type</code> 对 <code>p2p</code> 的源码说明仍是：在 ring topology 中交换 KV chunks，P2P 为异步通信，并可与 attention compute overlap。</div>
       </section>
 
       <section class="article-section" id="overlap">
@@ -85,51 +89,51 @@
       <section class="article-section" id="gqa">
         <div class="section-no">07 · GQA / MQA CAN REDUCE KV TRAFFIC</div>
         <h2>K/V heads 越少，每个 token 的 K/V representation 越窄。</h2>
-        <p>02.2 已经学过 GQA：很多 Q heads 共享较少的 KV heads。对于以 K/V exchange 为主的 CP 模式，这会减少每个 context chunk 需要搬的 K/V bytes；具体收益还受 attention backend、TP/CP layout 和通信算法影响。</p>
+        <p>02.2 已经学过 GQA：很多 Q heads 共享较少的 KV heads。对于以 K/V exchange 为主的 CP 模式，这会减少每个 context partition 需要搬的 K/V bytes；具体收益还受 attention backend、TP/CP layout 和通信算法影响。</p>
         <div class="gqa-traffic"><div><small>MHA</small><b>Nkv = Nq</b><span>KV 最宽。</span></div><div><small>GQA</small><b>Nkv &lt; Nq</b><span>共享 KV heads，K/V 更窄。</span></div><div><small>MQA</small><b>Nkv = 1</b><span>KV 最窄，但模型质量与实现权衡由架构决定。</span></div></div>
         <div class="concept-note"><p><strong>这条线以后会直接通向 vLLM KV Connector。</strong>训练 CP 和推理 KV transfer 的协议不同，但都必须先从 KV tensor 的 shape 计算真实 bytes。</p></div>
       </section>
 
       <section class="article-section" id="groups">
         <div class="section-no">08 · CP GROUPS ARE ORTHOGONAL TO DENSE TP</div>
-        <h2>TP=4、CP=2 时，同一个 dense Transformer grid 可以看成 4 个 TP coordinates × 2 个 context chunks。</h2>
-        <p>用 8 GPU 直觉图：GPU0–3 处理一个 sequence chunk，GPU4–7 处理另一个；对应 CP peers 是相同 TP coordinate 的 ranks：</p>
-        <div class="cp-group-map"><div class="cp-group-row"><small>TP GROUP · CHUNK A</small><span class="on">G0</span><span class="on">G1</span><span class="on">G2</span><span class="on">G3</span><span>G4</span><span>G5</span><span>G6</span><span>G7</span></div><div class="cp-group-row"><small>TP GROUP · CHUNK B</small><span>G0</span><span>G1</span><span>G2</span><span>G3</span><span class="alt">G4</span><span class="alt">G5</span><span class="alt">G6</span><span class="alt">G7</span></div><div class="cp-group-row"><small>CP PAIRS</small><span class="on">0↔4</span><span class="on">1↔5</span><span class="on">2↔6</span><span class="on">3↔7</span><span class="alt">4↔0</span><span class="alt">5↔1</span><span class="alt">6↔2</span><span class="alt">7↔3</span></div></div>
+        <h2>TP=4、CP=2 时，同一个 dense Transformer grid 可以看成 4 个 TP coordinates × 2 个 context partitions。</h2>
+        <p>用 8 GPU 的 rank-group 直觉图：GPU0–3 处在一个 CP coordinate，GPU4–7 处在另一个；对应 CP peers 是相同 TP coordinate 的 ranks。这里的 partition A/B 只是 rank-grid 标签，不表示真实 token 一定连续：</p>
+        <div class="cp-group-map"><div class="cp-group-row"><small>TP GROUP · PARTITION A</small><span class="on">G0</span><span class="on">G1</span><span class="on">G2</span><span class="on">G3</span><span>G4</span><span>G5</span><span>G6</span><span>G7</span></div><div class="cp-group-row"><small>TP GROUP · PARTITION B</small><span>G0</span><span>G1</span><span>G2</span><span>G3</span><span class="alt">G4</span><span class="alt">G5</span><span class="alt">G6</span><span class="alt">G7</span></div><div class="cp-group-row"><small>CP PAIRS</small><span class="on">0↔4</span><span class="on">1↔5</span><span class="on">2↔6</span><span class="on">3↔7</span><span class="alt">4↔0</span><span class="alt">5↔1</span><span class="alt">6↔2</span><span class="alt">7↔3</span></div></div>
         <p>坐标感很重要：dense TP 分 hidden/features；CP 分 context。一个 rank 会同时有 TP coordinate、CP coordinate、PP stage 和 DP replica 身份。</p>
-        <div class="source-note">当前 <code>parallel_state.py</code> 的 dense grid 直接用 <code>model_size = TP × PP × CP</code>（还可能包含实验性的额外轴），再由 <code>DP = world_size / model_size</code> 得到 data-parallel degree。</div>
+        <div class="source-note">当前 <code>parallel_state.py</code> 的实际 dense rank construction 仍先计算 <code>model_size = TP × PP × CP × gtp_remat</code>，再令 <code>DP = world_size / model_size</code>。</div>
       </section>
 
       <section class="article-section" id="comm-type">
         <div class="section-no">09 · CP IS NOT LIMITED TO ONE COMMUNICATION ALGORITHM</div>
         <h2>当前 Megatron 的 <code>cp_comm_type</code> 支持四类主要选择。</h2>
-        <div class="comm-modes"><div class="comm-mode recommended"><small>P2P</small><b>ring KV exchange</b><span>异步 P2P；可与 attention compute overlap。</span></div><div class="comm-mode"><small>ALL_GATHER</small><b>gather full KV</b><span>先获得完整 K/V view 再算；当前配置说明里不是异步 overlap 路径。</span></div><div class="comm-mode"><small>A2A</small><b>head / sequence redistribution</b><span>类似 Ulysses：在 CP group 内用 all-to-all 在 head 与 sequence 分布之间重排。</span></div><div class="comm-mode"><small>A2A + P2P</small><b>hierarchical CP</b><span>把两种方式组合到不同层级的拓扑上。</span></div></div>
+        <div class="comm-modes"><div class="comm-mode recommended"><small>P2P</small><b>ring KV exchange</b><span>异步 P2P；可与 attention compute overlap。</span></div><div class="comm-mode"><small>ALL_GATHER</small><b>gather full KV</b><span>先获得完整 K/V view 再算；当前源码说明里不是异步 overlap 路径。</span></div><div class="comm-mode"><small>A2A</small><b>head / sequence redistribution</b><span>类似 Ulysses：在 CP group 内用 all-to-all 在 head 与 sequence 分布之间重排。</span></div><div class="comm-mode"><small>A2A + P2P</small><b>hierarchical CP</b><span>把两种方式组合到不同层级的拓扑上。</span></div></div>
         <p><code>TransformerConfig.cp_comm_type</code> 当前明确列出 <code>p2p</code>、<code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，而且可以按 layer 指定列表。学习时先掌握数学 invariant：<strong>local Q 必须获得正确的远端 context 信息</strong>；通信算法是实现选择。</p>
-        <div class="source-note">源码配置：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/transformer_config.py">TransformerConfig.cp_comm_type</a>。</div>
+        <div class="source-note">源码配置：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/transformer_config.py">TransformerConfig.cp_comm_type</a>。当前源码同时注明 <code>p2p</code> 可异步 overlap，而 <code>all_gather</code> 不是异步 overlap 路径。</div>
       </section>
 
       <section class="article-section" id="sp-vs-cp">
         <div class="section-no">10 · SP VS CP, ONE LAST TIME</div>
         <h2>最稳的区别：Attention 本身是否保持 context partition。</h2>
-        <div class="cp-vs-sp"><div><small>SEQUENCE PARALLEL</small><b>TP 区域之间分片部分 activation</b><span>重点减少 LayerNorm、dropout、residual 等区域的 replication；进入相应 TP compute 边界时通过 gather / reduce-scatter 配合。</span></div><div><small>CONTEXT PARALLEL</small><b>Attention 本身也沿 sequence/context 分布</b><span>network input 与 attention activation 继续保持 context partition，并用 P2P/A2A/all-gather 等方式补齐跨 chunk 依赖。</span></div></div>
+        <div class="cp-vs-sp"><div><small>SEQUENCE PARALLEL</small><b>TP 区域之间分片部分 activation</b><span>重点减少 LayerNorm、dropout、residual 等区域的 replication；进入相应 TP compute 边界时通过 gather / reduce-scatter 配合。</span></div><div><small>CONTEXT PARALLEL</small><b>Attention 本身也沿 sequence/context 分布</b><span>network input 与 attention activation 继续保持 context partition，并用 P2P/A2A/all-gather 等方式补齐跨 partition 依赖。</span></div></div>
       </section>
 
       <section class="article-section" id="config">
         <div class="section-no">11 · READ THE CONFIG PHYSICALLY</div>
-        <h2>先算 dense grid，再单独理解 MoE expert grid；不要把所有缩写机械相乘。</h2>
+        <h2>先算 dense rank grid，再单独理解 MoE expert grid；不要把所有缩写机械相乘。</h2>
         <div class="code-block"><div class="code-head"><span>shell</span><span>conceptual Megatron setup</span></div><pre><code>--seq-length 32768
 --tensor-model-parallel-size 4
 --context-parallel-size 4
 --cp-comm-type p2p
 
 <span class="comment"># dense-grid intuition:</span>
-<span class="comment"># local context ≈ 32768 / 4 = 8192 tokens</span>
-<span class="comment"># dense model_size = TP × PP × CP</span>
-<span class="comment"># DP = world_size / (TP × PP × CP)</span></code></pre></div>
-        <p><strong>这里修正一个很容易写错的公式：</strong>不要把 <code>TP × PP × CP × EP × DP</code> 当成 Megatron 的统一总 GPU 公式。当前 <code>parallel_state.py</code> 对 dense Transformer grid 的基础关系是 <code>world_size = TP × PP × CP × DP</code>（忽略实验性额外轴时）。MoE 又构造 expert grid：它使用 expert tensor parallel、EP、PP 与 expert-DP 的关系。EP 会改变 expert ranks 如何组织，并不是简单在 dense grid 外再无条件乘一个独立因子。</p>
+<span class="comment"># local context capacity ≈ 32768 / 4 = 8192 tokens</span>
+<span class="comment"># current rank construction: model_size = TP × PP × CP × gtp_remat</span>
+<span class="comment"># DP = world_size / model_size</span></code></pre></div>
+        <p><strong>这里有一个值得主动防错的地方：</strong>当前 Parallelism Strategies Guide 的 overview 仍给出过一条简化的 <code>Total GPUs = TP × PP × CP × EP × DP</code> 口诀；但当前 <code>parallel_state.py</code> 的真实 rank construction 先用 dense <code>TP × PP × CP</code>（再考虑 GTP remat）确定 model size 与 DP，再另外构造 expert tensor/model/data groups。对于读源码和排 rank，这门课以实际 group construction 为准。</p>
         <div class="concept-note"><p><strong>读多维并行最安全的方法不是背乘法口诀。</strong>打开 <code>parallel_state.py</code>，分别找 dense rank generator 和 expert rank generator，然后问“这个 rank 在哪套 grid 里、每个轴的 size 是多少”。</p></div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.6</span></div><h2>确认你已经能把“数学目标”和“通信算法”分开。</h2><div class="quiz-item"><div class="quiz-q">1. CP=4 时，一个 rank 只负责 S/4 个 query tokens，为什么不能只保留本地 K/V 就结束？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 self-attention 的 local query 仍可能按 mask 规则访问其它 context chunks。必须通过某种 CP communication 获得相应 K/V 信息。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么不能说“CP 就是 Ring Attention”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Ring P2P 是当前 Megatron 的一个 CP communication mode。<code>cp_comm_type</code> 还支持 all_gather、a2a、a2a+p2p。CP 定义的是 context partition 与 attention 的跨-chunk 正确性，不是某个固定 collective。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 <code>TP×PP×CP×EP×DP</code> 不是一个可以无脑使用的总 GPU 公式？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为当前 Megatron 分别构造 dense grid 与 expert grid。dense grid 的基础 size 是 TP×PP×CP，再由 world size 得 DP；expert grid 又使用 expert-TP、EP、PP 与 expert-DP。EP 不是永远在 dense grid 外额外乘一次的独立轴。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.6</span></div><h2>确认你已经能把“数学目标”“token partition”和“通信算法”分开。</h2><div class="quiz-item"><div class="quiz-q">1. CP=4 时，一个 rank 只负责大约 S/4 个 query tokens，为什么不能只保留本地 K/V 就结束？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 self-attention 的 local query 仍可能按 mask 规则访问其它 context partitions。必须通过某种 CP communication 获得相应 K/V 信息。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么“CP rank 0 = sequence 前半段”不能当成实现不变量？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当前 MCore 为 causal attention 负载均衡常使用 zigzag partition。CP=2 的 per-sequence 例子会把 4 个 chunks 分成 (0,3) 给 rank0、(1,2) 给 rank1；packed/hybrid/contiguous CP 还可能走其它 partition 路径。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么不能说“CP 就是 Ring Attention”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Ring P2P 是当前 Megatron 的一个 CP communication mode。<code>cp_comm_type</code> 还支持 all_gather、a2a、a2a+p2p。CP 定义的是 context partition 与 attention 的跨-partition 正确性，不是某个固定 collective。</div></div><div class="quiz-item"><div class="quiz-q">4. 为什么 <code>TP×PP×CP×EP×DP</code> 不适合当成源码级 rank-construction 定律？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为当前 <code>parallel_state.py</code> 先用 dense TP×PP×CP（以及可选 GTP remat）计算 model size 和 DP，再单独构造 expert tensor/model/data groups。overview 乘法只能当高层直觉，不能替代真实 group construction。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 05.7</small><br /><strong>Expert Parallel：MoE 的 expert grid 为什么不能直接套 dense-grid 乘法口诀？</strong></div><span>→</span></div>
     </main>
