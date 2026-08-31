@@ -24,5 +24,7 @@ jobs:
         run: python scripts/normalize_navigation.py
       - name: Check lesson terminology
         run: python scripts/lesson_terms.py
+      - name: Audit unregistered acronym candidates
+        run: python scripts/audit_lesson_acronyms.py
       - name: Check core diagrams
         run: python scripts/check_diagrams.py
