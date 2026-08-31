@@ -23,7 +23,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install CPU PyTorch
-        run: python -m pip install --upgrade torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install CPU PyTorch and NumPy
+        run: |
+          python -m pip install --upgrade torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade numpy
       - name: Run all 14 CPU/Gloo labs
         run: python scripts/run_lab_smoke.py
