@@ -55,7 +55,7 @@
           <span class="order">02</span>
           <div><em class="phase-label">SYNC · TP</em><b>Tensor mappings</b><code>megatron/core/tensor_parallel/mappings.py</code></div>
           <p>把 copy / scatter / gather / reduce / reduce-scatter 与 autograd 语义对应起来。这里适合回答“forward 为什么这样通信，backward 为什么又不一样”。</p>
-          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">源码 ↗</a><a href="../labs/mini-tp-backward.html">A2 →</a></div>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">源码 ↗</a><a href="../labs/mini-tp-backward.html">A2 →</a><a href="../labs/mini-sequence-parallel.html">A8 SP →</a></div>
         </div>
         <div class="source-row">
           <span class="order">03</span>
@@ -67,13 +67,25 @@
           <span class="order">04</span>
           <div><em class="phase-label">CONTROL · PP</em><b>Pipeline schedules</b><code>megatron/core/pipeline_parallel/schedules.py</code></div>
           <p>带着 microbatch、warmup、steady state、cooldown、1F1B 去看。重点不是函数名，而是每个 stage 什么时候 forward / backward、哪里产生 bubble。</p>
-          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py">源码 ↗</a><a href="../learn/05-megatron/pipeline-parallel.html">05.4 →</a></div>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py">源码 ↗</a><a href="../learn/05-megatron/pipeline-parallel.html">05.4 →</a><a href="../labs/mini-pipeline-parallel.html">A9 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">05</span>
           <div><em class="phase-label">DATA · PP</em><b>Pipeline P2P</b><code>megatron/core/pipeline_parallel/p2p_communication.py</code></div>
           <p>把 PP timeline 与 send/recv 连起来：stage 之间传的是 activation / gradient，而不是每个 microbatch 都搬整套参数。</p>
-          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/p2p_communication.py">源码 ↗</a><a href="../learn/05-megatron/pipeline-parallel.html">05.4 →</a></div>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/p2p_communication.py">源码 ↗</a><a href="../learn/05-megatron/pipeline-parallel.html">05.4 →</a><a href="../labs/mini-pipeline-parallel.html">A9 →</a></div>
+        </div>
+        <div class="source-row">
+          <span class="order">CP</span>
+          <div><em class="phase-label">DATA · CONTEXT</em><b>Context Parallel attention</b><code>megatron/core/transformer/attention.py · parallel_state.py</code></div>
+          <p>带着“local Q 留在哪里、remote context/KV 为什么要来、global position 如何保持”去读。先掌握 05.6 的语义，再看当前具体 partition / communication strategy。</p>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py">attention ↗</a><a href="../learn/05-megatron/context-parallel.html">05.6 →</a><a href="../labs/mini-context-parallel.html">A10 →</a></div>
+        </div>
+        <div class="source-row">
+          <span class="order">EP</span>
+          <div><em class="phase-label">DATA · MOE</em><b>MoE token dispatcher</b><code>megatron/core/transformer/moe/token_dispatcher.py</code></div>
+          <p>按 route → dispatch → expert compute → combine 的生命周期读；先看 token ownership / permutation，再区分 all-gather、all-to-all 或其他 dispatcher backend。</p>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/token_dispatcher.py">源码 ↗</a><a href="../learn/05-megatron/expert-parallel.html">05.7 →</a><a href="../labs/mini-expert-parallel.html">A11 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">06</span>

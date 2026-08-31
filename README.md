@@ -23,9 +23,9 @@
 
 ## Hands-on Labs
 
-当前有 14 个可运行实验，分成两条完整主线：
+当前有 18 个可运行实验，分成两条完整主线：
 
-**Training · A1–A7**
+**Training · A1–A11**
 
 - A1 Mini Megatron TP
 - A2 Mini TP Backward
@@ -34,6 +34,10 @@
 - A5 Bucketed Async Reduce-Scatter
 - A6 TP × DP 2D Topology
 - A7 Profiler-ready Overlap
+- A8 Mini Sequence Parallel
+- A9 Mini Pipeline Parallel
+- A10 Mini Context Parallel
+- A11 Mini Expert Parallel
 
 **Inference · B1–B7**
 
@@ -86,7 +90,7 @@ vLLM / NIXL 主线：
 
 已人工验收为 lesson-native 的核心 SVG 另外由 `scripts/check_diagrams.py` 做宽度回归保护，防止重新退回“超宽小字号画布再整体缩小”的旧模式。
 
-Lab 代码或 smoke harness 变化还会触发独立的 **Lab Correctness Smoke**：在干净的 GitHub runner 上安装 CPU PyTorch，用 `torchrun` / Gloo 实际执行 A1–A7 与 B1–B7 共 14 个实验。每个实验都必须正常退出并输出自身的独立 `PASS`，否则 workflow 失败。这个检查验证 reference 数值、collective/state-machine correctness 与脚本可运行性；CPU timing 仍不被解释为 GPU、NCCL、NIXL、RDMA 或 GPUDirect 性能 benchmark。
+Lab 代码或 smoke harness 变化还会触发独立的 **Lab Correctness Smoke**：在干净的 GitHub runner 上安装 CPU PyTorch，用 `torchrun` / Gloo 实际执行 A1–A11 与 B1–B7 共 18 个实验。每个实验都必须正常退出并输出自身的独立 `PASS`，否则 workflow 失败。这个检查验证 reference 数值、collective/state-machine correctness 与脚本可运行性；CPU timing 仍不被解释为 GPU、NCCL、NIXL、RDMA 或 GPUDirect 性能 benchmark。
 
 这个轻量 CI 不会伪装成 GPU/NCCL/NIXL 性能测试；需要真实硬件才能下结论的内容，在课程和 Lab 中会显式标出。
 

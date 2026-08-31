@@ -46,6 +46,30 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_profiler_overlap.py --tr
 ```
 用 `torch.profiler` 标记 forward、W2 gradient ready、async `reduce_scatter_single`、继续 backward 与最终 wait，并导出每个 rank 的 Chrome trace。CPU/Gloo 已验证 correctness 与 range 顺序；只有 GPU/NCCL trace 出现 NCCL kernel 与 compute kernel 时间重叠时，才可以宣称真实 overlap。
 
+### Lab A8 — Mini Sequence Parallel
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_sequence_parallel.py
+```
+模拟 TP row-parallel partial output 直接通过 `reduce_scatter_single` 落成 sequence-sharded activation；局部算子后再 `all_gather_single`，与 dense `tanh(x @ W)` reference 对齐。重点是 TP layout → SP layout 的转换，而不是把 SP 简化成普通 sequence slicing。
+
+### Lab A9 — Mini Pipeline Parallel
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_pipeline_parallel.py
+```
+两个 ranks 分别拥有两段模型，按 microbatch 传 activation，backward 再传 activation gradient。实验采用最简单的 GPipe-style `F0 F1 F2 → B2 B1 B0` 教学 schedule，并明确不冒充 Megatron production 1F1B。
+
+### Lab A10 — Mini Context Parallel
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_context_parallel.py
+```
+每个 rank 的 local Q 保持本地，KV chunks 按 ring 轮转；causal mask 始终用 global token positions，最后每个 local output 与 dense causal attention 对应切片对齐。ring order 只是教学实现，不是当前 Megatron CP 的唯一算法。
+
+### Lab A11 — Mini Expert Parallel
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_expert_parallel.py
+```
+确定性 balanced router 把 token 通过 `all_to_all_single` 发给 expert owners，本地 expert compute 后 reverse all-to-all，再恢复原 token 顺序并与 reference 对齐。该实验只教学 ownership / dispatch / combine 生命周期，不模拟 capacity、dropping 或 load balancing。
+
 ## Inference Infra
 
 ### Lab B1 — Mini KV Handoff
@@ -104,4 +128,4 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_lease_expiry.py
 2. **再 system semantics**：明确每个 rank 持有什么、哪个 collective/transfer 必须发生、什么时候必须等待。
 3. **最后 performance**：只有在 workload、backend、GPU topology 与 profiler 都明确时才解释 timing。
 
-软件实验主线到 B7 已闭合。下一阶段只做有证据的硬件验证：真实 GPU/NCCL profiler overlap，以及具备对应 NIC/driver/software stack 时的 NIXL/UCX/RDMA/GPUDirect 数据面。
+软件实验现在覆盖 Training A1–A11 与 Inference B1–B7。下一阶段优先做跨机制 capstone 与有证据的硬件验证：真实 GPU/NCCL profiler overlap，以及具备对应 NIC/driver/software stack 时的 NIXL/UCX/RDMA/GPUDirect 数据面。
