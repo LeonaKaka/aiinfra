@@ -22,8 +22,11 @@ jobs:
           python-version: '3.12'
       - name: Apply content review
         run: python scripts/apply_content_foundation_review.py
-      - name: Keep implementation wording acronym-safe
-        run: sed -i 's/QK norm/Query\/Key normalization/' learn/02-transformer/transformer-block.html
+      - name: Keep position bridge concise
+        run: |
+          sed -i 's/QK norm/Query\/Key normalization/' learn/02-transformer/transformer-block.html
+          sed -i 's/真实 LLM 的 attention、mask、Rotary Position Embedding (RoPE，旋转位置编码)、RMSNorm/真实 LLM 的 attention、mask、position encoding、RMSNorm/' learn/02-transformer/transformer-block.html
+          sed -i 's/不把函数排列当永久 Application Programming Interface (API，应用程序编程接口)。/不把函数排列当永久接口定义。/' learn/02-transformer/transformer-block.html
       - name: Regenerate lesson terminology
         run: python scripts/lesson_terms.py --write
       - name: Verify terminology is stable
@@ -49,5 +52,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add learn/01-foundations/tensor.html learn/02-transformer/transformer-block.html learn/05-megatron/why-model-parallel.html
-          git commit -m "Strengthen memory and position foundations"
+          git commit -m "Refine memory and position foundations"
           git push origin HEAD:main
