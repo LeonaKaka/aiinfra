@@ -76,9 +76,10 @@ Do not mark a diagram complete after code generation alone.
 - `learn/06-llm-inference/kv-cache.html` — autoregressive loop + one attention layer + persistent KV + cache growth.
 - `learn/07-vllm/kv-cache-manager.html` — logical blocks + block table + BlockPool + scattered physical KV + append rule.
 - `learn/07-vllm/model-runner-paged-attention.html` — separate KV write lane and paged-attention read lane; block-table selection stays visually distinct from data movement.
+- `learn/08-kv-connector/why-move-kv.html` — token IDs vs computed KV state; explicitly separates the recompute-only token path from the valid state-handoff path.
 - `learn/08-kv-connector/connector-architecture.html` — scheduler control plane + worker data plane + ConnectorMetadata + remote KV transport.
 - `learn/08-kv-connector/transfer-lifecycle.html` — Scheduler / Worker / Memory swimlanes with request-level completion, layer-level readiness, and source-block lifetime on one timeline.
 - `learn/08-kv-connector/nixl-rdma.html` — side-channel handshake is visually separated from registered-memory bulk KV transfer through NIXL / UCX / RDMA layers.
 - `learn/08-kv-connector/production-pd.html` — Router + P/D queues + Prefill + pinned source KV + handoff + Decode paged KV + heartbeat + TTFT/ITL on one end-to-end production canvas.
 
-The last two are useful regression references for multi-lane infrastructure diagrams: control traffic, bulk data, memory lifetime, and user-visible SLOs must remain visually distinct.
+The last four are useful regression references for multi-lane infrastructure diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, and user-visible SLOs must remain visually distinct.
