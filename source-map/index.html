@@ -122,9 +122,9 @@
         </div>
         <div class="source-row">
           <span class="order">05</span>
-          <div><em class="phase-label">DATA · MODEL RUNNER</em><b>GPU model runner</b><code>vllm/v1/worker/gpu_model_runner.py</code></div>
-          <p>看 Scheduler 的输出怎样变成真正的 model input、attention metadata 与 KV 写入。这里是 control plane 进入 GPU data plane 的边界。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">源码 ↗</a><a href="../learn/07-vllm/model-runner-paged-attention.html">07.4 →</a></div>
+          <div><em class="phase-label">DATA · MODEL RUNNER</em><b>GPU model runner selection</b><code>gpu_worker.py → gpu/model_runner.py | gpu_model_runner.py</code></div>
+          <p>先看 <code>gpu_worker.py</code>：当前上游会根据 <code>vllm_config.use_v2_model_runner</code> 选择 V2 runner 路径或 V1 runner 路径。然后再追 SchedulerOutput 怎样变成 model input、attention metadata 与 KV 写入；不要把一个文件名背成永久入口。</p>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py">selector ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/model_runner.py">V2 ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">V1 ↗</a><a href="../learn/07-vllm/model-runner-paged-attention.html">07.4 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">06</span>
