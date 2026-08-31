@@ -21,7 +21,7 @@ jobs:
           from pathlib import Path
           path = Path('styles.css')
           text = path.read_text(encoding='utf-8')
-          anchor = 'a { color: inherit; }\n'
+          anchor = 'a { color: inherit; text-decoration: none; }\n'
           addition = '''\n:where(a, button, input, select, textarea, [tabindex]):focus-visible {\n  outline: 2px solid #315f82;\n  outline-offset: 3px;\n}\n'''
           if text.count(anchor) != 1:
               raise SystemExit(f'styles.css: expected one global link anchor, got {text.count(anchor)}')
