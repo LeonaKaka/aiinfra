@@ -56,7 +56,7 @@ print(w.grad)       <span class="comment"># tensor(-6.)</span></code></pre></div
 loss_batch_1.backward()   <span class="comment"># grad = g1</span>
 loss_batch_2.backward()   <span class="comment"># grad = g1 + g2</span>
 
-optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一个有用特性：显存放不下大 batch 时，可以用多个小 microbatch 累积梯度，再更新一次参数。以后你在 Megatron 里看到 microbatch 和 gradient accumulation，这个基础会再次出现。</p></section>
+optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一个有用特性：显存放不下大 batch 时，可以用多个小 microbatch 累积梯度，再更新一次参数。但要注意：<strong>“累积多个 microbatch”不自动等于“一次大 batch”。</strong>如果每个 microbatch 的 loss 都用 mean reduction，等大 microbatch 常见做法是先除以 accumulation steps 再 backward；如果 microbatch 大小不同，则要按 sample / token 数正确加权。否则累计梯度的整体尺度或样本权重会和一次大 batch 不同。以后你在 Megatron 里看到 microbatch 和 gradient accumulation，这个基础会再次出现。</p></section>
 
       <section class="article-section" id="optimizer"><div class="section-no">05 · OPTIMIZER IS A DIFFERENT JOB</div><h2>autograd 算出 gradient；optimizer 决定怎么利用它。</h2><p>SGD 的核心想法很简单：沿负梯度方向走一点。Adam 则会为每个参数维护关于梯度的一阶、二阶统计状态，常见地叫 <code>m</code> 和 <code>v</code>，用它们自适应调整更新。</p><div class="example-grid"><div class="example-card"><div class="cap">SGD · SIMPLE VIEW</div><p><code>parameter + gradient</code> 就能理解最基础的更新；若启用 momentum，还会多一份 momentum state。</p></div><div class="example-card"><div class="cap">ADAM · SIMPLE VIEW</div><p>除了 parameter 和 gradient，通常还会有两份与参数规模相近的状态：一阶矩 <code>m</code> 与二阶矩 <code>v</code>。</p></div></div><div class="concept-note"><p><strong>注意：</strong>实际训练的 dtype、mixed precision、master weights、optimizer 实现会改变精确显存数字。这里先建立“optimizer states 可能和参数本身一样巨大”的结构性直觉。</p></div></section>
 

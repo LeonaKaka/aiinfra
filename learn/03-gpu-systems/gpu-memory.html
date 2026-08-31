@@ -43,7 +43,7 @@
           <div class="memory-row"><b>Parameters</b><span>模型权重。训练和推理都需要，通常是最容易先估算的一类。</span><code>train + infer</code></div>
           <div class="memory-row train-only"><b>Gradients</b><span>反向传播为可训练参数产生的梯度。训练需要，普通推理不需要。</span><code>train</code></div>
           <div class="memory-row train-only"><b>Optimizer states</b><span>Adam 的一阶/二阶动量等状态，有时还会有更高精度 master weights。</span><code>train</code></div>
-          <div class="memory-row train-only"><b>Activations</b><span>forward 产生、backward 之后还要用的中间结果。大小和 batch、sequence、hidden、layer 数强相关。</span><code>mostly train</code></div>
+          <div class="memory-row"><b>Activations</b><span>forward 产生的中间结果。训练会为 backward 保留一部分；推理也会产生临时 activation，但通常不会保留 backward 所需的完整中间轨迹。</span><code>both · train-heavy</code></div>
           <div class="memory-row"><b>Temporary / workspace</b><span>算子、kernel、通信库、编译器运行时等为了执行某一步暂时申请的空间。</span><code>both</code></div>
           <div class="memory-row infer-heavy"><b>KV Cache</b><span>自回归推理为历史 token 保存的 Key / Value。随活跃请求和缓存 token 数增长。</span><code>infer</code></div>
         </div>
@@ -96,7 +96,7 @@ memory = 268,435,456 bytes
       <section class="article-section" id="activations">
         <div class="section-no">06 · ACTIVATIONS</div>
         <h2>Activation 的麻烦在于：它不只和模型大小有关，还和“这次喂多少 token”有关。</h2>
-        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用。batch 越大、sequence 越长、hidden 越宽、layer 越多，activation 的总量通常越大。</p>
+        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用；推理同样会产生 layer output、attention / MLP 中间结果等 activation，但通常只需短暂存活，不必为 backward 跨阶段保留。batch 越大、sequence 越长、hidden 越宽、layer 越多，训练时需要保存的 activation 总量通常越大。</p>
         <div class="activation-lifetime"><div><small>FORWARD</small><b>produce activations</b></div><span>→ keep some →</span><div><small>BACKWARD</small><b>reuse to compute gradients</b></div><span>→</span><div><small>AFTER USE</small><b>eligible to free/reuse</b></div></div>
         <p>这也解释了 <strong>activation checkpointing</strong> 的基本交易：forward 时少保存一些中间结果，backward 真需要时再重算。你用更多计算，换更低 activation 显存。</p>
         <div class="compare-limits"><div><small>NO CHECKPOINTING</small><b>save more</b><span>显存更高，backward 少重算</span></div><div><small>CHECKPOINTING</small><b>save less, recompute</b><span>显存更低，计算时间通常增加</span></div></div>
