@@ -1,2 +1,35 @@
 @import url('../07-vllm/vllm.css');
 @import url('./connector-layout.css');
+
+.compat-matrix {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.compat-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.32fr) 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.compat-row b {
+  font-size: 0.9rem;
+}
+
+.compat-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 760px) {
+  .compat-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}
