@@ -1,23 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 720" role="img" aria-labelledby="title desc">
+<title id="title">Context Parallel P2P KV ring</title>
+<desc id="desc">Four context-parallel ranks keep their local query partition while KV chunks rotate around a logical ring. Each rank repeatedly computes local Q against the current KV chunk and merges into a stable attention accumulator. Exact useful token pairs depend on masking and current CP token layout.</desc>
 <defs>
- <marker id="cp-g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#255b46"/></marker>
- <marker id="cp-b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#315f82"/></marker>
- <marker id="cp-p" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7d5d6f"/></marker>
+ <marker id="g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#255b46"/></marker>
+ <marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#315f82"/></marker>
+ <marker id="p" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7d5d6f"/></marker>
+ <style>
+ .sans{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.k{font-size:11px;font-weight:700;letter-spacing:1.5px;fill:#858d86}.title{font-size:22px;font-weight:750;fill:#252923}.sub{font-size:12px;fill:#697069}.label{font-size:12px;font-weight:700}.body{font-size:11px;fill:#687068}.tiny{font-size:10px;fill:#737a73}.card{fill:#fff;stroke:#cbd1ca;stroke-width:1.3}.green{fill:#eaf2ed;stroke:#bfd5c6;stroke-width:1.3}.blue{fill:#edf4f8;stroke:#c1d6e4;stroke-width:1.3}.plum{fill:#f5eef3;stroke:#dcc8d4;stroke-width:1.3}.sand{fill:#faf5ea;stroke:#e0cfad;stroke-width:1.3}.panel{fill:#fbfbf8;stroke:#c9cec7;stroke-width:1.4}.line{fill:none;stroke:#747b74;stroke-width:1.6}.dash{fill:none;stroke:#9aa199;stroke-width:1.2;stroke-dasharray:5 5}
+ </style>
 </defs>
-<rect width="960" height="720" fill="#fff"/>
-<text x="24" y="30" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7a7f78" letter-spacing="1">CONTEXT PARALLEL · P2P RING · CP = 4</text><line x1="24" y1="42" x2="936" y2="42" stroke="#ddded7"/>
-<rect x="80" y="96" width="250" height="148" rx="15" fill="#fbfcf9" stroke="#c3d4c8"/><text x="102" y="123" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46">CP RANK 0</text><text x="102" y="151" font-size="12" font-weight="700">Q₀ stays local</text><text x="102" y="172" font-size="10" fill="#687168">logical query partition</text><rect x="102" y="190" width="94" height="34" rx="7" fill="#eef4ef" stroke="#c1d4c6"/><text x="149" y="212" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#255b46">KV current</text><rect x="212" y="190" width="94" height="34" rx="7" fill="#fff" stroke="#c7c9c0"/><text x="259" y="212" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10">accum A₀</text>
-<rect x="630" y="96" width="250" height="148" rx="15" fill="#fbfcfd" stroke="#c6d3dc"/><text x="652" y="123" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82">CP RANK 1</text><text x="652" y="151" font-size="12" font-weight="700">Q₁ stays local</text><text x="652" y="172" font-size="10" fill="#65737d">logical query partition</text><rect x="652" y="190" width="94" height="34" rx="7" fill="#eaf1f6" stroke="#b8cad6"/><text x="699" y="212" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#315f82">KV current</text><rect x="762" y="190" width="94" height="34" rx="7" fill="#fff" stroke="#c7c9c0"/><text x="809" y="212" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10">accum A₁</text>
-<rect x="630" y="356" width="250" height="148" rx="15" fill="#fdfcfd" stroke="#d4c7cf"/><text x="652" y="383" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7d5d6f">CP RANK 2</text><text x="652" y="411" font-size="12" font-weight="700">Q₂ stays local</text><text x="652" y="432" font-size="10" fill="#746a70">logical query partition</text><rect x="652" y="450" width="94" height="34" rx="7" fill="#f2edf0" stroke="#d4c7cf"/><text x="699" y="472" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#7d5d6f">KV current</text><rect x="762" y="450" width="94" height="34" rx="7" fill="#fff" stroke="#c7c9c0"/><text x="809" y="472" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10">accum A₂</text>
-<rect x="80" y="356" width="250" height="148" rx="15" fill="#faf6ef" stroke="#ded1bf"/><text x="102" y="383" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7b6a3e">CP RANK 3</text><text x="102" y="411" font-size="12" font-weight="700">Q₃ stays local</text><text x="102" y="432" font-size="10" fill="#766b5b">logical query partition</text><rect x="102" y="450" width="94" height="34" rx="7" fill="#faf6ef" stroke="#ded1bf"/><text x="149" y="472" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#7b6a3e">KV current</text><rect x="212" y="450" width="94" height="34" rx="7" fill="#fff" stroke="#c7c9c0"/><text x="259" y="472" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10">accum A₃</text>
-<path d="M330 170 H630" stroke="#255b46" stroke-width="2" marker-end="url(#cp-g)"/><text x="480" y="158" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#577063">send KV →</text>
-<path d="M755 244 V356" stroke="#315f82" stroke-width="2" marker-end="url(#cp-b)"/><text x="772" y="304" font-family="ui-monospace,monospace" font-size="9" fill="#5f7180">send KV ↓</text>
-<path d="M630 430 H330" stroke="#7d5d6f" stroke-width="2" marker-end="url(#cp-p)"/><text x="480" y="448" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#74606c">← send KV</text>
-<path d="M205 356 V244" stroke="#7b6a3e" stroke-width="2" marker-end="url(#cp-p)"/><text x="124" y="304" font-family="ui-monospace,monospace" font-size="9" fill="#7b6a3e">↑ send KV</text>
-<rect x="365" y="258" width="230" height="118" rx="14" fill="#f7f7f3" stroke="#c7c9c0"/><text x="480" y="284" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#656a64">REPEAT CP−1 REMOTE ROUNDS</text><text x="480" y="311" text-anchor="middle" font-size="11" font-weight="700">receive KV chunk n</text><text x="480" y="333" text-anchor="middle" font-size="10.5" fill="#6f746d">compute local Q × KVₙ</text><text x="480" y="354" text-anchor="middle" font-size="10.5" fill="#6f746d">merge into stable attention accumulator</text>
-<text x="24" y="558" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7a7f78" letter-spacing="1">RANK 0 · LOGICAL VIEW ACROSS ROUNDS</text><line x1="24" y1="570" x2="936" y2="570" stroke="#ddded7"/>
-<g><rect x="56" y="598" width="180" height="68" rx="10" fill="#eef4ef" stroke="#c1d4c6"/><rect x="278" y="598" width="180" height="68" rx="10" fill="#fff" stroke="#c7c9c0"/><rect x="500" y="598" width="180" height="68" rx="10" fill="#fff" stroke="#c7c9c0"/><rect x="722" y="598" width="180" height="68" rx="10" fill="#fff" stroke="#c7c9c0"/>
-<g text-anchor="middle"><text x="146" y="620" font-family="ui-monospace,monospace" font-size="9" font-weight="700" fill="#255b46">ROUND 0</text><text x="146" y="642" font-size="11" font-weight="700">Q₀ × KV₀</text><text x="368" y="620" font-family="ui-monospace,monospace" font-size="9" font-weight="700" fill="#6f746d">ROUND 1</text><text x="368" y="642" font-size="11" font-weight="700">Q₀ × KV₃</text><text x="590" y="620" font-family="ui-monospace,monospace" font-size="9" font-weight="700" fill="#6f746d">ROUND 2</text><text x="590" y="642" font-size="11" font-weight="700">Q₀ × KV₂</text><text x="812" y="620" font-family="ui-monospace,monospace" font-size="9" font-weight="700" fill="#6f746d">ROUND 3</text><text x="812" y="642" font-size="11" font-weight="700">Q₀ × KV₁</text></g></g>
-<path d="M236 632 H278" stroke="#7b817b" stroke-width="1.4" marker-end="url(#cp-p)"/><path d="M458 632 H500" stroke="#7b817b" stroke-width="1.4" marker-end="url(#cp-p)"/><path d="M680 632 H722" stroke="#7b817b" stroke-width="1.4" marker-end="url(#cp-p)"/>
-<text x="56" y="694" font-family="ui-monospace,monospace" font-size="9" fill="#8a8e88">Q remains local; exact useful work per round depends on causal/window mask and CP layout · diagram shows logical KV movement</text>
+<rect width="760" height="720" fill="#fff"/>
+<text class="mono k" x="28" y="34">CONTEXT PARALLEL · P2P RING · CP=4</text>
+<text class="sans title" x="28" y="68">Q stays local; the KV context rotates through each rank</text>
+<text class="sans sub" x="28" y="91">Logical KV movement is the invariant; useful token pairs still depend on masks</text><text class="sans sub" x="28" y="108">and the current CP token layout.</text>
+<rect class="panel" x="28" y="132" width="704" height="376" rx="16"/>
+<text class="mono k" x="50" y="157">ONE LOGICAL RING ROUND</text>
+<g transform="translate(52 178)">
+ <rect class="green" width="216" height="112" rx="13"/>
+ <text class="mono label" x="18" y="26" fill="#255b46">CP RANK 0</text><text class="sans label" x="18" y="50">Q₀ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₀</text>
+</g>
+<g transform="translate(492 178)">
+ <rect class="blue" width="216" height="112" rx="13"/>
+ <text class="mono label" x="18" y="26" fill="#315f82">CP RANK 1</text><text class="sans label" x="18" y="50">Q₁ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₁</text>
+</g>
+<g transform="translate(492 370)">
+ <rect class="plum" width="216" height="112" rx="13"/>
+ <text class="mono label" x="18" y="26" fill="#7d5d6f">CP RANK 2</text><text class="sans label" x="18" y="50">Q₂ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₂</text>
+</g>
+<g transform="translate(52 370)">
+ <rect class="sand" width="216" height="112" rx="13"/>
+ <text class="mono label" x="18" y="26" fill="#7b6a3e">CP RANK 3</text><text class="sans label" x="18" y="50">Q₃ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₃</text>
+</g>
+<rect x="290" y="260" width="180" height="132" rx="14" fill="#f6f7f3" stroke="#c8cdc6"/>
+<text class="mono k" x="380" y="286" text-anchor="middle">REPEAT CP−1 REMOTE ROUNDS</text>
+<text class="sans label" x="380" y="315" text-anchor="middle">receive KV chunk n</text>
+<text class="sans body" x="380" y="340" text-anchor="middle">Q_local × KVₙ</text>
+<text class="sans body" x="380" y="362" text-anchor="middle">merge into stable attention state</text>
+<text class="mono tiny" x="380" y="381" text-anchor="middle">KV moves</text><text class="mono tiny" x="380" y="394" text-anchor="middle">Q / output stay local</text>
+<path class="line" d="M268 234 H492" marker-end="url(#g)"/><text class="mono tiny" x="380" y="223" text-anchor="middle" fill="#255b46">KV →</text>
+<path class="line" d="M600 290 V370" marker-end="url(#b)"/><text class="mono tiny" x="612" y="334" fill="#315f82">KV ↓</text>
+<path class="line" d="M492 426 H268" marker-end="url(#p)"/><text class="mono tiny" x="380" y="444" text-anchor="middle" fill="#7d5d6f">← KV</text>
+<path class="line" d="M160 370 V290" marker-end="url(#p)"/><text class="mono tiny" x="107" y="334" fill="#7b6a3e">↑ KV</text>
+<text class="mono k" x="28" y="545">RANK 0 · LOGICAL VIEW ACROSS FOUR KV CHUNKS</text>
+<rect class="panel" x="28" y="563" width="704" height="118" rx="14"/>
+<g transform="translate(48 589)">
+ <rect class="green" width="150" height="58" rx="9"/><text class="mono tiny" x="75" y="21" text-anchor="middle" fill="#255b46">ROUND 0 · local</text><text class="sans label" x="75" y="43" text-anchor="middle">Q₀ × KV₀</text>
+ <rect class="card" x="168" width="150" height="58" rx="9"/><text class="mono tiny" x="243" y="21" text-anchor="middle">ROUND 1</text><text class="sans label" x="243" y="43" text-anchor="middle">Q₀ × KV₃</text>
+ <rect class="card" x="336" width="150" height="58" rx="9"/><text class="mono tiny" x="411" y="21" text-anchor="middle">ROUND 2</text><text class="sans label" x="411" y="43" text-anchor="middle">Q₀ × KV₂</text>
+ <rect class="card" x="504" width="150" height="58" rx="9"/><text class="mono tiny" x="579" y="21" text-anchor="middle">ROUND 3</text><text class="sans label" x="579" y="43" text-anchor="middle">Q₀ × KV₁</text>
+ <path class="line" d="M150 29 H168" marker-end="url(#p)"/><path class="line" d="M318 29 H336" marker-end="url(#p)"/><path class="line" d="M486 29 H504" marker-end="url(#p)"/>
+</g>
+<text class="sans tiny" x="48" y="662">Ring order is illustrative; masked token pairs may do no useful work.</text><text class="sans tiny" x="48" y="677">Current CP partitioning can be zigzag / document-aware / hybrid / contiguous.</text>
+<text class="sans tiny" x="28" y="708">Invariant: each CP rank owns only part of context/query state; attention still needs every required K/V context.</text>
 </svg>
