@@ -53,7 +53,10 @@ Desktop target: lesson column around 760 px inside the normal three-column site 
 
 Mobile target: 390 px viewport.
 
-For dense architecture diagrams, preserve the desktop composition and allow local horizontal scrolling inside the diagram wrapper. Do not make the entire page overflow horizontally.
+- For a core diagram that does **not** need deliberate horizontal scrolling, prefer a native SVG composition close to the 760 px lesson width. Do not build a 960–1120 px canvas with 9–10 px labels and then rely on CSS scaling to make it fit; that turns secondary text into effectively 7–8 px text in the real lesson.
+- A canvas wider than the lesson column is allowed when the mechanism genuinely benefits from a wider timeline, matrix, or multi-lane architecture. In that case, preserve the desktop composition and make the **diagram wrapper** horizontally scrollable.
+- Wide diagrams must never make the whole page overflow horizontally.
+- Judge readability at the **rendered lesson width**, not only from the SVG source coordinates or an isolated full-resolution export.
 
 ## 7. Required review loop
 
@@ -73,13 +76,14 @@ Do not mark a diagram complete after code generation alone.
 
 ## 8. Current reference implementations
 
+- `learn/04-distributed/process-rank.html` — global rank / local rank / device binding / process-group identity on a native lesson-width canvas; keep process identity, local device identity, and communication-subset membership as separate layers.
 - `learn/04-distributed/collectives.html` — one fixed process group shown as BEFORE → group-level CONTRACT → AFTER for broadcast, all-reduce, all-gather, and reduce-scatter. Distinguish numeric reduction, shard collection, replication, and result sharding before mapping the same primitives into Megatron.
 - `learn/04-distributed/nccl-topology.html` — logical collective contract → NCCL algorithm/transport selection → intra-node GPU fabric or cross-node GPU↔NIC/network path; keep mathematical collective semantics separate from physical topology cost and never imply GPUDirect removes topology/network cost.
 - `learn/05-megatron/tensor-parallel.html` — replicated input → two TP rank lanes → Column shards → local hidden shards → Row shards → partial outputs → SUM reduction; the no-gather boundary must not cross either rank's data path.
 - `learn/05-megatron/sequence-parallel.html` — sequence-sharded state → central all-gather → separate per-rank TP compute windows → Row-parallel partials → central reduce-scatter → local sequence-sharded state; collective boundaries stay distinct from rank-local compute.
 - `learn/05-megatron/pipeline-parallel.html` — stage × time schedule with forward/backward microbatch cells, dependency-created idle holes, and warmup/steady/cooldown bands; never imply all stages synchronously switch F/B together.
 - `learn/05-megatron/distributed-optimizer.html` — four DP local-gradient lanes → central reduce-scatter → per-rank reduced-gradient/optimizer ownership → central parameter all-gather → synchronized model-parameter replicas; distinguish long-lived sharded optimizer state from forward-visible replicated compute parameters.
-- `learn/05-megatron/context-parallel.html` — local context ownership → P2P KV ring → per-rank attention accumulation while remote KV rotates → context output stays local; distinguish the simple contiguous teaching slice from current zigzag CP partitioning.
+- `learn/05-megatron/context-parallel.html` — local context ownership → P2P KV ring → per-rank attention accumulation while remote KV rotates → context output stays local; distinguish the simple logical ring from current zigzag / document-aware / hybrid / contiguous CP token partitioning.
 - `learn/05-megatron/expert-parallel.html` — logical source-token ownership remains source-side while router assignments determine destination experts; a compact mapping strip replaces token-arrow spaghetti, then A2A dispatch moves hidden states into four expert-owner rank lanes for local grouped GEMM, reverse A2A combine returns outputs, and unpermute restores source-token order. Keep logical token ownership, resident expert-parameter ownership, data placement, and temporary compute ownership visually distinct.
 - `learn/05-megatron/communication-overlap.html` — bucket READY event → asynchronous collective launch → independent compute window → first required WAIT, with separate gradient-reduce and parameter-prefetch lanes; distinguish communication duration from exposed critical-path tail and verify overlap by wait points rather than visual concurrency alone.
 - `learn/06-llm-inference/autoregressive-generation.html` — confirmed prefix → target Transformer → last-position logits → decoding policy → selected token → append feedback loop, plus a separate inter-step dependency lane; distinguish logical single-request serial dependence from cross-request batching and speculative target-step reduction.
