@@ -1,0 +1,77 @@
+# Diagram Quality Standard
+
+This project uses architecture-first teaching diagrams. The accepted baseline is the reviewed KV Cache visual integrated in `learn/06-llm-inference/kv-cache.html`.
+
+## 1. Match the site before drawing the diagram
+
+- Reuse the site palette: `--bg`, `--paper`, `--ink`, `--line`, `--line-dark`, `--train`, `--train-soft`, `--infer`, `--infer-soft`.
+- Reuse the site typography: system sans for explanation, monospace for IDs / shapes / states.
+- Reuse the site visual grammar: thin neutral borders, restrained fills, 8–16 px radii, off-white page, white diagram canvas.
+- Do not introduce a separate infographic visual identity inside a lesson.
+
+## 2. Architecture first, cards second
+
+A core diagram should first expose one coherent system or mechanism on a single canvas:
+
+`input/state → transformation/control → persistent state → execution/output`
+
+Use boxes only when they represent real conceptual boundaries. Do not turn every sentence into a card.
+
+## 3. Arrow routing rules
+
+- Every arrow must have a clear source and destination.
+- Terminate arrows at box edges / ports, never in the middle of labels.
+- Route independent flows through separate lanes when possible.
+- Do not run a line through another node, label, or matrix.
+- Do not place text directly on a line unless there is enough dedicated whitespace.
+- Prefer straight orthogonal routes over decorative curves.
+- If arrows become spaghetti, replace them with an explicit mapping table rather than forcing more lines.
+
+## 4. No overlap / no accidental tangency
+
+Before accepting a diagram, check:
+
+- text does not touch borders;
+- arrowheads do not sit on text;
+- labels do not overlap each other;
+- boxes have visible gaps;
+- callouts do not cover data cells;
+- lines do not graze unrelated boxes;
+- the final row/column is not clipped by the wrapper.
+
+## 5. Information density
+
+- One visual should answer one main question.
+- Use 3–4 semantic layers maximum on one canvas.
+- Keep the most important path visually dominant.
+- Use color for persistent semantic categories, not decoration.
+- Small labels are allowed only for secondary metadata; the main mechanism must remain readable at lesson-column width.
+
+## 6. Responsive behavior
+
+Desktop target: lesson column around 760 px inside the normal three-column site layout.
+
+Mobile target: 390 px viewport.
+
+For dense architecture diagrams, preserve the desktop composition and allow local horizontal scrolling inside the diagram wrapper. Do not make the entire page overflow horizontally.
+
+## 7. Required review loop
+
+For every new core diagram:
+
+1. Draft in the real site visual language.
+2. Render inside a lesson-like page, not as an isolated poster.
+3. Inspect the complete desktop composition.
+4. Inspect a close crop of the diagram.
+5. Inspect mobile behavior / overflow.
+6. Fix arrow routing, spacing, clipping, and text collisions.
+7. Repeat until there are no visible overlaps or misplaced elements.
+8. Only then integrate into the lesson.
+9. Run Site Quality Check and GitHub Pages deployment.
+
+Do not mark a diagram complete after code generation alone.
+
+## 8. Current reference implementations
+
+- `learn/06-llm-inference/kv-cache.html` — autoregressive loop + one attention layer + persistent KV + cache growth.
+- `learn/07-vllm/kv-cache-manager.html` — logical blocks + block table + BlockPool + scattered physical KV + append rule.
