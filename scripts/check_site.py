@@ -17,6 +17,14 @@ STALE_PLACEHOLDERS = (
     "课程正文即将加入",
     "lesson coming soon",
 )
+# These are deliberately narrow strings that previously encoded a misleading
+# teaching shortcut. We do not try to lint technical prose in general; these
+# guards only stop known regressions from silently reappearing.
+KNOWN_SEMANTIC_REGRESSIONS = (
+    ("<b>HBM / VRAM</b>", "do not use HBM as a synonym for generic GPU/VRAM memory"),
+    ("<small>ITL / TPOT</small>", "ITL and TPOT are related but distinct serving metrics"),
+    ("处理 prompt 的全部 S tokens", "prefill is a logical phase and may be chunked by the scheduler"),
+)
 
 
 class PageParser(HTMLParser):
@@ -140,6 +148,9 @@ def main() -> int:
         for placeholder in STALE_PLACEHOLDERS:
             if placeholder.lower() in lowered:
                 failures.append(f"{rel}: stale placeholder text remains: {placeholder!r}")
+        for needle, reason in KNOWN_SEMANTIC_REGRESSIONS:
+            if needle in text:
+                failures.append(f"{rel}: known semantic regression {needle!r}: {reason}")
 
         for attr, raw in parser.refs:
             target, fragment = resolve_local(page.resolve(), raw)
@@ -205,7 +216,8 @@ def main() -> int:
         f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files, "
         f"{len(lab_python_files)} lab scripts, {lesson_route_count} lesson routes, "
         f"{capstone_route_count} capstone routes; local refs/imports, reading metadata, "
-        "dynamic routes, stale placeholders, and lab Python syntax are valid."
+        "dynamic routes, stale placeholders, known semantic regressions, and lab Python syntax "
+        "are valid."
     )
     return 0
 
