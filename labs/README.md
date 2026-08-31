@@ -26,13 +26,13 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_dp_grad_accum.py
 ```bash
 torchrun --standalone --nproc-per-node=2 labs/code/mini_distributed_optimizer.py
 ```
-用 `reduce_scatter_tensor` 让 global gradient 直接落成 local shard；每个 rank 只保留自己的 momentum / parameter shard，更新后再 `all_gather_into_tensor` materialize 完整参数。
+用当前 PyTorch 的 `reduce_scatter_single` 让 global gradient 直接落成 local shard；每个 rank 只保留自己的 momentum / parameter shard，更新后再用 `all_gather_single` materialize 完整参数。PyTorch 2.13 已把旧名 `reduce_scatter_tensor` / `all_gather_into_tensor` 保留为 deprecated wrappers，因此实验代码使用新的 `_single` 命名。
 
 ### Lab A5 — Bucketed Async Reduce-Scatter
 ```bash
 torchrun --standalone --nproc-per-node=2 labs/code/mini_bucketed_reduce_scatter.py
 ```
-手动构造 W2 → W1 的 gradient-ready 顺序。W2 bucket ready 后立即启动 `async_op=True` 的 reduce-scatter，再继续计算 dH / ReLU backward / dW1。CPU/Gloo timing 只展示 launch 与 wait 的依赖顺序，不代表真实硬件 overlap。
+手动构造 W2 → W1 的 gradient-ready 顺序。W2 bucket ready 后立即启动 `async_op=True` 的 `reduce_scatter_single`，再继续计算 dH / ReLU backward / dW1。CPU/Gloo timing 只展示 launch 与 wait 的依赖顺序，不代表真实硬件 overlap。
 
 ### Lab A6 — TP × DP 2D Topology
 ```bash
@@ -44,7 +44,7 @@ torchrun --standalone --nproc-per-node=4 labs/code/mini_tp_dp_2d.py
 ```bash
 torchrun --standalone --nproc-per-node=2 labs/code/mini_profiler_overlap.py --trace-dir profiler_traces
 ```
-用 `torch.profiler` 标记 forward、W2 gradient ready、async reduce-scatter、继续 backward 与最终 wait，并导出每个 rank 的 Chrome trace。CPU/Gloo 已验证 correctness 与 range 顺序；只有 GPU/NCCL trace 出现 NCCL kernel 与 compute kernel 时间重叠时，才可以宣称真实 overlap。
+用 `torch.profiler` 标记 forward、W2 gradient ready、async `reduce_scatter_single`、继续 backward 与最终 wait，并导出每个 rank 的 Chrome trace。CPU/Gloo 已验证 correctness 与 range 顺序；只有 GPU/NCCL trace 出现 NCCL kernel 与 compute kernel 时间重叠时，才可以宣称真实 overlap。
 
 ## Inference Infra
 
