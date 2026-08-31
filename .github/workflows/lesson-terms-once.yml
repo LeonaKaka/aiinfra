@@ -1,6 +1,6 @@
 name: One-time lesson terminology migration
 
-# Retry after widening the lesson.css link matcher.
+# Retry after making terminology normalization deterministic and idempotent.
 on:
   push:
     paths:
