@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 06.1：从训练切换到推理，理解 decoder-only LLM 的自回归依赖、logits、sampling，以及 ITL/TPOT 等 serving 指标。" />
+  <meta name="description" content="AI Infra from Zero 06.1：从训练切换到推理，理解 decoder-only LLM 的自回归条件依赖、logits、sampling、重复计算问题，以及 TTFT / ITL / TPOT。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>06.1 自回归生成 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -29,71 +29,74 @@
     <main class="article">
       <div class="mobile-course-bar"><span>06 · LLM Inference</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">LLM Inference</a><span>/</span><span>Autoregressive Generation</span></div>
-      <div class="lesson-kicker"><span>LESSON 06.1 · INFERENCE</span><span>约 45 min</span></div>
-      <h1>自回归生成：训练结束以后，一个 token 是怎么一个个冒出来的？</h1>
-      <p class="dek">前五个模块大多站在训练视角：一批 tokens 进入模型，forward、loss、backward、optimizer。现在切到推理。先从最基础的 decoder-only 自回归路径学起：根据当前上下文得到下一个 token 的分布，选出 token，把它接回上下文，再推进下一步。后面再补 speculative decoding 等“让一次模型步骤处理/接受多个候选 token”的优化。</p>
+      <div class="lesson-kicker"><span>LESSON 06.1 · INFERENCE</span><span>约 50 min</span></div>
+      <h1>自回归生成：为什么“下一个 token”会把整个 serving 系统变成状态机？</h1>
+      <p class="dek">训练时我们常把很多已知 tokens 一次送进模型；在线生成则有一个新的硬约束：未来 token 还不存在。模型只能根据已经确认的前缀产生下一个 token 的分数，解码策略选出一个 token，把它加入前缀，然后下一步才有了新的条件。后面的 Prefill / Decode、KV Cache、Scheduler，本质上都在围绕这条状态演化链做系统优化。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 baseline autoregressive generation 的逐 token 条件依赖。</li><li>知道模型输出 logits，不是直接输出一句中文。</li><li>理解 greedy / sampling 只是“从 logits 选 token”的策略，不改变 Transformer 主体。</li><li>知道普通逐 token decode 存在串行依赖，同时也知道 speculative decoding 等技术可以减少昂贵 target-model steps，不能把“严格 N 次大模型 forward”当成永恒定律。</li><li>区分 TTFT、ITL 与 TPOT，而不是把 ITL / TPOT 当成同一个指标。</li><li>为下一课 Prefill / Decode 的分裂建立直觉。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 baseline decoder-only autoregressive generation 的条件依赖。</li><li>知道 target model 输出 logits；greedy / temperature / top-p 等是 logits 之后的 decoding policy。</li><li>理解为什么普通 target-model decode step 之间存在串行依赖。</li><li>知道 speculative / multi-token 技术能减少昂贵 target-model iterations，但没有删除 target autoregressive distribution。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分 TTFT、ITL、TPOT 与吞吐，并知道 benchmark 定义必须看清。</li></ul></div>
 
       <section class="article-section" id="tokens">
         <div class="section-no">01 · TEXT BECOMES TOKENS</div>
-        <h2>模型不是直接处理“句子”，而是处理 token IDs。</h2>
-        <p>假设输入是“AI infra 很重要”。Tokenizer 会先把它切成模型词表中的 tokens，再映射成整数 IDs。这里不讨论具体 tokenizer 算法，只抓住推理系统真正看到的对象：</p>
+        <h2>推理引擎真正调度的不是“句子”，而是一串 token IDs 和它们对应的运行时状态。</h2>
+        <p>假设输入是“AI infra 很重要”。Tokenizer 会先把文本编码成模型词表中的 token IDs。具体 tokenizer 怎么切不是这节重点；系统层先抓住对象：</p>
         <div class="token-stream"><span>AI</span><span>infra</span><span>很</span><span>重要</span><i>→</i><span>[id₀]</span><span>[id₁]</span><span>[id₂]</span><span>[id₃]</span></div>
-        <p>这些 IDs 经过 embedding 变成前面熟悉的 <code>[B,S,H]</code> hidden states，然后穿过一层层 Transformer Block。</p>
+        <p>IDs 经过 embedding 变成 hidden states，再穿过 Transformer。对生成任务而言，真正关键的是：这些 prompt tokens 和之后已经接受的 generated tokens，一起构成当前 <strong>confirmed prefix</strong>。</p>
       </section>
 
       <section class="article-section" id="logits">
-        <div class="section-no">02 · THE MODEL OUTPUT IS A DISTRIBUTION</div>
-        <h2>最后一层不会直接吐出“答案”，而是给词表中的每个 token 一个分数。</h2>
-        <p>最后 hidden state 经过输出投影，得到 vocabulary-size 维 logits。Softmax 后可以把它看成下一个 token 的概率分布：</p>
-        <div class="logits-demo"><div class="logit-card"><small>LAST POSITION</small><b>logits ∈ R^V</b><p>如果词表有 V 个 token，这里就有 V 个分数。</p></div><div class="logit-card"><small>AFTER SOFTMAX · TOY EXAMPLE</small><div class="logit-bars"><div class="logit-row"><code>GPU</code><div class="logit-track"><div class="logit-fill" style="--w:68%"></div></div><strong>.68</strong></div><div class="logit-row"><code>模型</code><div class="logit-track"><div class="logit-fill" style="--w:18%"></div></div><strong>.18</strong></div><div class="logit-row"><code>系统</code><div class="logit-track"><div class="logit-fill" style="--w:9%"></div></div><strong>.09</strong></div></div></div></div>
-        <p>Greedy decoding 选概率最大的 token；temperature、top-k、top-p 等 sampling 方法改变“怎样从这个分布选 token”。无论哪种 selection policy，基础 target model 都先产生 logits。</p>
+        <div class="section-no">02 · THE TARGET MODEL PRODUCES LOGITS</div>
+        <h2>模型不会直接“决定一句话”，而是对下一个 vocabulary token 给出一组 raw scores。</h2>
+        <p>最后位置的 hidden state 经过 LM head，得到 <code>V</code> 维 logits。为了建立第一层直觉，可以把 softmax 后的值看成候选 token 概率；真实 sampling path 还可能先应用 logit processors、temperature、top-k/top-p 等变换。</p>
+        <div class="logits-demo"><div class="logit-card"><small>LAST POSITION</small><b>logits ∈ R^V</b><p>词表有 V 个 token，就有 V 个 raw scores；系统只需要从这些候选里决定下一 token。</p></div><div class="logit-card"><small>TOY NORMALIZED VIEW</small><div class="logit-bars"><div class="logit-row"><code>GPU</code><div class="logit-track"><div class="logit-fill" style="--w:68%"></div></div><strong>.68</strong></div><div class="logit-row"><code>模型</code><div class="logit-track"><div class="logit-fill" style="--w:18%"></div></div><strong>.18</strong></div><div class="logit-row"><code>系统</code><div class="logit-track"><div class="logit-fill" style="--w:9%"></div></div><strong>.09</strong></div></div></div></div>
+        <p>Greedy 取最大分数对应 token；sampling 则从处理后的分布采样。<strong>Transformer 主体负责产生 logits，decoding policy 负责“如何选”。</strong>这两层不要混在一起。</p>
       </section>
 
       <section class="article-section" id="loop">
-        <div class="section-no">03 · THE AUTOREGRESSIVE LOOP</div>
-        <h2>Baseline 路径里，选出的 token 会成为下一步条件的一部分。</h2>
-        <div class="decode-loop"><div class="decode-step"><small>1</small><b>current context</b><span>prompt + generated tokens</span></div><div class="decode-step"><small>2</small><b>Transformer forward</b><span>得到当前位置 hidden state</span></div><div class="decode-step"><small>3</small><b>logits</b><span>词表分数</span></div><div class="decode-step"><small>4</small><b>sample token</b><span>选下一个 token</span></div><div class="decode-step"><small>5</small><b>append & repeat</b><span>直到 EOS / length limit</span></div></div>
-        <div class="token-stream"><span>AI</span><span>infra</span><span>很</span><span>重要</span><span class="generated">因为</span><span class="generated">它</span><span class="generated">决定</span><span class="generated">…</span></div>
-        <p>最关键的数学事实是：下一个 token 的条件分布依赖已经确认的前缀。因此未来 token 之间存在因果依赖。普通 decode 是一步一步确认；speculative decoding 则可以先用 draft 产生多个候选，再让 target model 一次验证一段候选，从而减少昂贵 target-model iterations，但它没有消除自回归分布本身的条件依赖。</p>
+        <div class="section-no">03 · THE AUTOREGRESSIVE STATE MACHINE</div>
+        <h2>一个 token 被选中以后，它才成为下一步可以依赖的真实状态。</h2>
+        <p>用概率语言写，就是第 <code>t</code> 个输出来自 <code>p(y_t | x, y_1, …, y_{t-1})</code>。未来的 <code>y_{t+1}</code> 要以已经确认的 <code>y_t</code> 为条件，所以 baseline target-model steps 之间有数据依赖。</p>
+        <div class="inference-core-wrap"><div class="inference-core-meta"><span>AUTOREGRESSIVE GENERATION · DATAFLOW</span><span>confirmed prefix → logits → select → append → repeat</span></div><img class="inference-core-svg" src="./autoregressive-loop.svg" alt="自回归生成架构图：当前已确认前缀进入 decoder-only Transformer，最后位置 hidden state 经过 LM head 得到 vocabulary logits，解码策略选择一个 token，把 token 追加回前缀后才能进入下一普通 target-model step；下方显示 y1 到 y2 到 y3 的串行条件依赖，并注明 speculative decoding 只是减少昂贵 target-model iteration。" /></div>
+        <div class="inference-core-takeaway"><strong>这里的“串行”指逻辑依赖，不等于 GPU 一次只能算一个 request。</strong>单个 request 的下一 token 要等自己的前一个 token 确认；serving engine 可以同时把许多 requests 的当前 step 组成 batch，这正是后面 Continuous Batching 的入口。</div>
+        <div class="precision-note"><strong>Speculative decoding 的精确 caveat：</strong>draft model 可以先猜多个候选，target model 一次验证多个位置，从而减少昂贵 target-model iterations；但最终被接受的 tokens 仍要保持 target model 所定义的 autoregressive distribution。不要把“逻辑依赖”误写成“生成 N 个 token 永远必须有 N 次完整大模型 forward”。</div>
       </section>
 
       <section class="article-section" id="training">
-        <div class="section-no">04 · TRAINING AND INFERENCE WANT DIFFERENT THINGS</div>
-        <h2>同一个 Transformer，训练时和在线生成时是两种系统 workload。</h2>
-        <div class="train-infer"><div><small>TRAINING</small><b>大批 tokens，一起 forward + backward</b><span>目标通常是最大化训练吞吐 / MFU；需要保存 activation、gradient、optimizer state；大量矩阵可以做得很大。</span></div><div><small>INFERENCE</small><b>用户请求持续到来，生成状态不断演化</b><span>没有普通 training backward/optimizer；更关心 latency、throughput、KV Cache 容量、request scheduling 和服务公平性。</span></div></div>
-        <p>这也是为什么“训练框架很快”并不能直接推出“拿它做在线 serving 也很快”。推理系统面对的是动态请求、不同 prompt/output 长度，以及高频 decode/scheduling 的问题。</p>
+        <div class="section-no">04 · TRAINING AND SERVING EXPOSE DIFFERENT BOTTLENECKS</div>
+        <h2>同一个 Transformer，训练时的数据组织和在线生成时的运行时状态完全不同。</h2>
+        <div class="train-infer"><div><small>TRAINING</small><b>已知 token batch → forward + backward</b><span>更关注训练吞吐 / MFU；需要 activation、gradients、optimizer state；通过大 batch / sequence 构造大 GEMM。</span></div><div><small>SERVING</small><b>动态 requests → 状态持续增长</b><span>普通生成没有 training backward/optimizer；更关注 latency、吞吐、KV Cache 容量、排队、scheduler 与请求生命周期。</span></div></div>
+        <p>所以“训练 kernel 很快”并不能自动推出 serving 很快。serving 还必须解决一个训练里弱很多的问题：<strong>请求在时间上不断到达、不断结束，而且每个请求当前可计算的 token 数不同。</strong></p>
       </section>
 
       <section class="article-section" id="naive">
-        <div class="section-no">05 · A NAIVE IMPLEMENTATION RECOMPUTES TOO MUCH</div>
-        <h2>如果每推进一步都把整段历史重新算一遍，会非常浪费。</h2>
-        <p>假设 prompt 已有 1000 tokens。生成第一个 token 时，需要处理这 1000 tokens；生成第二个 token 时，如果从零计算，又会重新处理前面 1000 个旧 tokens；第三步继续重复。</p>
-        <div class="time-sequence"><div class="time-row"><small>step 1</small><span class="prefill">old</span><span class="prefill">old</span><span class="prefill">old</span><span class="prefill">…</span><span class="prefill">old</span><span class="decode">new₁</span><span class="wait">—</span><span class="wait">—</span></div><div class="time-row"><small>step 2 naive</small><span class="prefill">old</span><span class="prefill">old</span><span class="prefill">old</span><span class="prefill">…</span><span class="prefill">old</span><span class="prefill">new₁</span><span class="decode">new₂</span><span class="wait">—</span></div></div>
-        <p>但 02.1 Attention 已经给了一个关键观察：历史 token 在每层产生的 Key / Value 不会因为末尾多了一个新 token 就全部失效。于是这些 K/V 可以保存下来复用。</p>
-        <div class="concept-note"><p><strong>这就是 KV Cache 的动机。</strong>不过在真正讲 KV Cache 前，我们还需要先把一次请求拆成计算性质非常不同的 Prefill 与 Decode 阶段。</p></div>
+        <div class="section-no">05 · NAIVE GENERATION RECOMPUTES HISTORY</div>
+        <h2>如果每生成一个 token 都从头重新算整个前缀，绝大多数历史 attention 投影都会重复。</h2>
+        <p>假设 prompt 长 1000 tokens。第一步处理 prompt；得到 <code>y₁</code> 后，如果第二步又把这 1001 个 token 全部从头走一遍 Transformer，旧 token 对应的每层 Key / Value 会被再次计算。第三步又重复一次。</p>
+        <div class="time-sequence"><div class="time-row"><small>step 1</small><span class="prefill">x₀</span><span class="prefill">x₁</span><span class="prefill">…</span><span class="prefill">x₉₉₉</span><span class="decode">→ y₁</span><span class="wait">—</span><span class="wait">—</span><span class="wait">—</span></div><div class="time-row"><small>step 2 naive</small><span class="prefill">x₀</span><span class="prefill">x₁</span><span class="prefill">…</span><span class="prefill">x₉₉₉</span><span class="prefill">y₁</span><span class="decode">→ y₂</span><span class="wait">—</span><span class="wait">—</span></div></div>
+        <p>Attention 给了一个关键不变量：历史 token 已经计算出的 K/V 在后续普通 decode 中仍然可复用。于是系统自然会问：<strong>为什么不把历史 K/V 留在 GPU memory 里？</strong></p>
+        <div class="concept-note"><p><strong>这就是 KV Cache 的来源。</strong>但在 06.3 之前，下一课先把请求分成 Prefill 与 Decode，因为“第一次处理整个 prompt”和“之后推进一个新 token”在 shape、算术强度与 latency 目标上很不一样。</p></div>
       </section>
 
       <section class="article-section" id="latency">
-        <div class="section-no">06 · INFERENCE HAS MORE THAN ONE LATENCY</div>
-        <h2>“这个请求用了 2 秒”还不够描述用户体验。</h2>
-        <div class="metric-grid"><div><small>TTFT</small><b>Time To First Token</b><span>请求进入系统到第一个输出 token 可见的时间；queue、Prefill、路由/hand-off 都可能贡献。</span></div><div><small>ITL</small><b>Inter-Token Latency</b><span>流式输出里相邻可见 tokens 之间的实际时间间隔；它天然形成一组逐 token latency samples。</span></div><div><small>TPOT</small><b>Time Per Output Token</b><span>生成阶段常用的平均每输出 token 耗时；具体分母、是否排除首 token 要看 benchmark 定义。</span></div></div>
-        <p><strong>ITL 和 TPOT 相关，但不是同一个定义。</strong>ITL 更适合描述逐 token cadence 和 tail；TPOT 是聚合后的平均指标。服务吞吐（tokens/s）则又是另一条轴，和单用户最低 latency 不一定同方向。</p>
+        <div class="section-no">06 · USER EXPERIENCE HAS MULTIPLE CLOCKS</div>
+        <h2>端到端 2 秒不能告诉你：用户是在等第一字，还是后面输出一卡一卡。</h2>
+        <div class="metric-grid"><div><small>TTFT</small><b>Time To First Token</b><span>请求发出/进入测量范围到第一个输出 token 的时间。queue、Prefill、路由等都可能贡献；具体起点看 benchmark。</span></div><div><small>ITL</small><b>Inter-Token Latency</b><span>相邻输出 token 到达之间的时间间隔，可以形成 p50 / p95 / p99 等分布，直接描述流式 cadence。</span></div><div><small>TPOT</small><b>Time Per Output Token</b><span>生成阶段平均每个输出 token 的时间。常见 benchmark 会单独报告 mean / median / percentiles；具体计算方式仍应看工具定义。</span></div></div>
+        <p>当前 vLLM serving benchmark 也把 <code>TTFT</code>、<code>TPOT</code>、<code>ITL</code> 分成三组统计，同时另外报告 request throughput、output-token throughput 和 end-to-end latency。这个区分很重要：<strong>latency 是用户侧体验，throughput 是系统整体产能，它们常常存在 trade-off。</strong></p>
+        <div class="source-note">当前 vLLM benchmark 源码：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/benchmarks/serve.py">vllm/benchmarks/serve.py</a>，<code>BenchmarkMetrics</code> 分别维护 TTFT / TPOT / ITL 的 mean、median、std 与 percentiles。</div>
       </section>
 
       <section class="article-section" id="bridge">
-        <div class="section-no">07 · FROM MEGATRON TO VLLM</div>
-        <h2>训练 Infra 的核心问题是“怎么并行算大模型”，推理 Infra 多了“怎么服务很多动态请求”。</h2>
-        <div class="cost-panel"><div><small>STILL THE SAME</small><b>Tensor、GEMM、Attention、GPU device memory、TP、NCCL 这些基础仍然有效。</b></div><div><small>NEW OBJECT</small><b>每个 request 都有自己的 prompt、生成长度、KV Cache 和生命周期。</b></div><div><small>NEW SCHEDULER</small><b>GPU 下一轮到底算哪些 requests / tokens，需要在线决定。</b></div><div><small>NEW MEMORY PROBLEM</small><b>模型权重相对固定，但 KV Cache 随活跃请求动态增长、释放和复用。</b></div></div>
+        <div class="section-no">07 · THE NEW OBJECT IS REQUEST STATE</div>
+        <h2>从这里开始，推理 Infra 不只优化模型，还要管理“活着的 requests”。</h2>
+        <div class="cost-panel"><div><small>STATIC-ish</small><b>model weights</b><span>模型权重加载后通常长期驻留。</span></div><div><small>PER REQUEST</small><b>confirmed prefix + generated state</b><span>每个 request 的长度和完成时间不同。</span></div><div><small>DYNAMIC MEMORY</small><b>KV Cache</b><span>随 request token 数持续增长，完成后释放。</span></div><div><small>SCHEDULER</small><b>which tokens run next?</b><span>每轮要在线选择哪些 requests / tokens 占 GPU。</span></div></div>
+        <p>所以后面的路线会自然变成：<strong>Autoregressive state → Prefill/Decode → KV Cache → Scheduler → Continuous Batching → Paged KV → KV Connector。</strong></p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>06.1</span></div><h2>先确认“生成”不是一次普通 forward。</h2><div class="quiz-item"><div class="quiz-q">1. LLM 每一步直接输出的是一段文字吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。模型产生 vocabulary logits；解码策略从分布中选择 token ID，再由 tokenizer 映射回文本。</div></div><div class="quiz-item"><div class="quiz-q">2. Speculative decoding 是否说明未来 token 已经没有自回归依赖？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。它用 draft 先猜一段候选，再让 target model 高效验证；被接受的序列仍必须符合 target autoregressive distribution。优化的是昂贵 target-model iteration 数，不是删除条件依赖。</div></div><div class="quiz-item"><div class="quiz-q">3. ITL 和 TPOT 为什么不能写成一个词？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">ITL 是相邻输出 tokens 之间的实际间隔，可以看分布和 p95/p99；TPOT 通常是生成阶段的平均每输出 token 时间。两者数值可能相关，但定义和用途不同。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>06.1</span></div><h2>先确认你已经把“模型计算”和“request 状态演化”分开。</h2><div class="quiz-item"><div class="quiz-q">1. Target model 每一步真正输出的是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">输出的是 vocabulary logits（经过 decoding policy 处理后用于选择 token），不是直接输出整句文字。选中的 token ID 才会被追加进 confirmed prefix。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么单个普通 request 的 y₂ 不能在 y₁ 尚未确认时按 baseline 精确计算？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 y₂ 的 target conditional distribution 是 p(y₂ | x, y₁)。y₁ 尚未确认，就缺少它所依赖的条件状态。Speculative decoding 可以猜并批量验证，但不会改变最终 target distribution 的这层条件关系。</div></div><div class="quiz-item"><div class="quiz-q">3. 单 request 有串行依赖，为什么 GPU 仍然可以一次处理很多 decode tokens？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为不同 requests 彼此独立。每个 request 当前只推进自己的下一 step，但 serving scheduler 可以把许多 requests 的“当前 token”合到同一个 GPU batch，这就是 Continuous Batching 的基础。</div></div><div class="quiz-item"><div class="quiz-q">4. ITL 和 TPOT 为什么不能当成同一个名字？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">ITL 是逐相邻 token 的实际时间间隔，天然是一组 samples；TPOT 是生成阶段聚合后的每输出 token 时间指标。它们相关，但统计对象和使用方式不同。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 06.2</small><br /><strong>Prefill 与 Decode：为什么同一个请求前半段像大 GEMM，后半段却像另一种 workload？</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#tokens">Tokens</a><a href="#logits">Logits</a><a href="#loop">生成循环</a><a href="#training">Training vs Inference</a><a href="#naive">重复计算</a><a href="#latency">TTFT / ITL / TPOT</a><a href="#bridge">通向 vLLM</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#tokens">Tokens / state</a><a href="#logits">Logits / policy</a><a href="#loop">自回归状态机</a><a href="#training">Training vs serving</a><a href="#naive">重复计算</a><a href="#latency">TTFT / ITL / TPOT</a><a href="#bridge">Request state</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
 </body>
