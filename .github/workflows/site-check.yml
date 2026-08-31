@@ -28,5 +28,7 @@ jobs:
         run: python scripts/audit_lesson_acronyms.py
       - name: Check curated global glossary
         run: python scripts/check_glossary_terms.py
+      - name: Audit term density and placement
+        run: python scripts/audit_term_density.py
       - name: Check core diagrams
         run: python scripts/check_diagrams.py
