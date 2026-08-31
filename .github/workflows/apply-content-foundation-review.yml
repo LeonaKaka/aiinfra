@@ -22,6 +22,8 @@ jobs:
           python-version: '3.12'
       - name: Apply content review
         run: python scripts/apply_content_foundation_review.py
+      - name: Keep implementation wording acronym-safe
+        run: sed -i 's/QK norm/Query\/Key normalization/' learn/02-transformer/transformer-block.html
       - name: Regenerate lesson terminology
         run: python scripts/lesson_terms.py --write
       - name: Verify terminology is stable
