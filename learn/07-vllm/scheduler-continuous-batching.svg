@@ -1,67 +1,88 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="900" viewBox="0 0 1100 900" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 930" role="img" aria-labelledby="title desc">
 <title id="title">vLLM V1 Scheduler and continuous batching</title>
-<desc id="desc">Running and waiting requests enter a token-budget scheduler. The scheduler asks KVCacheManager for blocks, schedules running requests first, admits waiting work if resources remain, emits a mixed SchedulerOutput, and updates membership between execution iterations. If KV allocation fails, a request can be preempted and later recomputed.</desc>
+<desc id="desc">Running and waiting requests enter a token-budget scheduler. The scheduler checks KV capacity, emits a mixed SchedulerOutput, can preempt requests on allocation failure, and rebuilds batch membership between execution iterations rather than inserting work into a running kernel.</desc>
 <defs>
-<marker id="a" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#727971"/></marker>
-<marker id="ab" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#315f82"/></marker>
-<marker id="ag" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#255b46"/></marker>
-<marker id="ap" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#7d5d6f"/></marker>
-<style>
-.bg{fill:#fff}.panel{fill:#fbfbf8;stroke:#c9cec7;stroke-width:1.4}.sub{fill:#fff;stroke:#c9cec7;stroke-width:1.3}.blue{fill:#eef3f7;stroke:#c3d4df;stroke-width:1.3}.green{fill:#eaf1ed;stroke:#bdd2c4;stroke-width:1.3}.gold{fill:#f6f2e8;stroke:#ddcfb4;stroke-width:1.3}.purple{fill:#f4eef2;stroke:#d7c7d1;stroke-width:1.3}.dark{fill:#202622}.muted{fill:#f4f5f1;stroke:#d8dbd5;stroke-width:1.2}.line{stroke:#727971;stroke-width:1.5;fill:none}.lineB{stroke:#315f82;stroke-width:1.55;fill:none}.lineG{stroke:#255b46;stroke-width:1.55;fill:none}.lineP{stroke:#7d5d6f;stroke-width:1.45;fill:none}.dash{stroke:#9da49e;stroke-width:1.1;stroke-dasharray:5 5;fill:none}
-.title{font:700 25px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#20231f}.subtitle{font:500 14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#666d66}.kicker{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:1.5px;fill:#8b918a}.label{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#4d554f}.strong{font:700 14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#273029}.small{font:500 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#687068}.tiny{font:600 9.5px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#737b74}.white{fill:#f5f7f3}.white2{fill:#bdc8c0}.blueText{fill:#315f82}.greenText{fill:#255b46}.goldText{fill:#7b6a3e}.purpleText{fill:#7d5d6f}
-</style>
+ <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#747b74"/></marker>
+ <marker id="ab" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#315f82"/></marker>
+ <marker id="ag" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#255b46"/></marker>
+ <marker id="ap" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7d5d6f"/></marker>
+ <style>
+ .sans{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+ .ey{font-size:11px;font-weight:700;letter-spacing:1.6px;fill:#8a918a}.ttl{font-size:24px;font-weight:760;fill:#252a25}.subt{font-size:13px;fill:#687069}.sec{font-size:10px;font-weight:700;letter-spacing:1.35px;fill:#8b928b}.label{font-size:11px;font-weight:760;fill:#343c35}.small{font-size:10px;fill:#687069}.tiny{font-size:9px;fill:#687069}.panel{fill:#fcfcfa;stroke:#ccd2cb;stroke-width:1.2}.box{fill:#fff;stroke:#cdd3cc;stroke-width:1.1}.blue{fill:#edf4f8;stroke:#bfd3e0;stroke-width:1.1}.green{fill:#eaf2ed;stroke:#bfd4c5;stroke-width:1.1}.gold{fill:#faf5ea;stroke:#dfceac;stroke-width:1.1}.purple{fill:#f5eef3;stroke:#dac7d2;stroke-width:1.1}.dark{fill:#222824}.line{fill:none;stroke:#747b74;stroke-width:1.3}.bline{fill:none;stroke:#315f82;stroke-width:1.4}.gline{fill:none;stroke:#255b46;stroke-width:1.4}.pline{fill:none;stroke:#7d5d6f;stroke-width:1.4}.dash{fill:none;stroke:#9da49e;stroke-dasharray:5 5;stroke-width:1.1}
+ </style>
 </defs>
-<rect class="bg" width="1100" height="900"/>
-<text class="kicker" x="56" y="48">vLLM V1 · ONE SCHEDULING ITERATION</text>
-<text class="title" x="56" y="82">Continuous batching is repeated re-planning under token, request, and KV budgets</text>
-<text class="subtitle" x="56" y="109">Requests do not occupy fixed batch slots until completion; each iteration selects token work that can actually fit.</text>
-<rect class="panel" x="56" y="145" width="988" height="492" rx="15"/>
-<text class="kicker" x="80" y="174">A · REQUEST STATE · RESOURCE CHECKS · SCHEDULEROUTPUT</text>
-<rect class="blue" x="82" y="208" width="220" height="162" rx="12"/>
-<text class="label blueText" x="102" y="234">RUNNING</text><text class="small" x="102" y="255">already owns execution state / KV</text>
-<rect class="sub" x="102" y="274" width="180" height="26" rx="6"/><text class="tiny" x="116" y="291">A · decode-like · wants +1</text>
-<rect class="sub" x="102" y="307" width="180" height="26" rx="6"/><text class="tiny" x="116" y="324">B · decode-like · wants +1</text>
-<rect class="gold" x="102" y="340" width="180" height="26" rx="6"/><text class="tiny goldText" x="116" y="357">C · prefill chunk · wants +many</text>
-<rect class="gold" x="82" y="400" width="220" height="164" rx="12"/>
-<text class="label goldText" x="102" y="426">WAITING</text><text class="small" x="102" y="447">not yet admitted this iteration</text>
-<rect class="sub" x="102" y="466" width="180" height="26" rx="6"/><text class="tiny" x="116" y="483">D · long prompt</text>
-<rect class="sub" x="102" y="499" width="180" height="26" rx="6"/><text class="tiny" x="116" y="516">E · short prompt</text>
-<text class="tiny goldText" x="102" y="545">prefix / remote hits checked on admission</text>
-<rect class="dark" x="370" y="208" width="282" height="252" rx="13"/>
-<text class="kicker white2" x="392" y="236">SCHEDULER · schedule()</text>
-<text class="strong white" x="392" y="263">advance token progress that fits</text>
-<rect x="392" y="288" width="238" height="38" rx="7" fill="#eef3f7"/><text class="tiny blueText" x="407" y="312">1 · running requests first</text>
-<rect x="392" y="337" width="238" height="54" rx="7" fill="#f6f2e8"/><text class="tiny goldText" x="407" y="359">2 · waiting requests if room remains</text><text class="tiny goldText" x="407" y="377">long Prefill may be chunked</text>
-<text class="tiny white2" x="392" y="414">token_budget = max_num_scheduled_tokens</text>
-<text class="tiny white2" x="392" y="432">input_budget = max_num_batched_tokens</text>
-<text class="tiny white2" x="392" y="450">running slots ≤ max_num_running_reqs</text>
-<path class="lineB" marker-end="url(#ab)" d="M302 289 H370"/>
-<path class="line" marker-end="url(#a)" d="M302 482 H338 V383 H370"/>
-<rect class="green" x="370" y="500" width="282" height="102" rx="12"/>
-<text class="label greenText" x="392" y="528">KVCACHEMANAGER</text><text class="small" x="392" y="551">cached prefix · allocate_slots · free</text><text class="tiny greenText" x="392" y="576">allocation success constrains the schedule</text>
-<path class="lineG" marker-end="url(#ag)" d="M452 460 V500"/><path class="lineG" marker-end="url(#ag)" d="M570 500 V460"/>
-<text class="tiny greenText" x="582" y="486">blocks / fail</text>
-<rect class="sub" x="720" y="208" width="292" height="252" rx="13"/>
-<text class="label" x="742" y="236">SCHEDULEROUTPUT</text><text class="small" x="742" y="258">one mixed execution plan</text>
-<text class="tiny" x="742" y="289">scheduled token work</text>
-<rect class="blue" x="742" y="305" width="50" height="38" rx="6"/><text class="tiny blueText" x="757" y="328">A +1</text>
-<rect class="blue" x="800" y="305" width="50" height="38" rx="6"/><text class="tiny blueText" x="815" y="328">B +1</text>
-<rect class="gold" x="858" y="305" width="132" height="38" rx="6"/><text class="tiny goldText" x="881" y="328">C chunk</text>
-<rect class="green" x="742" y="364" width="248" height="56" rx="8"/><text class="tiny greenText" x="758" y="386">request → physical KV block mapping</text><text class="tiny greenText" x="758" y="405">+ per-request scheduled token counts</text>
-<path class="lineB" marker-end="url(#ab)" d="M652 334 H720"/>
-<rect class="purple" x="720" y="500" width="292" height="102" rx="12"/>
-<text class="label purpleText" x="742" y="528">IF KV ALLOCATION CANNOT FIT</text><text class="small" x="742" y="551">preempt a victim → free resources</text><text class="tiny purpleText" x="742" y="576">V1 recovery is recompute by default</text>
-<path class="lineP" marker-end="url(#ap)" d="M652 551 H720"/>
-<text class="tiny" x="480" y="614">preempted request can be scheduled again later</text>
-<path class="dash" marker-end="url(#a)" d="M866 602 V628 H258 V564"/>
-<text class="kicker" x="56" y="681">B · CONTINUOUS BATCHING HAPPENS BETWEEN ITERATIONS</text>
-<rect class="panel" x="56" y="702" width="988" height="150" rx="14"/>
-<rect class="sub" x="82" y="732" width="264" height="82" rx="10"/>
-<text class="label" x="102" y="757">ITERATION k</text><text class="tiny" x="102" y="780">batch membership: A · B · C</text><text class="small" x="102" y="799">A finishes after output update</text>
-<rect class="blue" x="420" y="732" width="264" height="82" rx="10"/>
-<text class="label blueText" x="440" y="757">UPDATE REQUEST STATE</text><text class="tiny blueText" x="440" y="780">finished leaves · progress advances</text><text class="small" x="440" y="799">new capacity becomes visible</text>
-<rect class="green" x="758" y="732" width="260" height="82" rx="10"/>
-<text class="label greenText" x="778" y="757">ITERATION k+1</text><text class="tiny greenText" x="778" y="780">B · C continue · D/E may enter</text><text class="small" x="778" y="799">batch is rebuilt from current state</text>
-<path class="line" marker-end="url(#a)" d="M346 773 H420"/><path class="lineG" marker-end="url(#ag)" d="M684 773 H758"/>
-<text class="tiny" x="82" y="878">Important: continuous batching does not mean inserting requests into a running kernel; membership changes at scheduling / execution iteration boundaries.</text>
+<text class="mono ey" x="34" y="34">vLLM V1 · CONTINUOUS BATCHING · RE-PLAN EVERY ITERATION</text>
+<text class="sans ttl" x="34" y="67">The batch is not a fixed set of requests;</text>
+<text class="sans ttl" x="34" y="94">it is a plan rebuilt under token, request and KV budgets</text>
+<text class="sans subt" x="34" y="119">Each iteration asks what token work can fit now, executes it, updates state, then plans again.</text>
+
+<text class="mono sec" x="34" y="154">1 · REQUEST STATE → RESOURCE CHECKS → SCHEDULEROUTPUT</text>
+<rect class="panel" x="34" y="170" width="692" height="500" rx="14"/>
+
+<rect class="blue" x="52" y="202" width="164" height="154" rx="10"/>
+<text class="mono sec" x="70" y="226" fill="#315f82">RUNNING</text>
+<text class="sans small" x="70" y="248">already has execution state / KV</text>
+<rect class="box" x="70" y="266" width="128" height="24" rx="5"/><text class="mono tiny" x="82" y="282">A · +1 token</text>
+<rect class="box" x="70" y="296" width="128" height="24" rx="5"/><text class="mono tiny" x="82" y="312">B · +1 token</text>
+<rect class="gold" x="70" y="326" width="128" height="24" rx="5"/><text class="mono tiny" x="82" y="342" fill="#7b6a3e">C · Prefill chunk</text>
+
+<rect class="gold" x="52" y="382" width="164" height="142" rx="10"/>
+<text class="mono sec" x="70" y="406" fill="#7b6a3e">WAITING</text>
+<text class="sans small" x="70" y="428">not admitted this iteration</text>
+<rect class="box" x="70" y="446" width="128" height="24" rx="5"/><text class="mono tiny" x="82" y="462">D · long prompt</text>
+<rect class="box" x="70" y="476" width="128" height="24" rx="5"/><text class="mono tiny" x="82" y="492">E · short prompt</text>
+<text class="sans tiny" x="70" y="514">prefix / remote hits checked on admission</text>
+
+<rect class="dark" x="272" y="202" width="194" height="250" rx="11"/>
+<text class="mono sec" x="290" y="228" fill="#b8c2bb">SCHEDULER · schedule()</text>
+<text class="sans label" x="290" y="253" style="fill:#eef2ed">advance token progress that fits</text>
+<rect x="290" y="274" width="158" height="42" rx="7" fill="#edf4f8"/>
+<text class="mono tiny" x="302" y="292" fill="#315f82">1 · running requests</text><text class="mono tiny" x="302" y="306" fill="#315f82">considered first</text>
+<rect x="290" y="328" width="158" height="56" rx="7" fill="#faf5ea"/>
+<text class="mono tiny" x="302" y="346" fill="#7b6a3e">2 · waiting if room</text><text class="mono tiny" x="302" y="360" fill="#7b6a3e">remains; long Prefill</text><text class="mono tiny" x="302" y="374" fill="#7b6a3e">can be chunked</text>
+<text class="mono tiny" x="290" y="408" style="fill:#b8c2bb">token budget</text><text class="mono tiny" x="290" y="424" style="fill:#b8c2bb">request limit</text><text class="mono tiny" x="290" y="440" style="fill:#b8c2bb">KV capacity</text>
+<path class="bline" d="M216 278 H272" marker-end="url(#ab)"/>
+<path class="line" d="M216 454 H244 V356 H272" marker-end="url(#a)"/>
+
+<rect class="green" x="272" y="488" width="194" height="104" rx="10"/>
+<text class="mono sec" x="290" y="512" fill="#255b46">KVCACHEMANAGER</text>
+<text class="sans small" x="290" y="536">cached prefix · allocate_slots · free</text>
+<text class="sans tiny" x="290" y="558">allocation success constrains schedule</text>
+<path class="gline" d="M326 452 V488" marker-end="url(#ag)"/><path class="gline" d="M412 488 V452" marker-end="url(#ag)"/>
+<text class="mono tiny" x="424" y="475" fill="#255b46">blocks / fail</text>
+
+<rect class="box" x="522" y="202" width="184" height="250" rx="11"/>
+<text class="mono sec" x="540" y="228">SCHEDULEROUTPUT</text>
+<text class="sans small" x="540" y="250">one mixed execution plan</text>
+<text class="mono tiny" x="540" y="276">scheduled token work</text>
+<g transform="translate(540 288)" class="mono tiny">
+ <rect class="blue" width="36" height="28" rx="5"/><text x="18" y="19" text-anchor="middle" fill="#315f82">A+1</text>
+ <rect class="blue" x="42" width="36" height="28" rx="5"/><text x="60" y="19" text-anchor="middle" fill="#315f82">B+1</text>
+ <rect class="gold" x="84" width="82" height="28" rx="5"/><text x="125" y="19" text-anchor="middle" fill="#7b6a3e">C chunk</text>
+</g>
+<rect class="green" x="540" y="338" width="148" height="62" rx="7"/>
+<text class="sans tiny" x="552" y="358" fill="#255b46">per-request token counts</text>
+<text class="sans tiny" x="552" y="376" fill="#255b46">+ physical KV block mapping</text>
+<path class="bline" d="M466 326 H522" marker-end="url(#ab)"/>
+
+<rect class="purple" x="522" y="488" width="184" height="104" rx="10"/>
+<text class="mono sec" x="540" y="512" fill="#7d5d6f">IF KV CANNOT FIT</text>
+<text class="sans small" x="540" y="536">preempt victim → free resources</text>
+<text class="sans tiny" x="540" y="558">V1 recovery: recompute by default</text>
+<path class="pline" d="M466 540 H522" marker-end="url(#ap)"/>
+<path class="dash" d="M614 592 V630 H134 V524" marker-end="url(#a)"/>
+<text class="sans tiny" x="272" y="622">preempted work may re-enter a later scheduling iteration</text>
+
+<text class="mono sec" x="34" y="708">2 · CONTINUOUS BATCHING HAPPENS BETWEEN EXECUTION ITERATIONS</text>
+<rect class="panel" x="34" y="724" width="692" height="168" rx="14"/>
+<rect class="box" x="52" y="756" width="182" height="92" rx="9"/>
+<text class="mono sec" x="70" y="780">ITERATION k</text><text class="sans small" x="70" y="804">batch: A · B · C</text><text class="sans tiny" x="70" y="826">A finishes after output update</text>
+<rect class="blue" x="290" y="756" width="182" height="92" rx="9"/>
+<text class="mono sec" x="308" y="780" fill="#315f82">UPDATE STATE</text><text class="sans small" x="308" y="804">finished leaves · progress advances</text><text class="sans tiny" x="308" y="826">new capacity becomes visible</text>
+<rect class="green" x="528" y="756" width="178" height="92" rx="9"/>
+<text class="mono sec" x="546" y="780" fill="#255b46">ITERATION k+1</text><text class="sans small" x="546" y="804">B · C continue</text><text class="sans tiny" x="546" y="826">D / E may now enter</text>
+<path class="line" d="M234 802 H290" marker-end="url(#a)"/><path class="gline" d="M472 802 H528" marker-end="url(#ag)"/>
+
+<rect class="box" x="34" y="906" width="692" height="18" rx="7"/>
+<text class="sans tiny" x="52" y="919">Continuous batching does not insert a request into a running kernel; membership changes at scheduling / execution boundaries.</text>
 </svg>
