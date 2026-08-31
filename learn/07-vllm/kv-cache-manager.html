@@ -45,7 +45,7 @@
         <div class="section-no">03 · LOGICAL CHAIN VS PHYSICAL IDS</div>
         <h2>一个 sequence 看到的是自己的逻辑 block chain，系统维护的是 physical block IDs。</h2>
         <div class="logical-table"><small>REQUEST A · LOGICAL</small><div class="block-chain"><span>tokens 0–15 → #8</span><span>16–31 → #2</span><span>32–47 → #19</span><span>48–63 → #5</span><span>64… → next</span></div></div>
-        <p>假设 block size=16 tokens。A 已经有 60 个 cached tokens：它会占 4 个逻辑 blocks，其中最后一个可能只用了 12/16 个 token slots。A 再生成 4 个 token，可以继续写最后一块；再多 1 个 token，就需要申请新的 physical block。</p>
+        <p>假设 block size=16 tokens。A 已经有 60 个已计算 tokens 的 KV：它会占 4 个逻辑 blocks，其中最后一个可能只用了 12/16 个 token slots。A 再生成 4 个 token，可以继续写最后一块；再多 1 个 token，就需要申请新的 physical block。这里说的是 request 自己的 KV allocation，不代表这 60 个 tokens 都已经成为可复用的 prefix-cache entry；当前 vLLM 的常规 prefix caching 以完整 block 为基本缓存单位。</p>
         <div class="block-math"><div class="block-card"><small>BEFORE</small><b>60 tokens</b><span>ceil(60 / 16) = 4 blocks，最后一块还有 4 个 slots。</span></div><i>→ +5 tokens →</i><div class="block-card"><small>AFTER</small><b>65 tokens</b><span>ceil(65 / 16) = 5 blocks，需要再申请一块。</span></div></div>
       </section>
 
@@ -72,7 +72,7 @@
 
       <section class="article-section" id="waste">
         <div class="section-no">07 · PAGING DOES NOT MEAN ZERO WASTE</div>
-        <h2>固定 blocks 主要消灭“大段预留”和外部碎片，但最后一块仍可能没填满。</h2>
+        <h2>固定 blocks 会显著减少“大段预留”和外部碎片，但最后一块仍可能没填满。</h2>
         <p>如果 block size=16，一个最终长度 33-token 的 request 要占 3 blocks，最后一块只用 1 个 token slot。这是典型内部碎片。</p>
         <div class="shape-rule"><code>33 tokens</code><span>→</span><code>3 × 16 slots = 48 slots</code><span>→</span><code>15 slots unused in tail</code></div>
         <p>Block 越小，尾部浪费通常越低，但 metadata / table 长度和管理开销会增加；block 越大，管理更简单，但 tail waste 可能增大。实际系统还要适配 attention backend 的 block-size 约束。</p>
