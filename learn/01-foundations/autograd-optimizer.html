@@ -30,7 +30,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>autograd &amp; optimizer</span></div>
       <div class="lesson-kicker"><span>LESSON 01.4 · FOUNDATION</span><span>约 40 min</span></div>
       <h1>autograd 与 optimizer：梯度从哪里来，显存又花在哪里？</h1>
-      <p class="dek">上一课你已经会写 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。现在把这两个黑盒拆开一点：梯度到底表达什么？PyTorch 怎么沿计算关系把梯度算回来？Adam 为什么会比“只存参数”多吃很多显存？这些问题会直接通向后面的 Data Parallel、ZeRO 和 Megatron Distributed Optimizer。</p>
+      <p class="dek">上一课你已经会写 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。现在把这两个黑盒拆开一点：梯度到底表达什么？PyTorch 怎么沿计算关系把梯度算回来？Adam 为什么会比“只存参数”多吃很多显存？这些问题会直接通向后面的 Data Parallel、Zero Redundancy Optimizer (ZeRO，零冗余优化器) 和 Megatron Distributed Optimizer。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用直觉解释“梯度”而不是只背“导数”。</li><li>看懂一个最小 autograd 计算图，以及 <code>.grad</code> 是什么时候出现的。</li><li>区分 autograd 负责“算梯度”和 optimizer 负责“用梯度更新参数”。</li><li>理解 Adam 为什么需要额外 optimizer states，以及为什么它们值得被分片。</li></ul></div>
 
@@ -75,7 +75,9 @@ optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>ZeRO</code></td><td>Zero Redundancy Optimizer</td><td>零冗余优化器</td><td>通过数据并行 ranks 分片优化器状态、梯度或参数来减少训练状态冗余的一类方法。</td></tr>
         <tr><td><code>SGD</code></td><td>Stochastic Gradient Descent</td><td>随机梯度下降</td><td>按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。</td></tr>
+        <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>

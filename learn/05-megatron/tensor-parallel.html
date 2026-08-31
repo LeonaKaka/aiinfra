@@ -54,7 +54,7 @@ W2_local = shard(W2, dim=<span class="num">input</span>)
 y_partial = h_local @ W2_local
 
 <span class="comment"># SP disabled: every TP rank receives the summed output</span>
-y = all_reduce_sum(y_partial)</code></pre></div><p>真实 Megatron 会处理 bias、autograd、RNG、Transformer Engine、8-bit Floating Point (FP8，8 位浮点)、async overlap、sequence parallel 等。这个伪代码故意标成 <strong>SP off</strong>，避免以后看到 reduce-scatter 时误以为源码“和 TP 理论矛盾”。</p></section>
+y = all_reduce_sum(y_partial)</code></pre></div><p>真实 Megatron 会处理 bias、autograd、Random Number Generator (RNG，随机数生成器)、Transformer Engine、8-bit Floating Point (FP8，8 位浮点)、async overlap、sequence parallel 等。这个伪代码故意标成 <strong>SP off</strong>，避免以后看到 reduce-scatter 时误以为源码“和 TP 理论矛盾”。</p></section>
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.2</span></div><h2>不看答案，自己推一遍两张 GPU。</h2><div class="quiz-item"><div class="quiz-q">1. <code>W=[H,4H]</code> 做 Column Parallel，TP=2 后每张 GPU 的 local weight 是什么 shape？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">沿输出维切，所以每张是 <code>[H,2H]</code>。基础 TP 里输入 X 可以保持完整，每张卡得到一半 output features；启用 SP 后输入生命周期还会多出 sequence gather/scatter 边界。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 FC1 Column Parallel 后通常不急着 all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 FC2 可以用 Row Parallel，直接让每个 rank 消费自己那份中间特征 shard。这样中间无需恢复完整 4H activation，减少一次 collective 和显存复制。</div></div><div class="quiz-item"><div class="quiz-q">3. Row Parallel 为什么需要 SUM，而 Sequence Parallel 又可能让你看见 reduce-scatter？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">沿输入维拆开后，各 rank 得到的是同一输出坐标的 partial contribution，所以数学上必须 SUM。SP 只是把“SUM 后的输出如何分布”也纳入 collective：用 reduce-scatter 一边求和、一边只保留各自 sequence shard。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
@@ -74,6 +74,7 @@ y = all_reduce_sum(y_partial)</code></pre></div><p>真实 Megatron 会处理 bia
         <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>RNG</code></td><td>Random Number Generator</td><td>随机数生成器</td><td>dropout、初始化和采样等操作依赖的随机状态；并行训练中需要正确管理不同 rank 的 RNG stream。</td></tr>
         <tr><td><code>FP8</code></td><td>8-bit Floating Point</td><td>8 位浮点</td><td>更低精度的浮点表示，需要硬件与数值策略共同支持。</td></tr>
           </tbody>
         </table></div>

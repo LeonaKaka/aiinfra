@@ -50,7 +50,7 @@
         <div class="vllm-core-wrap"><div class="vllm-core-meta"><span>vLLM V1 · SCHEDULER</span><span>running / waiting → budgets + KV → SchedulerOutput</span></div><img class="vllm-core-svg" src="./scheduler-continuous-batching.svg" alt="vLLM V1 Scheduler 与 continuous batching 架构图：running 和 waiting requests 进入 scheduler；scheduler 先推进 running，再在剩余资源允许时接纳 waiting，受 max_num_scheduled_tokens、max_num_batched_tokens、max_num_running_reqs 和 KVCacheManager allocation 共同约束；生成 mixed SchedulerOutput。KV allocation 失败时可 preempt victim 并释放资源；每轮输出更新后，下一 iteration 重新组成 batch。"/></div>
         <div class="vllm-core-takeaway"><strong>Scheduler 的核心不是“拼一张 batch 表”，而是解决一个在线资源分配问题：</strong>谁先推进、推进多少 token、缓存命中了多少、还要多少 physical blocks、这一轮总 budget 是否够。Continuous batching 则是这个选择过程在每次 iteration 重新执行的直接结果。</div>
         <div class="queue-map"><div class="queue-box"><small>WAITING</small><b>还没进入本轮 running 资源域</b><div class="queue-list"><span>long prompt</span><span>short prompt</span><span>priority / blocked states ...</span></div></div><span>admit / preempt / resume ↔</span><div class="queue-box"><small>RUNNING</small><b>已有 request execution state</b><div class="queue-list"><span>decode-like progress</span><span>in-progress prefill chunk</span><span>spec / structured state ...</span></div></div></div>
-        <p>当前源码还处理 Data Parallel (DP，数据并行) prefill balancing、encoder input、LoRA、structured output、speculative decoding、KV Connector remote load 等额外条件。初学时不要一次吃完；先把上图的三件事分清：<strong>request state、resource budget、KV ownership</strong>。</p>
+        <p>当前源码还处理 Data Parallel (DP，数据并行) prefill balancing、encoder input、Low-Rank Adaptation (LoRA，低秩适配)、structured output、speculative decoding、KV Connector remote load 等额外条件。初学时不要一次吃完；先把上图的三件事分清：<strong>request state、resource budget、KV ownership</strong>。</p>
         <div class="source-note">当前 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a> 的 <code>schedule()</code> 先遍历 <code>self.running</code>，再在没有本轮 preemption 且未暂停等条件下处理 waiting queue；KV blocks 通过 <code>kv_cache_manager.allocate_slots(...)</code> 约束可调度量。</div>
       </section>
 
@@ -136,6 +136,7 @@ return SchedulerOutput(...)</code></pre></div>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>LoRA</code></td><td>Low-Rank Adaptation</td><td>低秩适配</td><td>用低秩增量参数高效适配预训练模型的方法；也可能进入 prefix-cache identity。</td></tr>
         <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
           </tbody>
         </table></div>

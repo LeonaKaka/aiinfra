@@ -67,10 +67,10 @@ vLLM / NIXL 主线：
 
 最近一次系统复查（2026-09-01）对照：
 
-- vLLM `main`: `39e276eaeb9daed06a180f6a8d187bbb8790e97b`
+- vLLM `main`: `f9c7c6e0909eadc23f1aa2510a233f91692ed437`
 - NVIDIA/Megatron-LM `main`: `6c440e61fd5f8e6ad526d3225c02ec85be8e8fa8`
 
-这轮继续复核了 vLLM GPU runner selector / V1-V2 runner 分流、Scheduler、KV Connector / NIXL lifecycle，以及 Megatron Expert Parallel dispatcher、Distributed Optimizer、Context Parallel 与 communication-overlap 生命周期。相对上一快照，vLLM 新增的 scheduler 变化集中在 structured-output / `min_tokens` stop-ordering，未改变本课程的 continuous-batching / KV budget contract；Megatron 新提交只重构 experimental FSDP gradient-readiness countdown，未触及本课程使用的 DDP bucket、CP、MoE dispatcher 或 overlap contract。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
+这轮继续复核了 vLLM GPU runner selector / V1-V2 runner 分流、Scheduler、KV Connector / NIXL lifecycle，以及 Megatron Expert Parallel dispatcher、Distributed Optimizer、Context Parallel 与 communication-overlap 生命周期。相对上一快照，vLLM 又前进了 5 个提交：大部分集中在测试与 ROCm MLA，但其中 KV cache coordinator / prefix-cache tests 已明确覆盖 hybrid full-attention + Mamba `align` 的 fine-grained partial prefix-cache hits，因此 07.5 已补上“完整 hash block 是基础心智模型、不是所有当前路径的全局不变量”这一例外；这些提交未改变本课程的 continuous-batching / KV budget 主契约。Megatron 当前 `main` 仍是本次复核使用的快照，最新提交只重构 experimental FSDP gradient-readiness countdown，未触及本课程使用的 DDP bucket、CP、MoE dispatcher 或 overlap contract。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
 
 ## Reading tools
 

@@ -76,6 +76,7 @@
         <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
         <tr><td><code>MQA</code></td><td>Multi-Query Attention</td><td>多查询注意力</td><td>所有 Query heads 共享单组 K/V 的 Attention 变体。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>MiB</code></td><td>Mebibyte</td><td>MiB 二进制容量单位</td><td>二进制容量单位，1 MiB = 2^20 bytes。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
         <tr><td><code>CP</code></td><td>Context Parallel</td><td>上下文并行</td><td>让 Attention 沿 context/sequence 维跨 ranks 工作并交换必要上下文。</td></tr>

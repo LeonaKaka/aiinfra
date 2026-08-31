@@ -47,7 +47,7 @@
       <section class="article-section" id="intensity">
         <div class="section-no">02 · ARITHMETIC INTENSITY</div>
         <h2>判断 compute 还是 memory，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
-        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>AI = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分 DRAM、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
+        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>AI = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分 Dynamic Random-Access Memory (DRAM，动态随机存取存储器)、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
         <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受 memory bandwidth 限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入 compute-bound 区域。</span></div></div>
         <p>“某类算子永远 memory-bound”也不是绝对规律。shape、batch、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
       </section>
@@ -143,6 +143,7 @@
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
+        <tr><td><code>DRAM</code></td><td>Dynamic Random-Access Memory</td><td>动态随机存取存储器</td><td>主机内存和部分设备内存常用的易失性存储技术；容量层级与带宽特征要和缓存、设备显存区分。</td></tr>
         <tr><td><code>SM</code></td><td>Streaming Multiprocessor</td><td>流式多处理器</td><td>NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>

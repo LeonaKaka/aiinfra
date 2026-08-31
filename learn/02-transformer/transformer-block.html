@@ -118,7 +118,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <section class="article-section" id="stack">
         <div class="section-no">06 · FROM ONE BLOCK TO A MODEL</div>
         <h2>大模型，就是把这种 block 重复很多层，再加上入口和出口。</h2>
-        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM HEAD</small><b>logits</b></div></div>
+        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + Language Model (LM，语言模型) HEAD</small><b>logits</b></div></div>
         <p>所以以后看到“80-layer model”，不是 80 个完全不同的概念，而是同一种 block 结构使用不同参数重复 80 次。也因此，单层里一点点显存、通信或 kernel 调度浪费，乘上几十层后都会很明显。</p>
       </section>
 
@@ -160,6 +160,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
         <tr><td><code>GELU</code></td><td>Gaussian Error Linear Unit</td><td>高斯误差线性单元</td><td>Transformer/MLP 中常见的非线性激活函数。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>RoPE</code></td><td>Rotary Position Embedding</td><td>旋转位置编码</td><td>把位置信息注入 Query/Key 的常见位置编码方法。</td></tr>
+        <tr><td><code>LM</code></td><td>Language Model</td><td>语言模型</td><td>对 token 序列概率或下一 token 分布进行建模的模型。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
           </tbody>

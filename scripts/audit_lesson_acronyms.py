@@ -28,6 +28,13 @@ ALLOW = {
     # Mathematical symbols / harmless prose shorthand.
     "Q", "K", "V", "X", "Y", "H", "N", "S", "B", "W", "ID", "IDs", "OK", "VS",
 }
+# Operation/class/enum spellings that learners may see but that are not
+# independent glossary abbreviations. Keep this list narrow.
+NON_GLOSSARY_TOKENS = {
+    "AllGather", "AllReduce", "AllToAll", "FC1", "INFO", "MAX",
+    "NixlConnector", "READ", "README", "SUM", "SWAP", "WRITE",
+}
+ALLOW.update(NON_GLOSSARY_TOKENS)
 ALLOW.update(TERMS)
 
 STOP_WORDS = {

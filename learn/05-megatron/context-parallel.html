@@ -129,7 +129,7 @@
 <span class="comment"># local context capacity ≈ 32768 / 4 = 8192 tokens</span>
 <span class="comment"># current rank construction: model_size = TP × PP × CP × gtp_remat</span>
 <span class="comment"># DP = world_size / model_size</span></code></pre></div>
-        <p><strong>这里有一个值得主动防错的地方：</strong>当前 Parallelism Strategies Guide 的 overview 仍给出过一条简化的 <code>Total GPUs = TP × PP × CP × EP × DP</code> 口诀；但当前 <code>parallel_state.py</code> 的真实 rank construction 先用 dense <code>TP × PP × CP</code>（再考虑 GTP remat）确定 model size 与 DP，再另外构造 expert tensor/model/data groups。对于读源码和排 rank，这门课以实际 group construction 为准。</p>
+        <p><strong>这里有一个值得主动防错的地方：</strong>当前 Parallelism Strategies Guide 的 overview 仍给出过一条简化的 <code>Total GPUs = TP × PP × CP × EP × DP</code> 口诀；但当前 <code>parallel_state.py</code> 的真实 rank construction 先用 dense <code>TP × PP × CP</code>（再考虑 Generalized Tensor Parallelism (GTP，广义张量并行) remat）确定 model size 与 DP，再另外构造 expert tensor/model/data groups。对于读源码和排 rank，这门课以实际 group construction 为准。</p>
         <div class="concept-note"><p><strong>读多维并行最安全的方法不是背乘法口诀。</strong>打开 <code>parallel_state.py</code>，分别找 dense rank generator 和 expert rank generator，然后问“这个 rank 在哪套 grid 里、每个轴的 size 是多少”。</p></div>
       </section>
 
@@ -157,6 +157,7 @@
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
+        <tr><td><code>GTP</code></td><td>Generalized Tensor Parallelism</td><td>广义张量并行</td><td>Megatron 当前的新型张量并行路径；源码中的 GTP remat/replica 语义不能和经典 TP 简单混为一谈。</td></tr>
           </tbody>
         </table></div>
       </section>

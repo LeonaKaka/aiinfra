@@ -82,7 +82,7 @@
       <section class="article-section" id="pp">
         <div class="section-no">06 · PP OVERLAP: MICROBATCHES CREATE INDEPENDENT WORK</div>
         <h2>P2P 能否藏起来，取决于 schedule 是否给同一 rank 留出另一个可执行 microbatch。</h2>
-        <p>Pipeline Parallel 的 send/recv 有直接 stage dependency，但 One Forward One Backward (1F1B，一前向一反向) / VPP 会制造“别的 microbatch 可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P communication 可与 compute overlap，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制 warmup/flush 阶段。</p>
+        <p>Pipeline Parallel 的 send/recv 有直接 stage dependency，但 One Forward One Backward (1F1B，一前向一反向) / Virtual Pipeline Parallelism (VPP，虚拟流水线并行) 会制造“别的 microbatch 可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P communication 可与 compute overlap，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制 warmup/flush 阶段。</p>
         <div class="serial-vs-overlap"><div class="timeline-card"><small>DEPENDENCY</small><b>MB0 activation 未到，MB0 下一 stage 不能凭空开始</b><div class="timeline-track"><span class="compute">F MB0</span><span class="comm">send</span><span class="idle">wait</span><span class="idle">—</span><span class="idle">—</span><span class="idle">—</span></div></div><div class="timeline-card good"><small>SCHEDULE WINDOW</small><b>通信 MB0 时，本 rank 可以推进另一独立 microbatch</b><div class="timeline-track"><span class="comm">send MB0</span><span class="compute">F MB1</span><span class="compute">B MB-1</span><span class="comm">recv</span><span class="compute">F MB2</span><span class="compute">B MB0</span></div></div></div>
         <div class="precision-note"><strong>不要把 PP overlap 简化成一个 flag。</strong>VPP、microbatch 数、warmup/steady/cooldown、P2P Application Programming Interface (API，应用程序编程接口) 与模型各 stage 的 compute balance 一起决定实际窗口。</div>
       </section>
@@ -146,6 +146,7 @@ if consumer_needs(bucket):
         <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
+        <tr><td><code>VPP</code></td><td>Virtual Pipeline Parallelism</td><td>虚拟流水线并行</td><td>在一个物理 pipeline rank 上放多个模型分段，以更细粒度的 interleaving 降低流水线 bubble。</td></tr>
         <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>

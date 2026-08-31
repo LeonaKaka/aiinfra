@@ -89,7 +89,7 @@
         <div class="gdr-flow"><div><small>GPU MEMORY</small><b>GPU A device memory</b></div><span>copy / staging →</span><div><small>HOST PATH</small><b>CPU / host memory</b></div><span>→ network →</span><div><small>REMOTE</small><b>GPU B</b></div></div>
         <p>GPUDirect RDMA 的核心目标，是让第三方 PCIe device（典型是 NIC）能更直接 Direct Memory Access (DMA，直接内存访问) 访问 GPU memory，减少不必要的 host staging / CPU copy：</p>
         <div class="gdr-flow direct"><div><small>GPU MEMORY</small><b>GPU A device memory</b></div><span>DMA ↔</span><div><small>NIC</small><b>RDMA capable</b></div><span>network →</span><div><small>REMOTE GPU</small><b>GPU B memory</b></div></div>
-        <p>现实路径仍受 PCIe topology、GPU/NIC affinity、IOMMU、driver、NIC 能力与 platform 配置影响。“支持 GPUDirect RDMA”不等于任何 GPU 到任何 NIC 都能自动跑满，也不意味着网络与拓扑代价消失。</p>
+        <p>现实路径仍受 PCIe topology、GPU/NIC affinity、Input-Output Memory Management Unit (IOMMU，输入输出内存管理单元)、driver、NIC 能力与 platform 配置影响。“支持 GPUDirect RDMA”不等于任何 GPU 到任何 NIC 都能自动跑满，也不意味着网络与拓扑代价消失。</p>
         <div class="concept-note"><p>这也是以后读 vLLM Key-Value (KV，键-值) Connector / NVIDIA Inference Xfer Library (NIXL，NVIDIA 推理传输库) 时会再次遇到的基础：GPU 上已经算好的 KV，跨节点怎么直接送到另一张 GPU，而不是不必要地绕 host buffer。</p></div>
       </section>
 
@@ -123,7 +123,7 @@ NIC0    ...   ...   ...   ...    X
         <div class="section-no">09 · THIRD TOOL: NCCL-TESTS</div>
         <h2>训练慢之前，先问：机器的 collective 本身到底能跑多快？</h2>
         <p>NVIDIA 的 <code>nccl-tests</code> 是常见通信基准工具，最常见的就是测 all-reduce：</p>
-        <div class="benchmark-panel"><small>EXAMPLE BINARY</small><code>./build/all_reduce_perf ...</code><p>关注不同 message sizes 下的时间和 bandwidth。多节点通常通过 MPI 或集群 launcher 启动。具体命令取决于环境，不要直接照抄别人的网卡参数。</p></div>
+        <div class="benchmark-panel"><small>EXAMPLE BINARY</small><code>./build/all_reduce_perf ...</code><p>关注不同 message sizes 下的时间和 bandwidth。多节点通常通过 Message Passing Interface (MPI，消息传递接口) 或集群 launcher 启动。具体命令取决于环境，不要直接照抄别人的网卡参数。</p></div>
         <p>为什么先测它？如果 nccl-tests 已经明显跑不满机器应有的通信水平，那么训练框架里的 all-reduce 慢很可能只是症状；你应该先处理驱动、拓扑、NIC/RDMA、容器权限或网络配置。</p>
         <div class="source-note">源码参考：<a href="https://github.com/NVIDIA/nccl-tests">NVIDIA nccl-tests</a>。</div>
       </section>
@@ -171,8 +171,10 @@ NIC0    ...   ...   ...   ...    X
         <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>IB</code></td><td>InfiniBand</td><td>InfiniBand 高速互连</td><td>HPC/AI 集群常见的低延迟高带宽网络技术。</td></tr>
         <tr><td><code>DMA</code></td><td>Direct Memory Access</td><td>直接内存访问</td><td>设备在较少 CPU 搬运参与下直接读写内存的数据移动机制。</td></tr>
+        <tr><td><code>IOMMU</code></td><td>Input-Output Memory Management Unit</td><td>输入输出内存管理单元</td><td>为设备 DMA 提供地址转换和访问隔离的硬件单元，影响设备内存映射与直通路径。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
         <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
+        <tr><td><code>MPI</code></td><td>Message Passing Interface</td><td>消息传递接口</td><td>HPC 中常见的进程间消息传递标准；理解 NCCL 与传统分布式通信生态时会遇到。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
           </tbody>
         </table></div>

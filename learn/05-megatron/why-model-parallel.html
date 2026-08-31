@@ -135,6 +135,8 @@
         <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
+        <tr><td><code>GiB</code></td><td>Gibibyte</td><td>GiB 二进制容量单位</td><td>二进制容量单位，1 GiB = 2^30 bytes。</td></tr>
         <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
         <tr><td><code>FSDP</code></td><td>Fully Sharded Data Parallel</td><td>全分片数据并行</td><td>在数据并行域进一步分片参数、梯度或优化器状态的训练方式。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>

@@ -100,7 +100,7 @@
         <div class="section-no">08 · EXPERT GRID IS NOT DENSE GRID × EP</div>
         <h2>TP、CP、EP 不能靠一个“把所有缩写乘起来”的公式理解。</h2>
         <div class="ep-vs-tp"><div><small>DENSE GRID</small><b>dense TP × Pipeline Parallel (PP，流水线并行) × Context Parallel (CP，上下文并行) → dense DP</b><span>Attention/dense Transformer 部分按 dense rank generator 组织。</span></div><div><small>EXPERT GRID</small><b>expert-TP × EP × PP → expert-DP</b><span>MoE expert 部分由另一套 expert rank generator 组织；当前 expert generator 里 <code>cp=1</code>。</span></div></div>
-        <p>当前 <code>parallel_state.py</code> 会单独计算 <code>expert_tensor_parallel_size × expert_model_parallel_size × pipeline_model_parallel_size</code>（再考虑实验性 expert GTP remat 轴），然后用 world size 除它得到 expert-DP。随后 <code>expert_decoder_rank_generator</code> 以 <code>tp=expert_tensor_parallel_size</code>、<code>ep=expert_model_parallel_size</code>、<code>dp=expert_data_parallel_size</code>、<code>pp=...</code>、<code>cp=1</code> 构造 expert groups。</p>
+        <p>当前 <code>parallel_state.py</code> 会单独计算 <code>expert_tensor_parallel_size × expert_model_parallel_size × pipeline_model_parallel_size</code>（再考虑实验性 expert Generalized Tensor Parallelism (GTP，广义张量并行) remat 轴），然后用 world size 除它得到 expert-DP。随后 <code>expert_decoder_rank_generator</code> 以 <code>tp=expert_tensor_parallel_size</code>、<code>ep=expert_model_parallel_size</code>、<code>dp=expert_data_parallel_size</code>、<code>pp=...</code>、<code>cp=1</code> 构造 expert groups。</p>
         <p>这就是为什么 <strong>EP 不能机械地在 dense 总 GPU 公式外再乘一次</strong>。一个 global rank 同时参与 dense 与 expert 两套 group 关系；真正要问的是“当前这段 layer 用哪套 process group”。</p>
         <div class="source-note">当前实现：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py">megatron/core/parallel_state.py</a>，分别构造 dense rank generator 与 expert rank generator。</div>
       </section>
@@ -109,7 +109,7 @@
         <div class="section-no">09 · EP MAKES OVERLAP MORE IMPORTANT</div>
         <h2>Token exchange 很重，工程优化会尽量把它藏进其它可并行计算窗口。</h2>
         <div class="mini-code-map"><div class="mini-code-row"><code>overlap_moe_expert_parallel_comm</code><span>启用 expert communication 与其它计算的 overlap 路径。</span></div><div class="mini-code-row"><code>delay_wgrad_compute</code><span>延后部分 weight-gradient 工作，为 communication 暴露可利用的计算窗口。</span></div><div class="mini-code-row"><code>moe_shared_expert_overlap</code><span>让 shared-expert compute 与支持的 alltoall/flex dispatcher communication 并发。</span></div></div>
-        <p>这些选项高度版本相关，不能只背 CLI 名称。05.8 的核心方法仍然是：先画 dependency，再看 async launch / stream / wait，最后用 profiler 证明时间区间是否真的重叠。</p>
+        <p>这些选项高度版本相关，不能只背 Command-Line Interface (CLI，命令行界面) 名称。05.8 的核心方法仍然是：先画 dependency，再看 async launch / stream / wait，最后用 profiler 证明时间区间是否真的重叠。</p>
       </section>
 
       <section class="article-section" id="source">
@@ -141,6 +141,8 @@
         <tr><td><code>A2A</code></td><td>All-to-All</td><td>全对全通信</td><td>每个 rank 给不同 peers 发送不同数据；MoE dispatch 中很典型。</td></tr>
         <tr><td><code>AG</code></td><td>All-Gather</td><td>全收集</td><td>把各 rank 的 shard 收集成完整结果并让参与者获得。</td></tr>
         <tr><td><code>RS</code></td><td>Reduce-Scatter</td><td>归约分散</td><td>先做 reduction，再让每个 rank 只保留一个 reduced shard。</td></tr>
+        <tr><td><code>GTP</code></td><td>Generalized Tensor Parallelism</td><td>广义张量并行</td><td>Megatron 当前的新型张量并行路径；源码中的 GTP remat/replica 语义不能和经典 TP 简单混为一谈。</td></tr>
+        <tr><td><code>CLI</code></td><td>Command-Line Interface</td><td>命令行界面</td><td>通过终端参数和命令配置、启动或调试程序的接口。</td></tr>
           </tbody>
         </table></div>
       </section>
