@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 05.7：从 MoE router 到 token dispatch，理解 Megatron Expert Parallel 为什么需要 All-to-All、负载均衡与 grouped GEMM。" />
+  <meta name="description" content="AI Infra from Zero 05.7：从 MoE router 到 token dispatch，理解 Expert Parallel、expert grid、All-to-All 型数据流、负载均衡与 grouped GEMM。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>05.7 Expert Parallel · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -32,96 +32,95 @@
       <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Expert Parallel</span></div>
       <div class="lesson-kicker"><span>LESSON 05.7 · MEGATRON</span><span>约 70 min</span></div>
-      <h1>Expert Parallel：MoE 为什么把通信从 All-Reduce 变成 All-to-All？</h1>
-      <p class="dek">Dense Transformer 的 MLP 是“所有 token 都经过同一组权重”。Mixture-of-Experts 把这件事改成：先由 router 给每个 token 选少数 experts，再只执行被选中的 expert MLP。这样模型可以拥有大量 expert 参数，却只激活其中一小部分。Expert Parallel 的难点也随之出现：token 此刻在哪张 GPU，expert 又在哪张 GPU？</p>
+      <h1>Expert Parallel：Router 一旦把 token 指向远端 expert，通信为什么会变成 many-to-many？</h1>
+      <p class="dek">Dense MLP 是“所有 token 都经过同一组权重”。MoE 改成：router 给每个 token 选择少数 experts，只执行被选中的 expert MLP。Expert Parallel 再把 expert 集合分到不同 ranks。于是系统问题不再是“把同一个 tensor 求和”，而是“每个 token 要去哪个 expert，那个 expert 在哪”。All-to-All 会自然出现，但它是 dispatcher 的一种实现，不是 EP 的定义。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE layer = router + many experts + sparse token-to-expert assignment。</li><li>解释 EP 为什么是“切 experts”，而不是切 hidden dimension。</li><li>从 token 路由推导为什么 All-to-All 会自然出现。</li><li>理解 dispatch → local expert GEMM → combine 的完整数据流。</li><li>知道负载不均衡为什么会让最快的 GPU 也必须等最慢 expert rank。</li><li>看懂 Megatron 当前 allgather / alltoall / flex token dispatcher 的基本定位。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE layer = router + experts + sparse token-to-expert assignment。</li><li>解释 EP 为什么切 expert set，而 TP 切单个矩阵/hidden dimension。</li><li>从 token routing 推导 many-to-many 数据移动为什么适合 All-to-All。</li><li>理解 dispatch → local expert GEMM → combine 的生命周期。</li><li>知道 Megatron 当前 dispatcher 支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，不能把 EP 背成固定 A2A。</li><li>理解 dense grid 与 expert grid 是两套 rank generator 视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道 load imbalance 与 grouped GEMM 分别优化“分得不均”和“本地 GEMM 太碎”两个不同问题。</li></ul></div>
 
       <section class="article-section" id="moe">
         <div class="section-no">01 · DENSE MLP → MIXTURE OF EXPERTS</div>
-        <h2>MoE 不是很多完整模型，而是把某些 FFN/MLP 层换成一组 experts。</h2>
+        <h2>MoE 不是很多完整模型，而是把部分 FFN/MLP 层换成一组 experts。</h2>
         <div class="moe-ffn"><div><small>TOKENS</small><b>hidden states</b><span>[num_tokens, H]</span></div><i>→</i><div><small>ROUTER</small><b>score experts + top-k</b><span>每个 token 选择少数 experts，例如 top-2。</span></div><i>→</i><div><small>EXPERT FFNs</small><b>E₀, E₁, …, E₇</b><span>只执行被路由到的专家。</span></div></div>
-        <p>比如有 8 个 experts，但每个 token 只走 top-2。模型参数可以因为 8 份 expert MLP 大幅增加，但单个 token 只激活其中 2 个，因此计算量不会简单变成 dense MLP 的 8 倍。</p>
-        <div class="concept-note"><p><strong>MoE 的核心不是“并行”本身，而是稀疏激活。</strong>Expert Parallel 是把这些 experts 分布到不同 GPU 上之后，为了真正执行这种稀疏路由而产生的系统方案。</p></div>
+        <p>比如有 8 个 routed experts，每个 token 只走 top-2。expert 参数量可以大幅增加，但单 token 只激活其中少数 expert，因此激活计算量不会简单乘以总 expert 数。</p>
+        <div class="concept-note"><p><strong>MoE 的核心先是稀疏激活。</strong>EP 是当 experts 被放到不同 ranks 后，为了执行这种稀疏选择而引入的分布式布局。</p></div>
       </section>
 
       <section class="article-section" id="ep">
-        <div class="section-no">02 · SHARD EXPERTS ACROSS GPUS</div>
-        <h2>EP=4、8 个 experts：每个 EP rank 可以持有 2 个 local experts。</h2>
-        <div class="experts-grid"><div class="expert-card"><small>EP RANK 0</small><b>Expert 0 · 1</b><span>只保存/计算本地 experts。</span></div><div class="expert-card"><small>EP RANK 1</small><b>Expert 2 · 3</b><span>只保存/计算本地 experts。</span></div><div class="expert-card"><small>EP RANK 2</small><b>Expert 4 · 5</b><span>只保存/计算本地 experts。</span></div><div class="expert-card"><small>EP RANK 3</small><b>Expert 6 · 7</b><span>只保存/计算本地 experts。</span></div></div>
-        <p>这能把大量 expert parameters 分摊到多张 GPU。但 router 选 expert 时并不会尊重“token 原来在哪张卡”。rank 0 上的 token 完全可能被分给 Expert 6，而 Expert 6 在 rank 3。</p>
-        <p>因此必须把 token hidden state 真正送到拥有目标 expert 的 GPU。</p>
+        <div class="section-no">02 · SHARD EXPERTS ACROSS RANKS</div>
+        <h2>教学例：EP=4、8 个 experts，每个 EP rank 持有 2 个 local experts。</h2>
+        <div class="experts-grid"><div class="expert-card"><small>EP RANK 0</small><b>Expert 0 · 1</b><span>local expert parameters</span></div><div class="expert-card"><small>EP RANK 1</small><b>Expert 2 · 3</b><span>local expert parameters</span></div><div class="expert-card"><small>EP RANK 2</small><b>Expert 4 · 5</b><span>local expert parameters</span></div><div class="expert-card"><small>EP RANK 3</small><b>Expert 6 · 7</b><span>local expert parameters</span></div></div>
+        <p>router 的选择不会尊重“token 原来在哪张 GPU”。rank 0 上的 token 可以被分到 rank 3 的 Expert 6，因此 hidden state 必须到达拥有目标 expert 的执行位置。</p>
+        <div class="concept-note"><p><strong>这张图只说明 EP 轴。</strong>真实 Megatron 还可能给 expert 使用独立的 expert tensor-parallel size，并构造 expert-DP。不要把一个 global rank 只想成“EP rank”。</p></div>
       </section>
 
       <section class="article-section" id="routing">
-        <div class="section-no">03 · TOKENS DO NOT STAY WHERE THEY STARTED</div>
-        <h2>同一张 GPU 上的一批 tokens，可能被 router 分散到所有 EP ranks。</h2>
+        <div class="section-no">03 · ROUTING CREATES MANY-TO-MANY TRAFFIC</div>
+        <h2>每个 source rank 的 tokens，可能去不同 destination expert ranks。</h2>
         <div class="token-route"><div class="token-row-ep"><div class="token-card e0"><small>T0</small><b>→ E0</b><span>rank0</span></div><div class="token-card e2"><small>T1</small><b>→ E4</b><span>rank2</span></div><div class="token-card e1"><small>T2</small><b>→ E2</b><span>rank1</span></div><div class="token-card e3"><small>T3</small><b>→ E7</b><span>rank3</span></div><div class="token-card e0"><small>T4</small><b>→ E1</b><span>rank0</span></div><div class="token-card e2"><small>T5</small><b>→ E5</b><span>rank2</span></div></div></div>
-        <p>而其它 EP ranks 也同时有 tokens 想发到 rank 0、1、2、3。于是通信模式不是“大家把一个 tensor 求和”，而是：</p>
+        <p>其它 EP ranks 同时也有自己的 tokens。于是从通信语义上看，不再是“所有 rank 对同一个位置做 SUM”，而是每个 source 都可能向多个不同 destinations 发送不同 token payload。</p>
         <div class="a2a-matrix"><div class="a2a-grid"><div class="head"></div><div class="head">to R0</div><div class="head">to R1</div><div class="head">to R2</div><div class="head">to R3</div><div class="head">from R0</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="head">from R1</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="head">from R2</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="head">from R3</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div><div class="send">tokens</div></div></div>
-        <p><strong>每个 rank 都可能给每个其它 rank 发不同数量的 tokens。</strong>这正是 All-to-All 型通信天然适合的问题。</p>
+        <p><strong>这就是 All-to-All 型 dispatcher 很自然的原因。</strong>但“many-to-many 语义”不要求框架永远只能调用一个固定 NCCL all-to-all API；下一节会区分语义和实现。</p>
       </section>
 
       <section class="article-section" id="dispatch">
         <div class="section-no">04 · DISPATCH → EXPERT COMPUTE → COMBINE</div>
-        <h2>一个 MoE layer 的系统数据流可以压成四步。</h2>
-        <div class="dispatch-flow"><div class="dispatch-stage"><small>1 · ROUTER / PERMUTE</small><b>group by destination expert</b><span>计算 top-k、probabilities，并把 tokens 排成适合通信/专家计算的顺序。</span></div><i>→</i><div class="dispatch-stage comm"><small>2 · DISPATCH</small><b>All-to-All</b><span>把 token hidden states 发到 expert 所在 EP ranks。</span></div><i>→</i><div class="dispatch-stage"><small>3 · EXPERTS</small><b>local GEMMs</b><span>每张 GPU 对收到的 token groups 执行自己的 experts。</span></div><i>→</i><div class="dispatch-stage comm"><small>4 · COMBINE</small><b>reverse communication</b><span>expert outputs 回到 token 原来的 logical positions，再按 routing weights 合并。</span></div></div>
-        <p>当前 Megatron Core 的 <code>MoEAlltoAllTokenDispatcher</code> 文档就是按类似流程组织：preprocess / permute → EP All-to-All dispatch → local postprocess/expert work → combine 前处理 → EP All-to-All → unpermute。</p>
-        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.transformer.moe.token_dispatcher.html">core.transformer.moe.token_dispatcher</a>。其中 <code>MoEAlltoAllTokenDispatcher</code> 明确描述 EP A2A dispatch / combine 流程。</div>
+        <h2>先用 All-to-All dispatcher 建立最清楚的数据流。</h2>
+        <div class="dispatch-flow"><div class="dispatch-stage"><small>1 · ROUTER / PERMUTE</small><b>group by destination expert</b><span>top-k + routing weights，把 tokens 排成适合传输与 expert GEMM 的顺序。</span></div><i>→</i><div class="dispatch-stage comm"><small>2 · DISPATCH</small><b>All-to-All path</b><span>把 token hidden states 发到拥有目标 experts 的 ranks。</span></div><i>→</i><div class="dispatch-stage"><small>3 · EXPERTS</small><b>local GEMMs</b><span>每个 rank 对收到的 token groups 执行 local experts。</span></div><i>→</i><div class="dispatch-stage comm"><small>4 · COMBINE</small><b>reverse exchange</b><span>expert outputs 回到对应 token logical positions，再按 routing weights 合并。</span></div></div>
+        <p>当前 <code>MoEAlltoAllTokenDispatcher</code> 的代码/文档就实现这条路径。但这是具体 dispatcher class，不应反过来定义 EP。</p>
+        <div class="source-note">源码入口：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/token_dispatcher.py">core/transformer/moe/token_dispatcher.py</a>。</div>
       </section>
 
       <section class="article-section" id="load">
         <div class="section-no">05 · THE LOAD-BALANCE PROBLEM</div>
-        <h2>如果 router 把太多 token 发给同一个 expert，整个 MoE layer 会被它拖慢。</h2>
+        <h2>Router 分布一旦很偏，最慢 expert/rank 会拖住整层。</h2>
         <p>理想情况是 token 在 experts 之间比较均衡。现实里 router 学到的分布可能很偏：</p>
         <div class="load-bars"><div class="load-bar"><small>Expert 0</small><div class="load-track"><div class="load-fill" style="--w:92%"></div></div><b>92</b></div><div class="load-bar"><small>Expert 1</small><div class="load-track"><div class="load-fill" style="--w:28%"></div></div><b>28</b></div><div class="load-bar"><small>Expert 2</small><div class="load-track"><div class="load-fill" style="--w:41%"></div></div><b>41</b></div><div class="load-bar"><small>Expert 3</small><div class="load-track"><div class="load-fill" style="--w:19%"></div></div><b>19</b></div></div>
-        <p>rank 0 的 Expert 0 还在处理大量 tokens 时，其它 ranks 可能已经空闲。于是 MoE 不只需要“把 token 发对地方”，还需要 router load balancing、capacity 策略、expert bias / auxiliary loss 等算法机制。</p>
-        <p>Megatron 当前 router 配置支持 <code>aux_loss</code>、<code>sinkhorn</code>、<code>seq_aux_loss</code>、<code>none</code> 等负载均衡类型，并有 capacity / token drop 相关选项。初学阶段只要抓住系统因果：<strong>router 分布 → 每个 expert 的 token count → local GEMM size 与最慢 rank 时间。</strong></p>
+        <p>某个 expert 还在处理大量 tokens 时，其它 ranks 可能已经空闲。于是 MoE 既要解决 routing correctness，也要处理 load balancing、capacity / drop 策略等算法约束。系统上最重要的因果链是：<strong>router 分布 → per-expert token count → communication volume + GEMM size → straggler time。</strong></p>
       </section>
 
       <section class="article-section" id="gemm">
         <div class="section-no">06 · MANY EXPERTS CREATE MANY SMALL GEMMS</div>
         <h2>通信结束以后还有第二个效率问题：每个 expert 收到的 token 数可能不大。</h2>
-        <div class="grouped-gemm"><div><small>NAIVE</small><b>E0 GEMM · E1 GEMM · E2 GEMM · …</b><span>很多大小不同的小矩阵运算，kernel launch 和低 occupancy 问题更明显。</span></div><i>→</i><div><small>GROUPED GEMM</small><b>group expert GEMMs</b><span>把多个 expert matrix multiplies 以 grouped 方式执行，提高硬件利用率。</span></div></div>
-        <p>这就是 Megatron 的 <code>--moe-grouped-gemm</code> 为什么会出现在性能建议里。它不是改变 MoE 数学，而是让 local expert compute 更像 GPU 擅长的大批量工作。</p>
+        <div class="grouped-gemm"><div><small>NAIVE</small><b>E0 GEMM · E1 GEMM · E2 GEMM · …</b><span>很多大小不同的小矩阵运算，launch/occupancy 问题更明显。</span></div><i>→</i><div><small>GROUPED GEMM</small><b>group expert GEMMs</b><span>把多个 expert matrix multiplies 以 grouped 方式执行，提高本地硬件利用率。</span></div></div>
+        <p><code>--moe-grouped-gemm</code> 解决的是 local expert compute efficiency，不是 token dispatch 网络本身。不要把“Grouped GEMM”和“通信融合”混成一件事。</p>
       </section>
 
       <section class="article-section" id="dispatchers">
-        <div class="section-no">07 · CURRENT MEGATRON HAS MULTIPLE DISPATCHERS</div>
-        <h2>“EP = All-to-All”是最重要的基础，但真实框架已经有多种 token transport。</h2>
-        <div class="dispatcher-grid"><div><small>ALLGATHER</small><b>allgather dispatcher</b><span>把 token 信息 gather 到更大通信域，再在本地选择/处理；当前默认 dispatcher 类型仍可为 allgather。</span></div><div><small>ALLTOALL</small><b>NCCL All-to-All</b><span>标准 EP&gt;1 的直接方案：token 只发送到目标 expert ranks，最适合建立 EP 心智模型。</span></div><div><small>FLEX</small><b>DeepEP / HybridEP / NCCL EP</b><span>当前 Megatron 还提供 flex dispatcher，可选择更专门的跨节点/高性能 expert-parallel backend。</span></div></div>
-        <p>当前 <code>TransformerConfig.moe_token_dispatcher_type</code> 支持 <code>allgather</code>、<code>alltoall</code>、<code>flex</code>。MoE guide 对标准 EP&gt;1 推荐 NCCL-based alltoall，并列出了 DeepEP / HybridEP 等更现代 backend。</p>
-        <div class="source-note">官方说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/moe.html">Megatron Core · Mixture of Experts</a>；配置 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.transformer.transformer_config.html">TransformerConfig</a>。</div>
+        <div class="section-no">07 · EP DOES NOT FIX ONE DISPATCHER</div>
+        <h2>当前训练配置明确支持 <code>allgather</code>、<code>alltoall</code>、<code>flex</code>。</h2>
+        <div class="dispatcher-grid"><div><small>ALLGATHER</small><b>allgather dispatcher</b><span>当前 <code>TransformerConfig.moe_token_dispatcher_type</code> 默认值仍是 <code>allgather</code>；先 gather token information，再做本地选择/处理。</span></div><div><small>ALLTOALL</small><b>All-to-All dispatcher</b><span>直接表达 destination-specific token exchange，是理解 EP many-to-many 数据流最直观的路径。</span></div><div><small>FLEX</small><b>pluggable EP backends</b><span>当前 flex 路径可接 DeepEP / HybridEP / NCCL-EP 等更专门实现，并带自己的能力与约束。</span></div></div>
+        <p>因此一句更准确的话是：<strong>EP 产生 destination-dependent token traffic；All-to-All 是典型实现，但 Megatron 的 dispatcher contract 允许其它实现。</strong></p>
+        <div class="source-note">当前配置源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/transformer_config.py">TransformerConfig.moe_token_dispatcher_type</a>，类型为 <code>allgather | alltoall | flex</code>，默认 <code>allgather</code>。</div>
       </section>
 
       <section class="article-section" id="tp">
-        <div class="section-no">08 · EP AND TP CUT DIFFERENT THINGS</div>
-        <h2>TP 把一个 expert/Linear 横着切，EP 把很多 experts 分到不同设备。</h2>
-        <div class="ep-vs-tp"><div><small>TENSOR PARALLEL</small><b>split one matrix</b><span>多个 TP ranks 一起完成同一个 Linear / expert。通信常是 all-reduce、all-gather、reduce-scatter。</span></div><div><small>EXPERT PARALLEL</small><b>split expert set</b><span>不同 EP ranks 持有不同 experts。router 决定 token 应去哪里，因此 token dispatch/combine 常表现为 all-to-all。</span></div></div>
-        <p>两者也可以组合：每个 expert 自己再用 expert tensor parallel。但当前 Megatron MoE 指南特别提醒，细粒度 MoE 常更倾向 EP 而不是把 expert TP 设很大，因为本地 GEMM 过小会损伤效率。</p>
-        <p>官方 Parallelism Guide 还要求：<strong>TP 与 EP 同时使用时启用 Sequence Parallel。</strong>这是一个配置约束，后面真正跑 Megatron 时要记得。</p>
+        <div class="section-no">08 · EXPERT GRID IS NOT DENSE GRID × EP</div>
+        <h2>TP、CP、EP 不能靠一个“把所有缩写乘起来”的公式理解。</h2>
+        <div class="ep-vs-tp"><div><small>DENSE GRID</small><b>dense TP × PP × CP → dense DP</b><span>Attention/dense Transformer 部分按 dense rank generator 组织。</span></div><div><small>EXPERT GRID</small><b>expert-TP × EP × PP → expert-DP</b><span>MoE expert 部分由另一套 expert rank generator 组织；当前实现里 expert grid 的 CP 轴为 1。</span></div></div>
+        <p>当前 <code>parallel_state.py</code> 会先从 world size 和 dense <code>TP×PP×CP</code> 得到 dense DP，再单独用 <code>expert_tensor_parallel_size × expert_model_parallel_size × PP</code> 得到 expert-DP（忽略实验性额外轴时）。因此 <strong>EP 不是无条件在 dense 总 GPU 公式外再乘一次</strong>。</p>
+        <p>TP 与 EP 也可以同时存在：一个 expert 自己可以再做 expert tensor parallel。Megatron 对不同组合还有 Sequence Parallel 等配置约束，所以真正调配置时要回 <code>parallel_state.py</code> 和当前验证逻辑，而不是背简化乘法口诀。</p>
+        <div class="source-note">当前实现：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py">megatron/core/parallel_state.py</a>，分别构造 dense <code>RankGenerator</code> 与 <code>expert_decoder_rank_generator</code>。</div>
       </section>
 
       <section class="article-section" id="overlap">
-        <div class="section-no">09 · EP MAKES COMMUNICATION OVERLAP EVEN MORE IMPORTANT</div>
-        <h2>All-to-All 很重，真正工程优化会想办法把 token transfer 藏进其它计算。</h2>
-        <p>Megatron 当前 MoE 性能指南明确把 EP All-to-All 视作重要通信瓶颈，并提供：</p>
-        <div class="mini-code-map"><div class="mini-code-row"><code>--overlap-moe-expert-parallel-comm</code><span>把相邻 microbatches 的 expert communication 与其它计算重叠。</span></div><div class="mini-code-row"><code>--delay-wgrad-compute</code><span>配合拆开/延后部分 weight-gradient 计算，制造可与 A2A overlap 的计算窗口。</span></div><div class="mini-code-row"><code>--moe-shared-expert-overlap</code><span>共享 expert compute 与 token dispatch communication 并发。</span></div></div>
-        <p>下一课不再增加一种 parallelism，而是把前面所有“通信税”统一放到 timeline 上看：<strong>Megatron 的高级性能优化，本质上是在 dependency 允许的地方，把 communication 与 compute 同时跑。</strong></p>
+        <div class="section-no">09 · EP MAKES OVERLAP MORE IMPORTANT</div>
+        <h2>Token exchange 很重，工程优化会尽量把它藏进其它可并行计算窗口。</h2>
+        <div class="mini-code-map"><div class="mini-code-row"><code>overlap_moe_expert_parallel_comm</code><span>制造/启用 expert communication 与其它计算的 overlap 路径。</span></div><div class="mini-code-row"><code>delay_wgrad_compute</code><span>延后部分 weight-gradient 工作，为 communication 暴露计算窗口。</span></div><div class="mini-code-row"><code>moe_shared_expert_overlap</code><span>让 shared-expert compute 与支持的 dispatcher communication 并发。</span></div></div>
+        <p>这些选项高度版本相关，不能只背 CLI 名称。05.8 的核心方法仍然是：先画 dependency，再看 async launch / stream / wait，最后用 profiler 证明时间区间是否真的重叠。</p>
       </section>
 
       <section class="article-section" id="source">
         <div class="section-no">10 · SOURCE MAP</div>
-        <h2>MoE 源码先沿“router → dispatcher → experts”走，不要一上来钻 fused kernel。</h2>
-        <div class="source-map"><div class="source-map-card"><small>MOE LAYER</small><b>core.transformer.moe</b><code>megatron/core/transformer/moe/</code><span>MoE 的主要实现目录。</span></div><div class="source-map-card"><small>ROUTER</small><b>router</b><code>routing scores / top-k</code><span>决定每个 token 被哪些 experts 消费。</span></div><div class="source-map-card"><small>DISPATCH</small><b>token_dispatcher.py</b><code>allgather / alltoall / flex</code><span>负责 token permutation、跨 EP ranks dispatch 与 combine。</span></div><div class="source-map-card"><small>EXPERT COMPUTE</small><b>experts</b><code>local expert MLPs</code><span>收到 tokens 后真正执行 expert GEMM。</span></div></div>
+        <h2>沿“router → dispatcher → expert grid → experts”读。</h2>
+        <div class="source-map"><div class="source-map-card"><small>ROUTER</small><b>router.py</b><code>routing scores / top-k</code><span>决定 token→expert assignment。</span></div><div class="source-map-card"><small>DISPATCH</small><b>token_dispatcher.py</b><code>allgather / alltoall / flex</code><span>负责 permutation、跨 ranks transport 与 combine。</span></div><div class="source-map-card"><small>TOPOLOGY</small><b>parallel_state.py</b><code>expert rank generator</code><span>回答 expert TP / EP / expert-DP 这些 ranks 怎样组合。</span></div><div class="source-map-card"><small>EXPERT COMPUTE</small><b>experts.py / grouped GEMM</b><code>local expert MLPs</code><span>收到 tokens 后真正执行 expert compute。</span></div></div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.7</span></div><h2>确认你能从 router 自己推导出 All-to-All。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 EP 不能只做 All-Reduce？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为不同 token 被 router 指定到不同 experts，而 experts 分布在不同 ranks。需要把不同 token 发送到不同目的地；这不是“所有 rank 对同一个 tensor 求和”的 All-Reduce 语义，而是 many-to-many 的 token exchange。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 load imbalance 会直接降低 MoE throughput？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">某些 experts 收到过多 tokens 时，它们对应 rank 的 expert GEMM 更久；其它 ranks 即使先完成也要等待整体 layer 的依赖继续，因此 step 时间被最慢部分拖住。</div></div><div class="quiz-item"><div class="quiz-q">3. Grouped GEMM 在解决通信问题吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。它主要优化 dispatch 后的本地 expert compute，把多个较小 expert GEMMs 以 grouped 方式执行，提高 GPU 利用率。通信仍由 token dispatcher 处理。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.7</span></div><h2>把 EP 语义、dispatcher 和 topology 三层分开。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 router 会自然产生 many-to-many traffic？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">每个 source rank 的不同 tokens 可以被路由到不同 destination experts，而这些 experts 又分布在不同 ranks；因此不是对同一个 tensor 做统一 reduction，而是 destination-dependent exchange。</div></div><div class="quiz-item"><div class="quiz-q">2. “EP = All-to-All”为什么不够准确？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">All-to-All 是最直观的 dispatcher，但当前 Megatron 训练配置还支持 allgather 和 flex。EP 定义 expert placement / routing 的并行语义，不定义唯一 transport implementation。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么不能写 world_size = TP×PP×CP×EP×DP 当统一公式？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当前 Megatron 分别构造 dense grid 与 expert grid。dense grid 用 TP/PP/CP 和 dense DP；expert grid用 expert-TP/EP/PP 和 expert-DP。EP 不是简单叠加在同一套 dense grid 外的独立乘数。</div></div></section>
 
-      <div class="next-lesson muted-next"><div><small>NEXT · 05.8</small><br /><strong>Communication Overlap：Megatron 怎么让 NCCL 和 GEMM 同时发生？</strong></div><span>→</span></div>
+      <div class="next-lesson muted-next"><div><small>NEXT · 05.8</small><br /><strong>Communication Overlap：Megatron 怎么让通信和 GEMM 真正重叠？</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#moe">MoE 是什么</a><a href="#ep">切 experts</a><a href="#routing">Token routing</a><a href="#dispatch">Dispatch / combine</a><a href="#load">Load balance</a><a href="#gemm">Grouped GEMM</a><a href="#dispatchers">Dispatchers</a><a href="#tp">EP vs TP</a><a href="#overlap">Overlap</a><a href="#source">源码地图</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#moe">MoE 是什么</a><a href="#ep">切 experts</a><a href="#routing">Many-to-many</a><a href="#dispatch">A2A path</a><a href="#load">Load balance</a><a href="#gemm">Grouped GEMM</a><a href="#dispatchers">Dispatchers</a><a href="#tp">Expert grid</a><a href="#overlap">Overlap</a><a href="#source">源码地图</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
 </body>
