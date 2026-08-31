@@ -34,7 +34,7 @@
       <h1>为什么要模型并行：8 张 GPU 并不会自动变成一张 640GB 显卡。</h1>
       <p class="dek">到这里我们终于正式进入 Megatron。但第一课先不读源码。先把它要解决的问题钉死：模型、activation、optimizer state 太大时，一张 Graphics Processing Unit (GPU，图形处理器) 放不下；而多张 GPU 的显存彼此独立。所谓模型并行，本质上就是决定“模型的哪一部分放在哪些 rank 上，以及这些部分什么时候通信”。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 Data Parallel 不能解决“单份模型本身就放不下”的问题。</li><li>区分 Tensor Parallel (TP，张量并行)、Pipeline Parallel (PP，流水线并行)、Data Parallel (DP，数据并行) 分别在切模型的哪个维度。</li><li>知道 Context Parallel (CP，上下文并行) 与 Expert Parallel (EP，专家并行) 又分别在切 sequence/context 与 Mixture of Experts (MoE，混合专家模型) experts。</li><li>理解 Megatron 为什么要维护多种 process groups，而不是全世界只用一个 group。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道之后读源码时先看 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 Data Parallel 不能解决“单份模型本身就放不下”的问题。</li><li>区分 Data Parallel (DP，数据并行) 如何切数据/副本，以及 Tensor Parallel (TP，张量并行)、Pipeline Parallel (PP，流水线并行) 如何分别切 layer 内 tensor 与模型深度。</li><li>知道 Context Parallel (CP，上下文并行) 与 Expert Parallel (EP，专家并行) 又分别在切 sequence/context 与 Mixture of Experts (MoE，混合专家模型) experts。</li><li>理解 Megatron 为什么要维护多种 process groups，而不是全世界只用一个 group。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道之后读源码时先看 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
 
       <section class="article-section" id="fit">
         <div class="section-no">01 · THE FIRST WALL: IT DOES NOT FIT</div>
@@ -128,9 +128,9 @@
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
-        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
         <tr><td><code>CP</code></td><td>Context Parallel</td><td>上下文并行</td><td>让 Attention 沿 context/sequence 维跨 ranks 工作并交换必要上下文。</td></tr>
         <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>

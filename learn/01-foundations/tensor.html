@@ -54,7 +54,7 @@
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>Tensor</span></div>
 
-      <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约 25 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约 35 min</span></div>
       <h1>Tensor 到底是什么？</h1>
       <p class="dek">先别急着记 PyTorch Application Programming Interface (API，应用程序编程接口)。Artificial Intelligence (AI，人工智能) Infra 里最先要学会的，其实是一种“看形状”的能力：数据现在是什么 shape、下一步会变成什么 shape、它占多少内存、如果把它切到多张 Graphics Processing Unit (GPU，图形处理器) 上该怎么切。</p>
 
@@ -64,6 +64,7 @@
           <li>看到 <code>[B, S, H]</code> 不再把它当成神秘缩写。</li>
           <li>区分 scalar、vector、matrix 与更高维 tensor。</li>
           <li>用一个实际句子解释 batch、sequence length、hidden size。</li>
+          <li>区分 tensor 的逻辑 shape 与底层 storage/layout，理解 view、stride、contiguous 为什么会影响 kernel 与数据搬运。</li>
           <li>理解为什么以后学 Megatron 时，“沿哪个维度切 tensor”会成为核心问题。</li>
         </ul>
       </div>
@@ -134,7 +135,7 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
 
         <p>现在你第一次看到了我们刚才说的三个系统属性：</p>
         <div class="why-grid">
-          <div class="why-card"><b>shape</b><p>有多少个元素、每个维度多长。它决定了后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
+          <div class="why-card"><b>shape</b><p>给出各个维度的长度；总元素数由这些维度长度的乘积决定。它决定后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
           <div class="why-card"><b>dtype</b><p>每个数字用 32-bit Floating Point (FP32，32 位浮点)、16-bit Floating Point (FP16，16 位浮点)、Brain Floating Point 16 (BF16，BF16 16 位浮点) 还是别的格式存。它直接影响显存和计算性能。</p></div>
           <div class="why-card"><b>device</b><p>这块数据现在在 Central Processing Unit (CPU，中央处理器)、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
         </div>
@@ -155,8 +156,30 @@ if FP16: 80 × 2 bytes = 160 bytes</code></pre>
         <div class="concept-note"><p><strong>这块大 Tensor，能不能沿某个维度切开，让不同 GPU 各保存一部分？</strong></p></div>
       </section>
 
+      <section class="article-section" id="storage-layout">
+        <div class="section-no">05 · STORAGE / VIEW / STRIDE</div>
+        <h2>同一个 shape，不一定以同一种方式躺在内存里。</h2>
+        <p>到目前为止，我们一直把 tensor 当成“带 shape 的数字块”。这对读模型计算已经够用，但读 AI Infra 还差一层：<strong>shape 描述的是逻辑索引空间，storage/layout 描述这些元素怎样映射到底层内存。</strong>两块 tensor 可以拥有相同 shape，却有不同的 stride，甚至共享同一块 storage。</p>
+        <div class="code-block"><div class="code-head"><span>python</span><span>shape vs layout</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
+y = x.transpose(0, 1)
+
+print(x.shape, x.stride())  <span class="comment"># [3,4], (4,1)</span>
+print(y.shape, y.stride())  <span class="comment"># [4,3], (1,4)</span>
+print(y.is_contiguous())    <span class="comment"># False</span>
+
+z = y.contiguous()
+print(z.stride())           <span class="comment"># materialize a contiguous layout</span></code></pre></div>
+        <div class="why-grid">
+          <div class="why-card"><b>storage</b><p>底层真正拥有内存的 allocation。多个 tensor/view 可以引用同一块 storage，而不是每次都复制数据。</p></div>
+          <div class="why-card"><b>stride</b><p>某一维索引增加 1 时，在底层 storage 里要跨过多少个元素。它把“逻辑坐标”映射到“物理位置”。</p></div>
+          <div class="why-card"><b>contiguous</b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel 或 transfer path 可以处理任意 stride，另一些路径会要求或更偏好 contiguous buffer。</p></div>
+        </div>
+        <p><code>transpose</code> 常常只改变 view 的 shape/stride，而不立即复制 storage；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 reshape、permute、view、copy 时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
+        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的 block table 和 08.4 的 registered memory / transfer region 都会把“逻辑 tensor”继续落到更具体的地址、offset、stride 与 lifetime。现在先建立一个底线：<strong>logical shape ≠ physical layout</strong>。</p></div>
+      </section>
+
       <section class="article-section" id="megatron">
-        <div class="section-no">05 · WHERE THIS LEADS</div>
+        <div class="section-no">06 · WHERE THIS LEADS</div>
         <h2>这就是它和 Megatron 的第一条连接线。</h2>
         <p>现在你还不用学 Tensor Parallel。但可以先偷看未来的问题。一个 Linear 层通常会出现类似：</p>
         <div class="code-block">
@@ -192,6 +215,11 @@ Y = X @ W
           <button class="quiz-toggle" type="button">看答案</button>
           <div class="quiz-a">因为跨 GPU 使用数据往往意味着通信或拷贝。AI Infra 的大量性能问题，就是在研究哪些数据必须移动、移动多少、什么时候移动。</div>
         </div>
+        <div class="quiz-item">
+          <div class="quiz-q">4. 两个 tensor 的 shape 一样，是否意味着它们的底层内存布局也一定一样？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">不一定。shape 只说明各维长度；transpose/view 等操作可以让 tensor 拥有不同 stride，甚至共享同一 storage。是否 contiguous、是否需要实际 copy，是另一层问题。</div>
+        </div>
       </section>
 
       <section class="lesson-terms" id="lesson-terms">
@@ -224,6 +252,7 @@ Y = X @ W
       <a href="#shape">[B,S,H]</a>
       <a href="#pytorch">PyTorch</a>
       <a href="#memory">Infra 视角</a>
+      <a href="#storage-layout">Storage / Stride</a>
       <a href="#megatron">连接 Megatron</a>
       <a href="#checkpoint">Checkpoint</a>
     </aside>

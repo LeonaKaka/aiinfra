@@ -29,11 +29,11 @@
     <main class="article">
       <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Transformer Block</span></div>
-      <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约 45 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约 55 min</span></div>
       <h1>Transformer Block：Attention、MLP、Residual、Norm 怎么拼起来？</h1>
       <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做归一化、残差连接和 Multi-Layer Perceptron (MLP，多层感知机)。把这些模块拼起来，你第一次能看见“一个 Transformer layer 到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张 Graphics Processing Unit (GPU，图形处理器)。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见 pre-norm decoder block 的完整数据流。</li><li>理解 Residual 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大 Linear，并能估算标准两层 MLP 的参数规模。</li><li>区分“一个 block 的 forward”和外层 training loop / optimizer。</li><li>指出 Tensor Parallel、Pipeline Parallel、Key-Value (KV，键-值) Cache 分别会落在 block 的什么位置。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见 pre-norm decoder block 的完整数据流。</li><li>理解 Residual 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大 Linear，并能估算标准两层 MLP 的参数规模。</li><li>区分“一个 block 的 forward”和外层 training loop / optimizer。</li><li>解释 token position 如何进入 Attention，并理解可复用 Key-Value (KV，键-值) 还依赖一致的位置与模型语义。</li><li>指出 Tensor Parallel、Pipeline Parallel、Key-Value (KV，键-值) Cache 分别会落在 block 的什么位置。</li></ul></div>
 
       <section class="article-section" id="big-picture">
         <div class="section-no">01 · THE WHOLE BLOCK</div>
@@ -115,35 +115,52 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
         <p>这里用 PyTorch 的高级 <code>MultiheadAttention</code> 是因为上一课已经手写过 Attention shape；这一课重点是观察一个 block 如何组合子模块。真实 LLM 的 attention、mask、Rotary Position Embedding (RoPE，旋转位置编码)、RMSNorm、gated MLP 等会更具体。</p>
       </section>
 
+      <section class="article-section" id="position-semantics">
+        <div class="section-no">06 · POSITION IS PART OF ATTENTION STATE</div>
+        <h2>同一个 token 出现在第 10 位和第 100 位，Attention 不能把它们当成同一件事。</h2>
+        <p>decoder 不只需要知道“token 是什么”，还需要知道“token 在序列的什么位置”。很多现代 LLM 使用 Rotary Position Embedding (RoPE，旋转位置编码)：在常见实现里，Query 和 Key 会根据 <code>positions</code> 做位置相关变换，再进入 Attention。Value 通常不做同样的旋转。</p>
+        <div class="code-block"><div class="code-head"><span>mental model</span><span>position-conditioned attention</span></div><pre><code>hidden states
+    │
+    ├─→ Q ─┐
+    ├─→ K ─┼─→ RoPE(positions, Q, K) ─→ Attention
+    └─→ V ────────────────────────────→ Attention
+
+<span class="comment"># common decoder idea, not a promise about kernel fusion order</span></code></pre></div>
+        <p>这会直接影响后面的 KV Cache：缓存不是“随便保存一份 K/V 数字以后就能到处用”。要安全复用本地或远端 KV，至少要保证它仍对应<strong>同一模型语义、同一层/头布局、同一 token 前缀与一致的位置编码约定</strong>。如果 position 或 RoPE 配置不兼容，即使字节数和 shape 都对，语义也可能已经错了。</p>
+        <div class="why-grid"><div class="why-card"><b>token identity</b><p>缓存必须对应你以为的那段 prefix，而不是另一段“长度刚好一样”的序列。</p></div><div class="why-card"><b>position semantics</b><p>位置编号、RoPE 参数/缩放等必须与生成这些 K/V 时的约定兼容。</p></div><div class="why-card"><b>layout / format</b><p>layer、head、dtype、cache layout 也必须与消费端契约一致；这会在 06–08 模块继续具体化。</p></div></div>
+        <div class="concept-note"><p><strong>实现和语义要分开：</strong>真实 runtime 可以把 Query/Key normalization、RoPE、KV cache write 等步骤融合进 kernel；你不需要背某个函数调用顺序。需要牢牢记住的是：<strong>KV reuse 复用的是带上下文语义的模型状态，不只是搬一段显存。</strong></p></div>
+        <div class="source-note">当前 vLLM 的 Qwen3 路径就是一个直观例子：<code>positions</code> 传入 attention，Q/K 先经过 <code>rotary_emb(positions, q, k)</code>，随后进入 attention。源码入口：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/qwen3.py">vLLM · qwen3.py</a>。具体模型与 fused kernel 可能采用不同实现组织，因此这里把它作为语义示例，不把函数排列当永久 Application Programming Interface (API，应用程序编程接口)。</div>
+      </section>
+
       <section class="article-section" id="stack">
-        <div class="section-no">06 · FROM ONE BLOCK TO A MODEL</div>
+        <div class="section-no">07 · FROM ONE BLOCK TO A MODEL</div>
         <h2>大模型，就是把这种 block 重复很多层，再加上入口和出口。</h2>
         <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + Language Model (LM，语言模型) HEAD</small><b>logits</b></div></div>
         <p>所以以后看到“80-layer model”，不是 80 个完全不同的概念，而是同一种 block 结构使用不同参数重复 80 次。也因此，单层里一点点显存、通信或 kernel 调度浪费，乘上几十层后都会很明显。</p>
       </section>
 
       <section class="article-section" id="training">
-        <div class="section-no">07 · BLOCK VS TRAINING LOOP</div>
+        <div class="section-no">08 · BLOCK VS TRAINING LOOP</div>
         <h2>别把 forward 里的 block 和外面的 optimizer 混在一起。</h2>
         <div class="compare-strip block-compare"><div><small>MODEL FORWARD</small><b>block(x)</b><span>Norm → Attention → Residual → Norm → MLP → Residual</span></div><div><small>TRAINING LOOP</small><b>loss.backward()</b><span>对所有 blocks 的参数沿计算图产生 gradients</span></div><div><small>OPTIMIZER</small><b>step()</b><span>在 forward/backward 之外更新所有可训练参数</span></div></div>
         <p>这三个层级分清以后，读 Megatron 源码会轻松很多：model code 定义“算什么”，distributed/runtime code 决定“在哪张 GPU 算、怎么通信”，optimizer code 决定“参数怎么更新”。</p>
       </section>
 
       <section class="article-section" id="infra">
-        <div class="section-no">08 · INFRA MAP OF A BLOCK</div>
+        <div class="section-no">09 · INFRA MAP OF A BLOCK</div>
         <h2>现在终于可以把 AI Infra 技术贴到 block 上。</h2>
         <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>Tensor Parallel</b><span>切 Query-Key-Value (QKV，查询-键-值) / output projection 权重与 heads</span></div><div><small>MLP LINEARS</small><b>Tensor Parallel</b><span>切 up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>Context Parallel</b><span>长序列跨 ranks 分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同 GPU stages 保存不同层</span></div><div><small>TRAINING STATES</small><b>Distributed Optimizer</b><span>分片 optimizer / parameter-related states</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史 K/V 跨 token 复用</span></div></div>
         <p>这张图就是后面几大模块的导航。以后每学一个并行策略，我们都会回来问：它到底切的是 block 里的哪一块？</p>
       </section>
 
       <section class="article-section" id="prefill-decode">
-        <div class="section-no">09 · THE ROAD TO INFERENCE</div>
+        <div class="section-no">10 · THE ROAD TO INFERENCE</div>
         <h2>Prefill 和 Decode 都执行这些 blocks，但每一步的工作量结构不同。</h2>
         <div class="prefill-decode"><div><small>PREFILL</small><b>一次送入很多 prompt tokens</b><span>大矩阵计算更充分；每层产生并保存 prompt 的 KV Cache。</span></div><div><small>DECODE</small><b>通常每条序列一次新增一个 token</b><span>每层复用历史 KV；小批量/低算术强度问题更突出。</span></div></div>
         <p>这就是为什么同一个模型，训练 Infra 和推理 Infra 会长得很不一样。vLLM 章节会从这里继续：如何调度很多 request、管理 KV blocks、让 GPU 在 decode 阶段仍然高效。</p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>MODULE 02</span></div><h2>能把一个 block 画出来，Transformer 地基才算完成。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 Attention 分支输出通常要回到 <code>[B,S,H]</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为需要和 residual 路径上的输入逐元素相加；主 hidden shape 一致也让多个 blocks 可以连续堆叠。</div></div><div class="quiz-item"><div class="quiz-q">2. 标准两层 <code>H → 4H → H</code> MLP 忽略 bias 大约有多少权重？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>H×4H + 4H×H = 8H²</code>。这是一个教学估算，现代 gated MLP 的结构和 intermediate size 可能不同。</div></div><div class="quiz-item"><div class="quiz-q">3. Pipeline Parallel 和 Tensor Parallel 最直观的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在这里的第一层直觉是：Pipeline Parallel 更像把不同 Transformer layers 分给不同 stages；Tensor Parallel 则在同一层内部切分大 Linear / attention heads 等张量计算。后面会正式推导通信。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>MODULE 02</span></div><h2>能把一个 block 画出来，Transformer 地基才算完成。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 Attention 分支输出通常要回到 <code>[B,S,H]</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为需要和 residual 路径上的输入逐元素相加；主 hidden shape 一致也让多个 blocks 可以连续堆叠。</div></div><div class="quiz-item"><div class="quiz-q">2. 标准两层 <code>H → 4H → H</code> MLP 忽略 bias 大约有多少权重？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>H×4H + 4H×H = 8H²</code>。这是一个教学估算，现代 gated MLP 的结构和 intermediate size 可能不同。</div></div><div class="quiz-item"><div class="quiz-q">3. Pipeline Parallel 和 Tensor Parallel 最直观的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在这里的第一层直觉是：Pipeline Parallel 更像把不同 Transformer layers 分给不同 stages；Tensor Parallel 则在同一层内部切分大 Linear / attention heads 等张量计算。后面会正式推导通信。</div></div><div class="quiz-item"><div class="quiz-q">4. 为什么远端拿到 shape 完全正确的 KV，仍然不代表一定可以安全复用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 KV 还依赖生成它时的模型、layer/head layout、token prefix、position/RoPE 语义和 cache format。字节数正确只是必要条件，不是语义兼容的充分条件。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -160,6 +177,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
         <tr><td><code>GELU</code></td><td>Gaussian Error Linear Unit</td><td>高斯误差线性单元</td><td>Transformer/MLP 中常见的非线性激活函数。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>RoPE</code></td><td>Rotary Position Embedding</td><td>旋转位置编码</td><td>把位置信息注入 Query/Key 的常见位置编码方法。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>LM</code></td><td>Language Model</td><td>语言模型</td><td>对 token 序列概率或下一 token 分布进行建模的模型。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
@@ -170,7 +188,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <div class="next-lesson muted-next"><div><small>NEXT · 03.1</small><br /><strong>GPU 心智模型：模型到底在 GPU 的哪里算、哪里存？</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#big-picture">Block 全貌</a><a href="#residual">Residual</a><a href="#norm">Norm</a><a href="#mlp">MLP</a><a href="#code">Tiny Block</a><a href="#stack">堆成模型</a><a href="#training">和训练循环区别</a><a href="#infra">Infra 地图</a><a href="#prefill-decode">Prefill / Decode</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#big-picture">Block 全貌</a><a href="#residual">Residual</a><a href="#norm">Norm</a><a href="#mlp">MLP</a><a href="#code">Tiny Block</a><a href="#position-semantics">Position / RoPE</a><a href="#stack">堆成模型</a><a href="#training">和训练循环区别</a><a href="#infra">Infra 地图</a><a href="#prefill-decode">Prefill / Decode</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
 </body>
