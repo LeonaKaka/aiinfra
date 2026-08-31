@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Pipeline Parallel：两个 ranks 各持一段模型，用 activation forward send 与 gradient backward send 跑通 microbatch pipeline，并与 dense reference 对齐。" />
+  <title>Lab A9 · Mini Pipeline Parallel</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A9</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Pipeline Parallel</span></div>
+    <div class="lab-kicker">LAB A9 · PIPELINE PARALLEL</div>
+    <h1>PP 真正跨 stage 搬的不是整套参数。<br />Forward 传 activation，Backward 把 activation gradient 送回来。</h1>
+    <p class="dek">这个实验把两层模型硬拆成两个进程：rank 0 只拥有第一段权重，rank 1 只拥有第二段权重和 loss。多个 microbatch 依次穿过 stage 边界，再反向把 <code>dL/dh</code> 送回来。最后两边各自的参数梯度必须和单进程 dense model 完全一致。</p>
+
+    <section class="lab-section" id="ownership"><div class="lab-kicker">01 · MODEL OWNERSHIP</div><h2>先把“谁拥有哪部分模型”钉死，PP 才不会和 DP/TP 混掉。</h2>
+      <div class="stage-flow"><div class="stage-card train"><small>STAGE 0 · RANK 0</small><b>x @ W0 → h</b><span>保存输入 microbatch；forward 把 h 发给下一 stage；backward 收到 dL/dh 后计算 dW0。</span></div><div class="stage-card comm"><small>P2P BOUNDARY</small><b>h → · ← dL/dh</b><span>stage 之间传的是边界 activation 与对应 gradient，不是每个 microbatch 都复制全部参数。</span></div><div class="stage-card train"><small>STAGE 1 · RANK 1</small><b>h @ W1 → loss</b><span>拥有第二段权重与 loss；backward 计算 dW1 和 dL/dh，再把后者发回 rank 0。</span></div></div>
+    </section>
+
+    <section class="lab-section" id="schedule"><div class="lab-kicker">02 · MICROBATCh SCHEDULE</div><h2>为了先看清依赖，这里故意用最简单的 GPipe-style schedule。</h2>
+      <div class="command"><div class="command-head"><span>TEACHING SCHEDULE</span><span>3 microbatches</span></div><pre>Forward:   F0  →  F1  →  F2
+Backward:  B2  →  B1  →  B0
+
+Stage 0: compute h_i → send(h_i)
+Stage 1: recv(h_i) → compute loss_i
+
+Backward reverses the dependency:
+Stage 1: backward(loss_i) → send(dh_i)
+Stage 0: recv(dh_i) → accumulate dW0</pre></div>
+      <p>这个顺序故意没有冒充 Megatron 的生产 schedule。真实 Pipeline Parallel 会加入 warmup、steady-state 1F1B、cooldown，甚至 interleaving / virtual pipeline stage 来减少 bubble。这个 Lab 只负责先把<strong>stage ownership、microbatch 与 P2P dependency</strong>跑对。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>如果跨进程 forward/backward 拼接正确，两个 stage 的参数梯度都应等于 dense reference。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_pipeline_parallel.py</pre></div>
+      <p>验收不是“send/recv 没报错”，而是 <code>dW0</code> 与 <code>dW1</code> 都和单进程两层模型对齐。这样才能证明 stage boundary 没把 autograd 语义弄丢。</p>
+      <a class="code-link" href="./code/mini_pipeline_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_pipeline_parallel.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>回源码时把 schedule 和 P2P 分开读。</h2>
+      <div class="source-bridge"><div><small>OUR LAB</small><b>microbatch order + send/recv</b><code>stage ownership · activation · activation gradient</code></div><span>maps to →</span><div><small>MEGATRON</small><b>pipeline_parallel/schedules.py</b><code>what runs when</code><b>p2p_communication.py</b><code>what crosses the stage boundary</code></div></div>
+      <p>这也是 Source Map 里把 Control 与 Data 分开的原因：schedule 决定“现在轮到谁算”，P2P helper 决定“边界上具体传什么”。</p>
+    </section>
+
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>先答依赖，再背 1F1B。</h2><div class="check-list"><div>① 为什么 rank 0 不需要拥有 W1 才能完成自己的 backward？</div><div>② stage 1 为什么要把 <code>dL/dh</code> 发回，而不是把 dW1 发回？</div><div>③ 这个 GPipe-style schedule 的 bubble 从哪里来？1F1B 想改善什么？</div></div></section>
+
+    <nav class="lab-footer-nav"><a href="./mini-sequence-parallel.html">← Lab A8 · Sequence Parallel</a><a href="./mini-context-parallel.html">Lab A10 · Context Parallel →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
