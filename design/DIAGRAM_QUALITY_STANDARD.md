@@ -78,3 +78,7 @@ Do not mark a diagram complete after code generation alone.
 - `learn/07-vllm/model-runner-paged-attention.html` — separate KV write lane and paged-attention read lane; block-table selection stays visually distinct from data movement.
 - `learn/08-kv-connector/connector-architecture.html` — scheduler control plane + worker data plane + ConnectorMetadata + remote KV transport.
 - `learn/08-kv-connector/transfer-lifecycle.html` — Scheduler / Worker / Memory swimlanes with request-level completion, layer-level readiness, and source-block lifetime on one timeline.
+- `learn/08-kv-connector/nixl-rdma.html` — side-channel handshake is visually separated from registered-memory bulk KV transfer through NIXL / UCX / RDMA layers.
+- `learn/08-kv-connector/production-pd.html` — Router + P/D queues + Prefill + pinned source KV + handoff + Decode paged KV + heartbeat + TTFT/ITL on one end-to-end production canvas.
+
+The last two are useful regression references for multi-lane infrastructure diagrams: control traffic, bulk data, memory lifetime, and user-visible SLOs must remain visually distinct.
