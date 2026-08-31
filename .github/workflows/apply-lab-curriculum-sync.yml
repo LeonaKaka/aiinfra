@@ -20,6 +20,18 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+      - name: Make Source Map anchor unique
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply_lab_curriculum_sync.py')
+          s = p.read_text(encoding='utf-8')
+          old = "'<a href=\"../labs/mini-tp-backward.html\">A2 →</a></div>',\n        '<a href=\"../labs/mini-tp-backward.html\">A2 →</a><a href=\"../labs/mini-sequence-parallel.html\">A8 SP →</a></div>',"
+          new = "'<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py\">源码 ↗</a><a href=\"../labs/mini-tp-backward.html\">A2 →</a></div>',\n        '<div class=\"source-actions\"><a href=\"https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py\">源码 ↗</a><a href=\"../labs/mini-tp-backward.html\">A2 →</a><a href=\"../labs/mini-sequence-parallel.html\">A8 SP →</a></div>',"
+          if old not in s:
+              raise SystemExit('expected generic SP anchor not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Sync curriculum surfaces
         run: python scripts/apply_lab_curriculum_sync.py
       - name: Check site
