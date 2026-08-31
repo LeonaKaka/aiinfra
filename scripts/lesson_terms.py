@@ -98,13 +98,15 @@ TERMS = {
 # Avoid expanding inside code/diagrams/titles; "first use" means first substantive prose use.
 SKIP_TAGS = {"code", "pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
 SKIP_CLASSES = {"lesson-kicker", "section-no", "breadcrumb", "mobile-course-bar", "lesson-terms", "toc"}
-TERM_SECTION_RE = re.compile(r"\s*<section class=\"lesson-terms\".*?</section>\s*", re.S)
+# Remove only the generated section itself. Surrounding whitespace is canonicalized at insertion.
+TERM_SECTION_RE = re.compile(r'<section class="lesson-terms".*?</section>', re.S)
 MAIN_RE = re.compile(r"(?P<open><main\b[^>]*class=\"[^\"]*\barticle\b[^\"]*\"[^>]*>)(?P<body>.*?)(?P<close></main>)", re.S | re.I)
 TAG_RE = re.compile(r"(<[^>]+>)")
 OPEN_TAG_RE = re.compile(r"<\s*([A-Za-z0-9]+)\b([^>]*)>")
 CLOSE_TAG_RE = re.compile(r"</\s*([A-Za-z0-9]+)\s*>")
 CLASS_RE = re.compile(r'class\s*=\s*[\"\']([^\"\']*)[\"\']', re.I)
-NEXT_RE = re.compile(r"(?P<indent>\n\s*)(?=<a\b[^>]*class=\"[^\"]*\bnext-lesson\b|<div\b[^>]*class=\"[^\"]*\bnext-lesson\b)", re.I)
+# Consume all whitespace immediately before the next-lesson element so insertion is canonical.
+NEXT_RE = re.compile(r"\s*(?=<a\b[^>]*class=\"[^\"]*\bnext-lesson\b|<div\b[^>]*class=\"[^\"]*\bnext-lesson\b)", re.I)
 
 
 def term_pattern(abbr: str) -> re.Pattern[str]:
@@ -125,7 +127,6 @@ def tokenize_body(body: str):
         close = CLOSE_TAG_RE.match(part)
         if close:
             tag = close.group(1).lower()
-            # Pop back to the matching tag; tolerant of compact hand-written HTML.
             for i in range(len(stack) - 1, -1, -1):
                 if stack[i][0] == tag:
                     del stack[i:]
@@ -156,15 +157,16 @@ def visible_text(body: str) -> str:
 def found_terms(body: str) -> list[str]:
     text = visible_text(body)
     positions = []
-    for abbr in TERMS:
+    for order, abbr in enumerate(TERMS):
         m = term_pattern(abbr).search(text)
         if m:
-            positions.append((m.start(), abbr))
-    return [abbr for _, abbr in sorted(positions)]
+            positions.append((m.start(), order, abbr))
+    return [abbr for _, _, abbr in sorted(positions)]
 
 
 def expand_first_uses(body: str, abbreviations: list[str]) -> str:
-    pending = {abbr for abbr in abbreviations if TERMS[abbr][3]}
+    # Preserve lesson occurrence order. A set made expansion order non-deterministic.
+    pending = [abbr for abbr in abbreviations if TERMS[abbr][3]]
     if not pending:
         return body
     parts = []
@@ -172,20 +174,24 @@ def expand_first_uses(body: str, abbreviations: list[str]) -> str:
         if kind != "text" or blocked or not pending:
             parts.append(text)
             continue
-        for abbr in list(pending):
+        resolved = []
+        # Recompute each match against the current fragment after prior replacements.
+        for abbr in pending:
             english, chinese, _, _ = TERMS[abbr]
             pat = term_pattern(abbr)
             m = pat.search(text)
             if not m:
                 continue
-            # Already normalized in this prose fragment: do not duplicate it.
-            window = html_lib.unescape(text[max(0, m.start() - 120): m.end() + 120])
+            window = html_lib.unescape(text[max(0, m.start() - 160): m.end() + 160])
             if english in window and chinese in window:
-                pending.remove(abbr)
+                resolved.append(abbr)
                 continue
             replacement = f"{english} ({abbr}，{chinese})"
             text = text[:m.start()] + replacement + text[m.end():]
-            pending.remove(abbr)
+            resolved.append(abbr)
+        if resolved:
+            resolved_set = set(resolved)
+            pending = [abbr for abbr in pending if abbr not in resolved_set]
         parts.append(text)
     return "".join(parts)
 
@@ -205,33 +211,34 @@ def term_section(abbreviations: list[str]) -> str:
     if not rows:
         rows.append("        <tr><td>—</td><td>—</td><td>—</td><td>本课没有需要额外展开的技术缩写。</td></tr>")
     return (
-        "\n      <section class=\"lesson-terms\" id=\"lesson-terms\">\n"
-        "        <div class=\"section-no\">TERMS · 本课术语表</div>\n"
-        "        <h2>本课出现的缩写与术语</h2>\n"
-        "        <p class=\"lesson-terms-intro\">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>\n"
-        "        <div class=\"lesson-terms-scroll\"><table class=\"lesson-terms-table\">\n"
-        "          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>\n"
-        "          <tbody>\n" + "\n".join(rows) + "\n          </tbody>\n"
-        "        </table></div>\n"
-        "      </section>\n"
+        '<section class="lesson-terms" id="lesson-terms">\n'
+        '        <div class="section-no">TERMS · 本课术语表</div>\n'
+        '        <h2>本课出现的缩写与术语</h2>\n'
+        '        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>\n'
+        '        <div class="lesson-terms-scroll"><table class="lesson-terms-table">\n'
+        '          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>\n'
+        '          <tbody>\n' + "\n".join(rows) + '\n          </tbody>\n'
+        '        </table></div>\n'
+        '      </section>'
     )
 
 
 def normalize_html(source: str) -> str:
     m = MAIN_RE.search(source)
     if not m:
-        raise ValueError("missing <main class=\"article\">")
-    body = TERM_SECTION_RE.sub("\n", m.group("body"))
+        raise ValueError('missing <main class="article">')
+    body = TERM_SECTION_RE.sub("", m.group("body"))
     abbreviations = found_terms(body)
     body = expand_first_uses(body, abbreviations)
-    # Re-scan after expansion (same semantic set, but keeps ordering stable).
     abbreviations = found_terms(body)
     section = term_section(abbreviations)
     next_match = NEXT_RE.search(body)
     if next_match:
-        body = body[:next_match.start()] + section + body[next_match.start():]
+        prefix = body[:next_match.start()].rstrip()
+        suffix = body[next_match.end():]
+        body = prefix + "\n\n      " + section + "\n\n      " + suffix
     else:
-        body = body.rstrip() + section + "\n"
+        body = body.rstrip() + "\n\n      " + section + "\n"
     return source[:m.start()] + m.group("open") + body + m.group("close") + source[m.end():]
 
 
