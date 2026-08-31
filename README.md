@@ -65,12 +65,12 @@ vLLM / NIXL 主线：
 
 课程中的版本敏感表述会优先按当前上游源码复查，而不是把旧教程中的类名、默认值或实现细节当成永久定义。
 
-最近一次系统复查（2026-08-31）对照：
+最近一次系统复查（2026-09-01）对照：
 
-- vLLM `main`: `dafbef15a1c879c64ebb99427917e4ca8d5bca1e`
-- NVIDIA/Megatron-LM `main`: `a3344a6fa2031770855f203d991a31cebc89a23b`
+- vLLM `main`: `39e276eaeb9daed06a180f6a8d187bbb8790e97b`
+- NVIDIA/Megatron-LM `main`: `6c440e61fd5f8e6ad526d3225c02ec85be8e8fa8`
 
-这轮特别复核了 vLLM GPU runner selector / V1-V2 runner 分流、KV Connector / NIXL lifecycle，以及 Megatron Expert Parallel dispatcher 与 communication-overlap 生命周期。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
+这轮继续复核了 vLLM GPU runner selector / V1-V2 runner 分流、Scheduler、KV Connector / NIXL lifecycle，以及 Megatron Expert Parallel dispatcher、Distributed Optimizer、Context Parallel 与 communication-overlap 生命周期。相对上一快照，vLLM 新增的 scheduler 变化集中在 structured-output / `min_tokens` stop-ordering，未改变本课程的 continuous-batching / KV budget contract；Megatron 新提交只重构 experimental FSDP gradient-readiness countdown，未触及本课程使用的 DDP bucket、CP、MoE dispatcher 或 overlap contract。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
 
 ## Reading tools
 
@@ -80,7 +80,7 @@ vLLM / NIXL 主线：
 
 ## Quality checks
 
-每次 push 会运行站点检查，验证：HTML 阅读元数据、重复 ID、本地页面/fragment/asset 链接、CSS imports/`url(...)`、`app.js` 动态 lesson/Lab routes、已发布课程的旧 `locked` / `muted-next` 导航能否解析到真实目标、已知语义回归字符串、过期 placeholder，以及所有 Lab Python 源码的语法编译。
+每次 push 会运行站点检查，验证：HTML 阅读元数据、重复 ID、本地页面/fragment/asset 链接、CSS imports/`url(...)`、`app.js` 动态 lesson/Lab routes、已发布课程的旧 `locked` / `muted-next` 导航能否解析到真实目标、已知语义回归字符串、过期 placeholder，以及所有 Lab Python 源码的语法编译。已人工验收为 lesson-native 的核心 SVG 另外由 `scripts/check_diagrams.py` 做宽度回归保护，防止重新退回“超宽小字号画布再整体缩小”的旧模式。
 
 这个轻量 CI 不会伪装成 GPU/NCCL/NIXL 性能测试；需要真实硬件才能下结论的内容，在课程和 Lab 中会显式标出。
 
