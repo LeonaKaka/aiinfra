@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 03.1：建立 GPU 心智模型，从 CPU、HBM、SM、Tensor Core、CUDA kernel 到数据传输和异步执行。" />
+  <meta name="description" content="AI Infra from Zero 03.1：建立 GPU 心智模型，从 CPU、GPU device memory、SM、Tensor Core、CUDA kernel 到数据传输和异步执行。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>03.1 GPU 心智模型 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -33,7 +33,7 @@
       <h1>GPU 心智模型：模型到底在哪里算、数据又在哪里放？</h1>
       <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在 CPU 内存还是 GPU 显存？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NCCL、Tensor Parallel、vLLM 性能优化的地基。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU/host memory 与 GPU/HBM 的角色。</li><li>知道 PyTorch CUDA op 最终会在 GPU 上触发 kernel，而不是 Python 自己在算矩阵。</li><li>理解 SM、Tensor Core、HBM、PCIe/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要 synchronize。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU/host memory 与 GPU device memory 的角色，并知道 HBM / GDDR 是具体显存技术。</li><li>知道 PyTorch CUDA op 最终会在 GPU 上触发 kernel，而不是 Python 自己在算矩阵。</li><li>理解 SM、Tensor Core、device memory、PCIe/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要 synchronize。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
 
       <section class="article-section" id="machine">
         <div class="section-no">01 · ONE MACHINE, TWO MEMORY WORLDS</div>
@@ -41,12 +41,13 @@
         <div class="machine-map">
           <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · scheduler · dataloader</span><div class="memory-box"><small>SYSTEM MEMORY</small><strong>RAM</strong></div></div>
           <div class="link-box"><span>PCIe / platform interconnect</span><i></i></div>
-          <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · GEMM · attention</span><div class="memory-box"><small>GPU MEMORY</small><strong>HBM / VRAM</strong></div></div>
+          <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · GEMM · attention</span><div class="memory-box"><small>DEVICE MEMORY</small><strong>HBM or GDDR</strong></div></div>
         </div>
         <p>最常见的离散 GPU 机器里，CPU 和 GPU 有各自的内存。一个 CPU tensor 不能因为你“想让 GPU 算”就自动变成 GPU tensor，通常需要把数据传到 device memory：</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>device move</span></div><pre><code>x = torch.randn(<span class="num">1024</span>, <span class="num">1024</span>)   <span class="comment"># CPU memory</span>
 x = x.to(<span class="comment">'cuda:0'</span>)              <span class="comment"># move/copy to GPU 0</span>
 print(x.device)                    <span class="comment"># cuda:0</span></code></pre></div>
+        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>VRAM 常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
         <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器/PC 常通过 PCIe 连接 CPU 与 GPU；NVLink/NVSwitch 更常用于高带宽 GPU↔GPU 互连，也存在带更紧密 CPU-GPU 互连的特定平台。后面会按具体拓扑再讲。</p></div>
       </section>
 
@@ -54,7 +55,7 @@ print(x.device)                    <span class="comment"># cuda:0</span></code><
         <div class="section-no">02 · INSIDE THE GPU</div>
         <h2>GPU 不是“一颗超级核心”，而是大量并行执行资源。</h2>
         <p>不同 NVIDIA 架构细节会变化，但为了学 Infra，可以先用下面这个抽象：</p>
-        <div class="gpu-anatomy"><div class="gpu-shell"><small>GPU</small><div class="sm-grid"><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>…</b><span>many more</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div></div><div class="hbm-band"><small>HIGH-BANDWIDTH DEVICE MEMORY</small><b>HBM / VRAM</b></div></div></div>
+        <div class="gpu-anatomy"><div class="gpu-shell"><small>GPU</small><div class="sm-grid"><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>…</b><span>many more</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div></div><div class="hbm-band"><small>GPU DEVICE MEMORY</small><b>HBM / GDDR</b></div></div></div>
         <p><strong>SM（Streaming Multiprocessor）</strong>可以先理解为 GPU 上的一组计算执行资源。大量 threads/warps 被调度到各个 SM 上运行。Tensor Cores 则是其中专门加速某些矩阵乘加运算的硬件单元。</p>
         <p>这也是为什么深度学习特别喜欢大矩阵：同一种规则计算可以拆成大量并行工作，让 GPU 的很多执行单元一起忙起来。</p>
       </section>
@@ -74,13 +75,13 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
         <div class="section-no">04 · WHY TENSOR CORES MATTER</div>
         <h2>大模型里的 GEMM，正好是 Tensor Cores 擅长的工作。</h2>
         <p>Tensor Cores 针对特定数据类型和矩阵乘加模式提供很高吞吐。于是模型训练/推理会大量使用 FP16、BF16、FP8 等较低精度格式，并把 Linear/Attention/MLP 尽量变成高效的大矩阵运算。</p>
-        <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>QKV PROJECTION</small><b>several large matrix multiplies</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>所以前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
+        <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>QKV PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
       </section>
 
       <section class="article-section" id="hbm">
         <div class="section-no">05 · COMPUTE NEEDS DATA</div>
         <h2>算力再高，如果数据没及时到计算单元，GPU 也只能等。</h2>
-        <p>权重、activation、KV Cache 等大部分数据常驻在 GPU device memory（例如 HBM/显存）。计算前后要不断把数据在内存层级之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
+        <p>权重、activation、KV Cache 等大部分数据常驻在 GPU device memory；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在内存层级之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
         <div class="compare-limits"><div><small>COMPUTE</small><b>算得不够快</b><span>Tensor Core / ALU 是瓶颈</span></div><div><small>MEMORY</small><b>喂数据不够快</b><span>memory bandwidth / data movement 是瓶颈</span></div></div>
         <p>下一节会正式学习显存账单，03.3 再把 compute-bound / memory-bound / communication-bound 分开。</p>
       </section>
@@ -90,18 +91,21 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
         <h2>CPU 发出 GPU 工作后，很多 CUDA 操作不会原地傻等 GPU 完成。</h2>
         <p>在常见 PyTorch CUDA 工作流里，CPU 可以把工作提交到 CUDA stream，然后继续往下执行。这样 CPU launch 与 GPU execution 能重叠，但也带来一个新手最容易踩的坑：<strong>直接用 CPU 时钟包住 CUDA op，可能只量到“提交工作”的时间。</strong></p>
         <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">launch A</span><span class="launch">launch B</span><span class="free">other work</span></div><div class="gpu-line"><small>GPU</small><span class="work a">kernel A</span><span class="work b">kernel B</span></div></div>
-        <div class="code-block"><div class="code-head"><span>python</span><span>simple timing idea</span></div><pre><code>start = time.perf_counter()
+        <div class="code-block"><div class="code-head"><span>python</span><span>simple timing idea</span></div><pre><code>import time
+
+torch.cuda.synchronize()   <span class="comment"># exclude earlier queued CUDA work</span>
+start = time.perf_counter()
 y = x @ w
 
-torch.cuda.synchronize()   <span class="comment"># wait until preceding CUDA work finishes</span>
+torch.cuda.synchronize()   <span class="comment"># wait for this queued work to finish</span>
 elapsed = time.perf_counter() - start</code></pre></div>
-        <p>正式 benchmark 更常使用 CUDA Events、warm-up、多次迭代等方法。这里先建立“GPU execution 可以和 CPU 控制流异步”的概念。</p>
+        <p>前面的同步让计时窗口不被更早排队的 CUDA 工作污染，后面的同步保证目标工作真的完成。正式 benchmark 更常使用 CUDA Events、warm-up、多次迭代等方法；这里先建立“GPU execution 可以和 CPU 控制流异步”的概念。</p>
       </section>
 
       <section class="article-section" id="multi-gpu">
         <div class="section-no">07 · TWO GPUS ARE TWO DEVICES</div>
         <h2><code>cuda:0</code> 和 <code>cuda:1</code> 不是一个更大的共享显存池。</h2>
-        <div class="two-gpu"><div><small>GPU 0</small><b>HBM 0</b><span>X lives here</span></div><div class="gpu-link"><span>NVLink / PCIe / fabric</span><i></i></div><div><small>GPU 1</small><b>HBM 1</b><span>W lives here</span></div></div>
+        <div class="two-gpu"><div><small>GPU 0</small><b>device memory 0</b><span>X lives here</span></div><div class="gpu-link"><span>NVLink / PCIe / fabric</span><i></i></div><div><small>GPU 1</small><b>device memory 1</b><span>W lives here</span></div></div>
         <p>如果某个计算需要 GPU 1 用到 GPU 0 上的数据，就必须存在某种数据移动/通信路径。框架、NCCL、P2P、collective 通信等会帮你完成，但代价不会凭空消失。</p>
         <div class="concept-note"><p><strong>这就是分布式训练的核心矛盾：</strong>多 GPU 给了更多计算和显存，但只要把一个问题拆开，就必须考虑“拆完之后哪些数据还需要彼此交换”。</p></div>
       </section>
@@ -109,23 +113,23 @@ elapsed = time.perf_counter() - start</code></pre></div>
       <section class="article-section" id="utilization">
         <div class="section-no">08 · WHY A GPU CAN LOOK IDLE</div>
         <h2>GPU 没跑满，不代表唯一答案是“模型太小”。</h2>
-        <div class="stall-grid"><div><b>CPU / launch</b><span>CPU 没及时提交足够工作</span></div><div><b>Memory</b><span>kernel 在等 HBM 数据</span></div><div><b>Communication</b><span>GPU 在等其它 ranks / network</span></div><div><b>Synchronization</b><span>某个 barrier / dependency 阻塞</span></div><div><b>Small kernels</b><span>工作太碎，launch 开销占比高</span></div><div><b>Load imbalance</b><span>不同 GPU 工作量不均</span></div></div>
+        <div class="stall-grid"><div><b>CPU / launch</b><span>CPU 没及时提交足够工作</span></div><div><b>Memory</b><span>kernel 在等 device-memory 数据</span></div><div><b>Communication</b><span>GPU 在等其它 ranks / network</span></div><div><b>Synchronization</b><span>某个 barrier / dependency 阻塞</span></div><div><b>Small kernels</b><span>工作太碎，launch 开销占比高</span></div><div><b>Load imbalance</b><span>不同 GPU 工作量不均</span></div></div>
         <p>后面读 Megatron 的 communication overlap、读 vLLM 的 batching/scheduler，本质上都在想办法减少这些“昂贵 GPU 没在做有效计算”的时间。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">09 · CONNECT THE ROADMAP</div>
         <h2>把今天的硬件词，放回我们的两条终点路线。</h2>
-        <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in HBM → scheduler feeds kernels → KV transfer across devices/nodes</span></div></div>
+        <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → scheduler feeds kernels → KV transfer across devices/nodes</span></div></div>
         <p>之后再看到 “NCCL all-reduce”“GPUDirect RDMA”“NIXL”，不要把它们当成凭空冒出来的新技术。它们都在解决同一个非常具体的问题：<strong>让数据在正确的时间，到正确的设备和内存位置。</strong></p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.1</span></div><h2>先把 GPU 画成一个系统，而不是一块“加速卡”。</h2><div class="quiz-item"><div class="quiz-q">1. <code>torch.randn(...)</code> 默认在 CPU，为什么要 <code>.to('cuda:0')</code> 才能让 GPU 直接使用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为常见离散 GPU 系统里 CPU memory 与 GPU device memory 是不同的内存空间，tensor 必须位于对应 device 可使用的位置；移动数据本身也有成本。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么一行 <code>X @ W</code> 不等于“Python 在做矩阵乘法”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">PyTorch 是高层入口。CUDA tensor 的矩阵乘法会调用底层 CUDA/library 实现并在 GPU 上执行 kernel；Python 主要负责组织和发起这些操作。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么直接用 CPU timer 量一个 CUDA op 可能不准？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 CUDA 工作常异步提交，CPU 可能在 GPU 真正完成前就继续执行。简单计时需要适当 synchronize；严谨 benchmark 通常使用 CUDA Events、warm-up 等。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.1</span></div><h2>先把 GPU 画成一个系统，而不是一块“加速卡”。</h2><div class="quiz-item"><div class="quiz-q">1. <code>torch.randn(...)</code> 默认在 CPU，为什么要 <code>.to('cuda:0')</code> 才能让 GPU 直接使用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为常见离散 GPU 系统里 CPU memory 与 GPU device memory 是不同的内存空间，tensor 必须位于对应 device 可使用的位置；移动数据本身也有成本。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么一行 <code>X @ W</code> 不等于“Python 在做矩阵乘法”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">PyTorch 是高层入口。CUDA tensor 的矩阵乘法会调用底层 CUDA/library 实现并在 GPU 上执行 kernel；Python 主要负责组织和发起这些操作。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么直接用 CPU timer 量一个 CUDA op 可能不准？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 CUDA 工作常异步提交，CPU 可能在 GPU 真正完成前就继续执行。简单计时要控制计时窗口前后的同步；严谨 benchmark 通常使用 CUDA Events、warm-up 等。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 03.2</small><br /><strong>显存到底花在哪：Parameters、Gradients、Activations、Optimizer、KV Cache</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#machine">CPU / GPU</a><a href="#inside">GPU 内部</a><a href="#kernel">CUDA kernel</a><a href="#tensor-core">Tensor Cores</a><a href="#hbm">HBM / 数据搬运</a><a href="#async">异步执行</a><a href="#multi-gpu">多 GPU</a><a href="#utilization">为什么会空闲</a><a href="#bridge">路线连接</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#machine">CPU / GPU</a><a href="#inside">GPU 内部</a><a href="#kernel">CUDA kernel</a><a href="#tensor-core">Tensor Cores</a><a href="#hbm">Device memory / 数据搬运</a><a href="#async">异步执行</a><a href="#multi-gpu">多 GPU</a><a href="#utilization">为什么会空闲</a><a href="#bridge">路线连接</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
 </body>
