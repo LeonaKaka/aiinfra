@@ -14,20 +14,6 @@ def replace_once(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-def harden_audit() -> None:
-    path = ROOT / "scripts" / "audit_lesson_acronyms.py"
-    replace_once(
-        path,
-        '"""Report acronym-like tokens in lesson articles that are not in the term registry.\n\nThis is intentionally a candidate audit, not yet a hard CI failure: the first run\nis used to separate real technical abbreviations from UI labels, variables and\nproduct names that should be explicitly allowlisted.\n"""',
-        '"""Fail on high-confidence acronym-like tokens missing from the term registry.\n\nThe scan is intentionally limited to teaching prose (<p>/<li>) and excludes\ncode, compact UI labels, product/class spellings and explicit narrow allowlists.\nA new unexplained acronym in learner-facing prose is therefore a CI regression.\n"""',
-    )
-    replace_once(
-        path,
-        '    for token in sorted(hits, key=str.casefold):\n        pages = ", ".join(sorted(hits[token]))\n        print(f"{token}: {pages}")\n    return 0\n',
-        '    for token in sorted(hits, key=str.casefold):\n        pages = ", ".join(sorted(hits[token]))\n        print(f"{token}: {pages}")\n    return 1\n',
-    )
-
-
 def move_dram_expansion_into_prose() -> None:
     path = ROOT / "learn" / "08-kv-connector" / "nixl-rdma.html"
     replace_once(
@@ -38,9 +24,8 @@ def move_dram_expansion_into_prose() -> None:
 
 
 def main() -> None:
-    harden_audit()
     move_dram_expansion_into_prose()
-    print("Finalized acronym guard and DRAM prose placement.")
+    print("Finalized DRAM prose placement.")
 
 
 if __name__ == "__main__":
