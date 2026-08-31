@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero：从基础知识一路学到 Megatron Core 与 vLLM KV Connector。" />
+  <meta name="description" content="AI Infra from Zero：8 个学习模块、14 个可运行实验，从基础知识一路学到 Megatron Core 与 vLLM KV Connector。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>AI Infra from Zero</title>
   <link rel="stylesheet" href="./styles.css" />
@@ -23,9 +23,10 @@
     <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav">菜单</button>
     <nav class="site-nav" id="siteNav">
       <a href="#roadmap">学习路线</a>
-      <a href="#destinations">目标源码</a>
-      <a href="#method">学习方法</a>
-      <a href="#first-step" class="nav-cta">开始学习</a>
+      <a href="./source-map/index.html">Source Map</a>
+      <a href="./labs/index.html">Labs</a>
+      <a href="./glossary/index.html">Glossary</a>
+      <a href="./learn/01-foundations/tensor.html" class="nav-cta">开始学习</a>
     </nav>
   </header>
 
@@ -36,16 +37,16 @@
         <h1>从零基础开始，<br />直到你敢打开 <em>Megatron</em> 和 <em>vLLM</em> 的源码。</h1>
         <p class="hero-lead">
           这不是一份名词表，也不是“七天速通”。我们从 Tensor、GPU、通信这些地基开始，
-          一层一层搭到分布式训练与现代推理系统。每学一个概念，都知道它最终会落到哪段真实源码里。
+          一层一层搭到分布式训练与现代推理系统。每学一个概念，都知道它最终会落到哪段真实源码和哪个可运行实验里。
         </p>
         <div class="hero-actions">
-          <a class="button primary" href="#first-step">从第一课开始 <span>→</span></a>
+          <a class="button primary" href="./learn/01-foundations/tensor.html">从第一课开始 <span>→</span></a>
           <a class="button ghost" href="#roadmap">先看完整路线</a>
         </div>
         <div class="hero-meta" aria-label="课程概览">
           <div><strong>8</strong><span>核心模块</span></div>
+          <div><strong>14</strong><span>可运行实验</span></div>
           <div><strong>2</strong><span>目标代码库</span></div>
-          <div><strong>2</strong><span>毕业项目</span></div>
         </div>
       </div>
 
@@ -171,8 +172,8 @@
             <div class="road-line"><span></span></div>
             <div class="road-content">
               <div class="road-title"><h3>GPU Systems</h3><span>算力与显存</span></div>
-              <p>建立 GPU 心智模型：HBM、kernel、Tensor Core、显存组成，以及不同瓶颈。</p>
-              <div class="road-tags"><span>HBM</span><span>CUDA kernel</span><span>memory bound</span><span>compute bound</span></div>
+              <p>建立 GPU 心智模型：device memory（数据中心卡常见 HBM，消费级 GPU 常见 GDDR）、kernel、Tensor Core，以及 compute / memory / launch 等不同瓶颈。</p>
+              <div class="road-tags"><span>device memory</span><span>CUDA kernel</span><span>memory bound</span><span>compute bound</span></div>
               <div class="road-outcome"><small>完成后</small> 能估算“这个模型为什么塞不进一张 GPU”。</div>
             </div>
           </article>
@@ -195,7 +196,7 @@
               <div class="road-title"><h3>Megatron Core</h3><span>Training Infra 主线</span></div>
               <p>不按仓库目录硬啃，而是按“问题 → 并行策略 → 通信 → 源码”逐层进入。</p>
               <div class="road-tags"><span>Data Parallel</span><span>Tensor Parallel</span><span>Pipeline</span><span>Distributed Optimizer</span><span>Context / Expert</span><span>Overlap</span></div>
-              <div class="road-outcome"><small>阶段项目</small> 写一个 2–4 GPU 的 Mini Megatron，并用 profiler 看计算与通信。</div>
+              <div class="road-outcome"><small>阶段项目</small> Mini Megatron 系列从 TP 一路做到 TP×DP 与 profiler evidence。</div>
             </div>
           </article>
 
@@ -228,7 +229,7 @@
               <div class="road-title"><h3>KV Connector</h3><span>最终 Boss</span></div>
               <p>从单机 KV 传输一路进入多节点：P/D disaggregation、RDMA、GPUDirect 与 NIXL。</p>
               <div class="road-tags"><span>KV transfer</span><span>P/D disaggregation</span><span>RDMA</span><span>GPUDirect</span><span>NIXL</span></div>
-              <div class="road-outcome"><small>毕业项目</small> Mini KV Connector：Prefill GPU → KV transfer → Decode GPU，并测延迟。</div>
+              <div class="road-outcome"><small>毕业项目</small> B1–B7 从 raw KV handoff 一路做到 registration、handshake 与 lease/expiry 生命周期。</div>
             </div>
           </article>
         </div>
@@ -256,12 +257,12 @@
     <section class="section shell first-step" id="first-step">
       <div class="first-step-card">
         <div>
-          <div class="eyebrow light"><span></span> NEXT UP</div>
+          <div class="eyebrow light"><span></span> START HERE</div>
           <h2>第一课：Tensor 到底是什么？</h2>
           <p>不从 Python 语法大全开始。第一课直接回答一个以后会反复遇到的问题：<code>[B, S, H]</code> 到底表示什么，为什么 Infra 工程里 shape 是第一语言。</p>
         </div>
         <div class="lesson-preview">
-          <div class="preview-head"><span>lesson / 01.1</span><span>约 25 min</span></div>
+          <div class="preview-head"><span>lesson / 01.1</span><span>课程已开放</span></div>
           <pre><code>X.shape = [B, S, H]
 
 B  → batch
@@ -269,7 +270,7 @@ S  → sequence length
 H  → hidden size
 
 # 下一步：X @ W 会发生什么？</code></pre>
-          <button type="button" disabled>课程正文即将加入</button>
+          <button type="button" style="color:#e4e9e4;cursor:pointer">进入第一课 →</button>
         </div>
       </div>
     </section>
