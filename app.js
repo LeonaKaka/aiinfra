@@ -65,6 +65,7 @@ if (lessonPreviewButton) {
 }
 
 const lessonRoutes = {
+  '01.1': 'learn/01-foundations/tensor.html',
   '01.2': 'learn/01-foundations/linear.html',
   '01.3': 'learn/01-foundations/training-loop.html',
   '01.4': 'learn/01-foundations/autograd-optimizer.html',
@@ -105,14 +106,34 @@ const capstoneRoutes = [
   { pattern: /mini\s+kv\s+(connector|handoff)/i, route: 'labs/mini-kv-handoff.html' },
 ];
 
-document.querySelectorAll('.lesson-link.locked').forEach((item) => {
+const firstLessonRouteByModule = Object.fromEntries(
+  Object.entries(lessonRoutes)
+    .filter(([key]) => key.endsWith('.1'))
+    .map(([key, route]) => [key.slice(0, 2), route])
+);
+
+function resolveLockedLessonRoute(item) {
   const label = item.textContent.trim();
   const key = label.match(/^(\d{2}\.\d)/)?.[1];
-  let route = key && lessonRoutes[key];
+  if (key && lessonRoutes[key]) return lessonRoutes[key];
 
-  if (!route) {
-    route = capstoneRoutes.find(({ pattern }) => pattern.test(label))?.route;
-  }
+  const capstoneRoute = capstoneRoutes.find(({ pattern }) => pattern.test(label))?.route;
+  if (capstoneRoute) return capstoneRoute;
+
+  // Older lesson sidebars sometimes used one generic locked label for an entire
+  // module (for example “GPU、显存与 kernel” or “Scheduler · Paged KV”). The
+  // curriculum is now complete, so route such legacy placeholders to that
+  // module's first real lesson instead of leaving a dead disabled-looking item.
+  const moduleKey = item
+    .closest('.module-block')
+    ?.querySelector('.module-name b')
+    ?.textContent.trim()
+    .match(/\d{2}/)?.[0];
+  return moduleKey && firstLessonRouteByModule[moduleKey];
+}
+
+document.querySelectorAll('.lesson-link.locked').forEach((item) => {
+  const route = resolveLockedLessonRoute(item);
   if (!route) return;
 
   const link = document.createElement('a');
