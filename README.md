@@ -57,7 +57,7 @@
 
 Megatron 主线：
 
-`TP layers/mappings → parallel groups → PP schedule/P2P → distributed optimizer → param/grad buckets + overlap`
+`TP layers/mappings → parallel groups → PP schedule/P2P → CP attention / EP dispatcher → distributed optimizer → param/grad buckets + overlap`
 
 vLLM / NIXL 主线：
 
