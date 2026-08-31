@@ -79,6 +79,7 @@ Do not mark a diagram complete after code generation alone.
 - `learn/05-megatron/distributed-optimizer.html` — four DP local-gradient lanes → central reduce-scatter → per-rank reduced-gradient/optimizer ownership → central parameter all-gather → synchronized model-parameter replicas; distinguish long-lived sharded optimizer state from forward-visible replicated compute parameters.
 - `learn/05-megatron/context-parallel.html` — local context ownership → P2P KV ring → per-rank attention accumulation while remote KV rotates → context output stays local; distinguish the simple contiguous teaching slice from current zigzag CP partitioning.
 - `learn/05-megatron/expert-parallel.html` — source-token ownership → destination-dependent token–expert assignments → A2A dispatch → expert-owner local compute → reverse A2A combine → restored source-token order; distinguish token ownership, expert-parameter ownership, and temporary compute ownership.
+- `learn/05-megatron/communication-overlap.html` — bucket READY event → asynchronous collective launch → independent compute window → first required WAIT, with separate gradient-reduce and parameter-prefetch lanes; distinguish communication duration from exposed critical-path tail and verify overlap by wait points rather than visual concurrency alone.
 - `learn/06-llm-inference/kv-cache.html` — autoregressive loop + one attention layer + persistent KV + cache growth.
 - `learn/07-vllm/kv-cache-manager.html` — logical blocks + block table + BlockPool + scattered physical KV + append rule.
 - `learn/07-vllm/model-runner-paged-attention.html` — separate KV write lane and paged-attention read lane; block-table selection stays visually distinct from data movement.
@@ -88,4 +89,4 @@ Do not mark a diagram complete after code generation alone.
 - `learn/08-kv-connector/nixl-rdma.html` — side-channel handshake is visually separated from registered-memory bulk KV transfer through NIXL / UCX / RDMA layers.
 - `learn/08-kv-connector/production-pd.html` — Router + P/D queues + Prefill + pinned source KV + handoff + Decode paged KV + heartbeat + TTFT/ITL on one end-to-end production canvas.
 
-The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, ownership transitions, and user-visible SLOs must remain visually distinct.
+The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, ownership transitions, critical-path wait points, and user-visible SLOs must remain visually distinct.
