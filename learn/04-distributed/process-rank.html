@@ -9,13 +9,11 @@
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" />
   <link rel="stylesheet" href="./distributed.css" />
+  <link rel="stylesheet" href="./distributed-diagrams.css" />
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
-  <header class="site-header lesson-header">
-    <a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 04.1</small></span></a>
-    <nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
-  </header>
+  <header class="site-header lesson-header"><a class="brand" href="../../index.html" aria-label="返回首页"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 04.1</small></span></a><nav class="site-nav"><a href="../../index.html#roadmap">课程地图</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav></header>
 
   <div class="lesson-shell">
     <aside class="course-sidebar" aria-label="课程目录">
@@ -31,51 +29,53 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>Process &amp; Rank</span></div>
       <div class="lesson-kicker"><span>LESSON 04.1 · DISTRIBUTED</span><span>约 50 min</span></div>
       <h1>进程、rank 与 process group：多张 GPU 先怎么“认识彼此”？</h1>
-      <p class="dek">上一模块我们已经知道：cuda:0 和 cuda:1 是两个设备，数据不会自动共享。现在第一次真正进入分布式。开始时别急着学 all-reduce；先回答更基础的问题：谁在控制 GPU 0？谁在控制 GPU 1？它们如何获得唯一编号？哪些进程属于同一个通信小组？Megatron 后面所有 TP / PP / DP 通信，都建立在这套身份系统上。</p>
+      <p class="dek">上一模块已经知道：cuda:0 和 cuda:1 是不同设备，数据不会自动共享。现在第一次真正进入分布式。开始时别急着学 all-reduce；先回答更基础的问题：谁在控制 GPU 0？谁在控制 GPU 1？它们如何获得唯一编号？哪些进程属于同一个通信小组？Megatron 后面所有 TP / PP / DP 通信，都建立在这套身份系统上。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 process、rank、world size、local rank。</li><li>理解“常见的一进程一 GPU”模式，但知道它不是分布式的数学定义。</li><li>看懂 <code>torchrun --nproc-per-node=...</code> 大致做了什么。</li><li>理解 <code>init_process_group()</code> 为什么必须等 peers 加入。</li><li>解释 process group 为什么是 Megatron 创建 TP / DP / PP 子通信域的基础。</li><li>知道 collective 调用如果不同 rank 不一致，为什么容易 hang。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 process、global rank、world size、local rank。</li><li>理解“常见的一进程一 GPU”是部署模式，而不是分布式数学定义。</li><li>看懂 <code>torchrun --nproc-per-node=...</code> 大致做了什么。</li><li>理解 <code>init_process_group()</code> 为什么需要 peers 先完成发现和初始化。</li><li>解释 process group 为什么是 Megatron 创建 TP / DP / PP 子通信域的基础。</li><li>知道 collective 调用如果不同 rank 对 group/顺序理解不一致，为什么容易 hang。</li></ul></div>
 
       <section class="article-section" id="process">
         <div class="section-no">01 · FIRST: A PROCESS IS A PROGRAM INSTANCE</div>
-        <h2>多 GPU 训练里，常见做法不是“一个 Python 程序神奇控制所有卡”，而是启动多个进程。</h2>
-        <p>假设一台机器有 4 张 GPU。最常见的 PyTorch/NCCL 训练模式之一是：启动 4 个 Python processes，每个 process 绑定一张 GPU。</p>
+        <h2>多 GPU 训练里，一个常见模式是启动多个 Python processes，每个 process 绑定一张 GPU。</h2>
+        <p>假设一台机器有 4 张 GPU。常见 PyTorch/NCCL 训练部署会启动 4 个 Python processes：</p>
         <div class="rank-grid"><div class="rank-card current"><small>PROCESS</small><b>rank 0</b><code>GPU 0</code></div><div class="rank-card"><small>PROCESS</small><b>rank 1</b><code>GPU 1</code></div><div class="rank-card"><small>PROCESS</small><b>rank 2</b><code>GPU 2</code></div><div class="rank-card"><small>PROCESS</small><b>rank 3</b><code>GPU 3</code></div></div>
-        <p>每个 process 有自己的 Python interpreter、自己的程序状态，也会持有属于自己的 tensor / model 对象。它们不是通过 Python 变量直接读彼此的 GPU memory；需要显式的 distributed communication。</p>
-        <div class="distributed-truths"><div><b>不是共享一份 Python 对象</b><span>rank 0 的 <code>model</code> 和 rank 1 的 <code>model</code> 是各自进程里的对象。</span></div><div><b>通信是显式系统行为</b><span>想同步 tensor，必须经过 collective / P2P 等通信机制，而不是“变量名一样就自动一致”。</span></div></div>
+        <p>每个 process 有自己的 Python interpreter、程序状态、tensor / model 对象。它们不是通过 Python 变量直接读彼此的 GPU memory；要同步 tensor，必须发生显式 distributed communication。</p>
+        <div class="distributed-truths"><div><b>不是共享一份 Python 对象</b><span>rank 0 的 <code>model</code> 和 rank 1 的 <code>model</code> 是各自进程里的对象。</span></div><div><b>通信是显式系统行为</b><span>变量名相同不代表内容会自动同步；需要 collective / P2P 等通信。</span></div></div>
       </section>
 
       <section class="article-section" id="rank">
         <div class="section-no">02 · RANK IS THE GLOBAL ID</div>
-        <h2>rank 就是这个分布式 job 里，每个 process 的全局编号。</h2>
-        <div class="rank-legend"><div><b>rank</b><span>某个 process 在整个 process group / job 里的唯一编号，通常从 0 到 world_size-1。</span></div><div><b>world size</b><span>这个通信世界里一共有多少个 processes。</span></div><div><b>local rank</b><span>当前 process 在“本机”上的编号，常用于把 process 映射到本机 GPU。</span></div></div>
-        <p>单机 4 GPU 时，global rank 和 local rank 恰好都可能是 0、1、2、3，所以新手容易以为它们是一回事。多机以后就不是了。</p>
+        <h2>global rank 是这个分布式 world 里 process 的唯一编号。</h2>
+        <div class="rank-legend"><div><b>global rank</b><span>某个 process 在整个默认 world / group 里的唯一编号，通常从 0 到 world_size-1。</span></div><div><b>world size</b><span>这个通信世界里一共有多少个 processes。</span></div><div><b>local rank</b><span>当前 process 在本机上的编号，常用于把 process 映射到本机 GPU。</span></div></div>
+        <p>单机 4 GPU 时 global rank 和 local rank 恰好都可能是 0、1、2、3，所以新手很容易把两者当成同一件事。多机以后这个错觉立刻消失。</p>
       </section>
 
       <section class="article-section" id="multinode">
         <div class="section-no">03 · GLOBAL RANK ≠ LOCAL RANK</div>
-        <h2>两台机器、每台 4 GPU 时，local rank 会重复，global rank 不会。</h2>
-        <div class="node-map"><div class="node-card"><small>NODE A</small><b>global ranks 0–3</b><div class="node-ranks"><span>rank 0 · local 0</span><span>rank 1 · local 1</span><span>rank 2 · local 2</span><span>rank 3 · local 3</span></div></div><div class="node-card"><small>NODE B</small><b>global ranks 4–7</b><div class="node-ranks"><span>rank 4 · local 0</span><span>rank 5 · local 1</span><span>rank 6 · local 2</span><span>rank 7 · local 3</span></div></div></div>
-        <p>这里 <code>WORLD_SIZE=8</code>。node B 上的 <code>local_rank=0</code> 对应 global rank 4，而不是 rank 0。PyTorch 官方也特别强调：<strong>local rank 只在本机唯一，不是全局唯一 ID。</strong></p>
-        <div class="concept-note"><p>以后写“只让 rank 0 保存 checkpoint”时，应判断 global rank；而“这个 process 用本机哪张 GPU”通常看 local rank。</p></div>
+        <h2>两台机器、每台 4 GPU：local rank 会重复，global rank 不会。</h2>
+        <p>把 launcher、rendezvous、process identity、local GPU binding 与 process groups 放在同一张图里：</p>
+        <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>PROCESS → IDENTITY → DEVICE → GROUP</span><span>2 nodes · 4 processes per node</span></div><img class="distributed-core-svg" src="./process-rank-groups.svg" alt="两节点分布式身份图：launcher 与 rendezvous 建立 WORLD_SIZE=8 的默认 world，global ranks 0 到 7 全局唯一；Node A 的 ranks 0 到 3 和 Node B 的 ranks 4 到 7 都各自使用 local ranks 0 到 3，并常见地绑定本机 GPU 0 到 3；process groups 再从 global ranks 中选择子集，例如教学用 TP group [0,1] 或 DP group [0,2,4,6]。" /></div>
+        <div class="distributed-core-takeaway"><strong>三个层级不要混：</strong>global rank 回答“整个 job 里这个 process 是谁”；local rank 回答“它在当前 node 上排第几，常绑定哪张本地 GPU”；process group 回答“这一次通信到底允许哪些 global ranks 参加”。</div>
+        <p>这里 <code>WORLD_SIZE=8</code>。Node B 上的 <code>local_rank=0</code> 可以对应 global rank 4，而不是 rank 0。<strong>local rank 只要求在本机语境里有意义，不是全局唯一 ID。</strong></p>
+        <div class="concept-note"><p>以后写“只让 rank 0 保存 checkpoint”时，应判断 global rank；而“这个 process 使用本机哪张 GPU”通常根据 local rank 做 device mapping。</p></div>
       </section>
 
       <section class="article-section" id="torchrun">
         <div class="section-no">04 · WHAT TORCHRUN DOES FOR YOU</div>
-        <h2><code>torchrun</code> 的核心工作之一：把同一个脚本启动成多个 processes，并给它们分配分布式身份信息。</h2>
+        <h2><code>torchrun</code> 会把同一个脚本启动成多个 processes，并给它们分配分布式身份环境。</h2>
         <div class="code-block"><div class="code-head"><span>shell</span><span>single node · 4 GPUs</span></div><pre><code>torchrun --standalone --nproc-per-node=4 hello_dist.py</code></pre></div>
-        <p>粗略看，它会启动 4 份 <code>hello_dist.py</code>。每个 process 都能从环境变量获得自己的身份，例如：</p>
+        <p>粗略看，它会启动 4 份 <code>hello_dist.py</code>。每个 process 能从环境变量看到自己的身份，例如：</p>
         <div class="code-block"><div class="code-head"><span>environment</span><span>one process might see</span></div><pre><code>RANK=2
 WORLD_SIZE=4
 LOCAL_RANK=2
 MASTER_ADDR=...
 MASTER_PORT=...</code></pre></div>
-        <p>多节点时 launcher / rendezvous 配置会更复杂，但“每个 process 最终需要知道自己是谁、总共有多少 peers、去哪里完成初始化”这个核心没有变。</p>
+        <p>多节点时 launcher / rendezvous 配置会更复杂，但核心不变：每个 process 最终需要知道自己是谁、world 中有多少 peers，以及去哪里完成初始化。</p>
       </section>
 
       <section class="article-section" id="init">
         <div class="section-no">05 · INIT_PROCESS_GROUP</div>
-        <h2>启动了多个进程还不够：它们要加入同一个通信世界。</h2>
-        <p>PyTorch 分布式代码通常会在开头初始化默认 process group。对 CUDA GPU 训练，NCCL 是常见 backend：</p>
+        <h2>启动了多个进程还不够：它们还要加入同一个通信世界。</h2>
+        <p>PyTorch 分布式代码通常先初始化默认 process group。对 CUDA GPU 训练，NCCL 是常见 backend：</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>04_hello_dist.py</span></div><pre><code>import os
 import torch
 import torch.distributed as dist
@@ -92,7 +92,7 @@ x = torch.tensor([rank], device=f<span class="comment">"cuda:{local_rank}"</span
 print(f<span class="comment">"rank={rank}, local_rank={local_rank}, x={x.item()}"</span>)
 
 dist.destroy_process_group()</code></pre></div>
-        <p><code>torchrun</code> 提供的环境变量可以让 <code>init_process_group()</code> 使用默认的 environment-variable initialization。初始化阶段需要 peers 彼此发现并建立通信状态；官方文档明确说明，初始化会等到相关 processes 加入。</p>
+        <p><code>torchrun</code> 提供的环境变量可以让 <code>init_process_group()</code> 使用 environment-variable initialization。初始化阶段需要 peers 彼此发现并建立 group/backend 状态；这不是“每个进程独自初始化完就算成功”。</p>
         <div class="source-note">官方参考：<a href="https://docs.pytorch.org/docs/stable/distributed.html">PyTorch · torch.distributed</a> 与 <a href="https://docs.pytorch.org/tutorials/beginner/ddp_series_fault_tolerance.html">torchrun tutorial</a>。</div>
       </section>
 
@@ -100,41 +100,41 @@ dist.destroy_process_group()</code></pre></div>
         <div class="section-no">06 · PROCESS ↔ DEVICE</div>
         <h2>为什么经常一进程一 GPU？因为身份和设备映射会变得非常清楚。</h2>
         <div class="process-device"><div><small>PROCESS</small><b>global rank 5 · local rank 1</b></div><span>bind →</span><div><small>DEVICE ON THIS NODE</small><b>cuda:1</b></div></div>
-        <p>“一进程一 GPU”不是说 CUDA 永远只能这样用。一个 process 可以看到多个 GPU，一个 GPU 也可能被多个 processes 使用。但对大规模训练，one-process-per-GPU 是非常常见、容易组合 NCCL 与 DDP/模型并行的模式。</p>
+        <p>“一进程一 GPU”不是 CUDA 的硬限制。一个 process 可以看到多个 GPU，一个 GPU 也可能被多个 processes 使用。但大规模训练里 one-process-per-GPU 是非常常见、容易组合 NCCL 与 DDP/模型并行的部署方式。</p>
       </section>
 
       <section class="article-section" id="group">
         <div class="section-no">07 · PROCESS GROUPS</div>
-        <h2>最关键的一步：不是所有 rank 每次都必须一起通信。</h2>
-        <p>默认 process group 可以包含全部 8 个 ranks。但你也可以创建子 group，只让某些 ranks 组成一个通信域。这正是 Megatron 组合多种 parallelism 的基础。</p>
+        <h2>不是所有 global ranks 每一次都必须一起通信。</h2>
+        <p>默认 process group 可以包含全部 8 个 ranks。但你还可以创建子 group，只让其中一部分 ranks 形成某次通信域。这正是 Megatron 组合多种 parallelism 的基础。</p>
         <div class="group-map"><div class="group-row"><small>GLOBAL</small><span class="on">0</span><span class="on">1</span><span class="on">2</span><span class="on">3</span><span class="on">4</span><span class="on">5</span><span class="on">6</span><span class="on">7</span></div><div class="group-row"><small>TP GROUP A</small><span class="alt">0</span><span class="alt">1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="group-row"><small>TP GROUP B</small><span>0</span><span>1</span><span class="alt">2</span><span class="alt">3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="group-row"><small>DP EXAMPLE</small><span class="on">0</span><span>1</span><span class="on">2</span><span>3</span><span class="on">4</span><span>5</span><span class="on">6</span><span>7</span></div></div>
-        <p>上图只是为了理解“同一批 global ranks 可以按不同规则切成不同 group”，不是在定义某个特定 Megatron 配置。真正 TP/DP/PP rank layout 取决于 parallel sizes 和 rank ordering。</p>
-        <div class="concept-note"><p><strong>以后读 Megatron 源码看到 get_tensor_model_parallel_group()、data parallel group 等名字时，脑中要出现的不是抽象 class，而是一组具体 ranks。</strong></p></div>
+        <p>上图只是帮助理解“同一批 global ranks 可以按不同规则切成不同 groups”，不是某个特定 Megatron 配置。真正 TP/DP/PP rank layout 取决于 parallel sizes 和 rank ordering。</p>
+        <div class="concept-note"><p><strong>以后读 Megatron 源码看到 tensor/data/pipeline process group 时，脑中应该出现的是一组具体 global ranks，而不是一个抽象类名。</strong></p></div>
       </section>
 
       <section class="article-section" id="rendezvous">
         <div class="section-no">08 · RENDEZVOUS: HOW PEERS MEET</div>
         <h2>多进程初始化，本质上还需要一个“大家去哪里碰头”的机制。</h2>
         <div class="rendezvous-flow"><div class="rendezvous-step"><small>1</small><b>launcher starts</b><span>启动多个 processes。</span></div><div class="rendezvous-step"><small>2</small><b>assign identity</b><span>rank / world size / local rank。</span></div><div class="rendezvous-step"><small>3</small><b>discover peers</b><span>通过 rendezvous / store / env 配置找到彼此。</span></div><div class="rendezvous-step"><small>4</small><b>build group</b><span>初始化 backend 与 communicator 状态。</span></div></div>
-        <p>你现在不需要背 TCPStore、etcd 或 elastic rendezvous 的细节。先知道：分布式不是“所有进程天然知道彼此”，初始化系统必须先解决 peer discovery 和一致的 group membership。</p>
+        <p>现在不需要背 TCPStore、etcd 或 elastic rendezvous 细节。先记住：分布式进程不是天然知道彼此；初始化系统必须解决 peer discovery 与一致的 membership。</p>
       </section>
 
       <section class="article-section" id="hang">
         <div class="section-no">09 · WHY DISTRIBUTED CODE HANGS</div>
         <h2>最典型的新手噩梦：一个 rank 在等，另一个 rank 根本没来。</h2>
-        <p>Collective 的语义通常要求 group 里的相关 ranks 以兼容的顺序参与。如果 rank 0 调用了某个 collective，而 rank 1 走了另一条 if 分支没有调用，rank 0 很可能一直等 peer。</p>
+        <p>Collective 通常要求 group 里的相关 ranks 以兼容顺序参与。如果 rank 0 调用了某个 collective，而 rank 1 走了另一条 if 分支没有调用，rank 0 很可能一直等待 peer。</p>
         <div class="hang-warning"><strong>分布式 debugging 的第一反应之一：</strong><p>每个 rank 现在走到哪一行？参与同一个 collective 的 ranks 是否一致？调用顺序、tensor shape / dtype、process group 是否一致？</p></div>
-        <p>后面学 NCCL 时你会发现，“hang”经常不是网络坏了，而是程序逻辑让不同 ranks 对通信顺序产生了不同理解。</p>
+        <p>下一课你会看到，“hang”经常不是网络坏了，而是程序让不同 ranks 对通信 contract 产生了不同理解。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
         <h2>rank / group 是训练与推理系统共同的底层语言。</h2>
-        <div class="distributed-truths"><div><b>Megatron</b><span>把 global ranks 组织成 tensor-parallel、pipeline-parallel、data-parallel、context/expert-parallel groups；不同 group 执行不同 collectives。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU tensor parallel workers、跨进程执行器、P/D 节点同样需要明确 worker 身份、device 映射和通信域。</span></div></div>
-        <p>下一课我们终于可以学真正的“数据怎么交换”：broadcast、all-reduce、all-gather、reduce-scatter、all-to-all。届时每个 collective 都只问三件事：<strong>哪些 ranks 参加？开始时每人有什么 tensor？结束时每人得到什么？</strong></p>
+        <div class="distributed-truths"><div><b>Megatron</b><span>把 global ranks 组织成 tensor-parallel、pipeline-parallel、data-parallel、context/expert-parallel groups；不同 group 执行不同 collectives。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU TP workers、跨进程执行器、P/D 节点同样需要明确 worker 身份、device 映射和通信域。</span></div></div>
+        <p>下一课终于可以学真正的“数据怎么交换”：broadcast、all-reduce、all-gather、reduce-scatter、all-to-all。届时每个 collective 都只问三件事：<strong>哪些 ranks 参加？开始时每人有什么 tensor？结束时每人得到什么？</strong></p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.1</span></div><h2>如果 rank 身份还混乱，先别进 collectives。</h2><div class="quiz-item"><div class="quiz-q">1. 两台机器、每台 4 GPU，global rank 6 的 local rank 可能是多少？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在常见每节点 4 processes 的连续分配例子里，rank 6 位于第二台机器，对应 local rank 2。关键不是死记 6→2，而是理解 local rank 只在本节点编号，会在不同节点重复。</div></div><div class="quiz-item"><div class="quiz-q">2. world size=8 是否意味着每个 process 都必须使用 8 张 GPU？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。world size 描述通信 group 中 processes 的数量。常见 one-process-per-GPU 配置里，每个 process 通常只绑定一个 GPU，而总共有 8 个 processes。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 Megatron 需要很多 process groups，而不是所有通信都用 global group？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 parallelism 只需要特定 ranks 互相通信。例如 TP ranks 要交换一个 layer 的分片结果，DP ranks 要同步同一模型分片的梯度。子 process group 可以把通信限制在正确的 ranks 集合中。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.1</span></div><h2>如果 rank 身份还混乱，先别进 collectives。</h2><div class="quiz-item"><div class="quiz-q">1. 两台机器、每台 4 GPU，global rank 6 的 local rank 可能是多少？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在常见每节点 4 processes、连续 global rank 分配的例子里，rank 6 位于第二台机器，对应 local rank 2。关键不是死记 6→2，而是理解 local rank 会在不同节点重复。</div></div><div class="quiz-item"><div class="quiz-q">2. world size=8 是否意味着每个 process 都必须使用 8 张 GPU？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。world size 描述通信 world 中 processes 的数量。常见 one-process-per-GPU 配置里，每个 process 通常只绑定一张 GPU，总共有 8 个 processes。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 Megatron 需要很多 process groups，而不是所有通信都用 global group？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 parallelism 只需要特定 ranks 互相通信。例如 TP ranks 交换 layer 分片结果，DP ranks 同步同一模型分片对应的训练状态。子 group 把通信限制在正确的 ranks 集合。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 04.2</small><br /><strong>Collectives：all-reduce / all-gather / reduce-scatter 到底各自做什么？</strong></div><span>→</span></div>
     </main>
