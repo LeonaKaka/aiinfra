@@ -20,3 +20,5 @@ jobs:
           python-version: '3.12'
       - name: Check static site
         run: python scripts/check_site.py
+      - name: Check core diagrams
+        run: python scripts/check_diagrams.py
