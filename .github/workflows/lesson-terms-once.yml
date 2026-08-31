@@ -1,5 +1,6 @@
 name: One-time lesson terminology migration
 
+# Touch this file once to execute the migration after the workflow itself exists on main.
 on:
   push:
     paths:
