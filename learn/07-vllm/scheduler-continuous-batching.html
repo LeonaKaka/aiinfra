@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 07.2：理解 vLLM Scheduler、iteration-level scheduling、token budget、continuous batching、chunked prefill 与 preemption。" />
+  <meta name="description" content="AI Infra from Zero 07.2：理解当前 vLLM V1 Scheduler 的 token-progress scheduling、continuous batching、资源预算、chunked prefill 与 recompute preemption。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>07.2 Scheduler 与 Continuous Batching · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -20,11 +20,11 @@
     <main class="article">
       <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>Scheduler</span></div>
-      <div class="lesson-kicker"><span>LESSON 07.2 · VLLM</span><span>约 70 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 07.2 · VLLM</span><span>约 75 min</span></div>
       <h1>Scheduler 与 Continuous Batching：GPU 下一轮到底算谁？</h1>
-      <p class="dek">在线推理的请求不会整齐地同时到达，也不会同时结束。A 还在 decode，B 刚结束，C 是 8K prompt，D 只需要生成 3 个 token。如果沿用传统“凑一个 batch → 整批跑到底”的思路，GPU 会被不同长度的请求拖住。vLLM 的核心变化之一，是把 batch 看成每个 iteration 都可以重新组成的动态集合。</p>
+      <p class="dek">在线推理的请求不会整齐地同时到达，也不会同时结束。A 还在 decode，B 刚结束，C 是 8K prompt，D 只需要生成 3 个 token。如果沿用传统“凑一个 batch → 整批跑到底”的思路，GPU 会被不同长度的请求拖住。vLLM 的核心变化之一，是把 batch 看成每个 scheduling/execution iteration 都可以重新组成的动态集合。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 static batching 为什么容易被长尾请求拖住。</li><li>准确理解 continuous batching：batch membership 可以在 generation iterations 之间持续变化。</li><li>知道 Scheduler 受 token budget、最大并发 requests、KV capacity 等多重资源约束。</li><li>理解 Prefill 和 Decode 可以在同一个 scheduling step 中竞争 token budget。</li><li>理解 chunked prefill 的基本动机，而不是把长 prompt 当成不可分的大块。</li><li>知道 preemption 是资源不够时的系统行为，不是“模型推理失败”。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 static batching 为什么容易被长尾请求拖住。</li><li>准确理解 continuous batching：batch membership 可以在 execution iterations 之间持续变化。</li><li>知道当前 V1 Scheduler 内部并没有两套独立的 “Prefill phase / Decode phase” 调度器，而是围绕 token progress 统一推进请求。</li><li>知道 Scheduler 受 scheduled-token budget、input budget、最大并发 requests、KV capacity 等多重资源约束。</li><li>理解当前 V1 的 chunked prefill 与 decode-priority 策略为什么能细化调度粒度。</li><li>知道当前 V1 的默认 preemption 恢复方式是 recompute，而不是旧式 SWAP。</li></ul></div>
 
       <section class="article-section" id="static">
         <div class="section-no">01 · WHY STATIC BATCHES WASTE CAPACITY</div>
@@ -37,7 +37,7 @@
       <section class="article-section" id="continuous">
         <div class="section-no">02 · CONTINUOUS BATCHING</div>
         <h2>谁结束，下一轮就可以换新人进来。</h2>
-        <p>Continuous batching 的核心不是某个神奇 kernel，而是 <strong>iteration-level scheduling</strong>：每轮 generation 前重新决定本轮一起执行哪些 requests / tokens。A 完成后，下一轮就可以让新来的 E 补进来。</p>
+        <p>Continuous batching 的核心不是某个神奇 kernel，而是 <strong>iteration-level scheduling</strong>：每轮执行前重新决定本轮一起执行哪些 requests / tokens。A 完成后，下一轮就可以让新来的 E 补进来。</p>
         <div class="batch-snapshots"><div class="batch-row"><small>iteration 1</small><span class="run">A</span><span class="run">B</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div><div class="batch-row"><small>iteration 3</small><span class="new">E</span><span class="run">B</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div><div class="batch-row"><small>iteration 5</small><span class="new">E</span><span class="new">F</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div></div>
         <div class="concept-note"><p><strong>不要误解：</strong>continuous batching 不是“一次 kernel 里不断插 request”。更稳定的理解是：batch 在离散的 scheduling/execution iterations 之间持续更新。</p></div>
       </section>
@@ -45,81 +45,86 @@
       <section class="article-section" id="queues">
         <div class="section-no">03 · WAITING AND RUNNING</div>
         <h2>Scheduler 维护的是请求生命周期，而不是一张永远不变的 batch 表。</h2>
-        <div class="queue-map"><div class="queue-box"><small>WAITING</small><b>还没获得本轮执行机会</b><div class="queue-list"><span>req E · long prefill</span><span>req F · short prompt</span><span>req G · priority ...</span></div></div><span>schedule / preempt ↔</span><div class="queue-box"><small>RUNNING</small><b>已有执行状态和 KV blocks</b><div class="queue-list"><span>req A · decode</span><span>req B · prefill chunk</span><span>req C · decode</span></div></div></div>
-        <p>当前 vLLM V1 的 scheduler 还处理 structured output、speculative decoding、multimodal、KV Connector 等额外状态。初学时不要一次吃完；先抓住 waiting / running 与资源预算。</p>
+        <div class="queue-map"><div class="queue-box"><small>WAITING</small><b>还没获得本轮执行机会</b><div class="queue-list"><span>req E · long prompt</span><span>req F · short prompt</span><span>req G · priority ...</span></div></div><span>schedule / preempt ↔</span><div class="queue-box"><small>RUNNING</small><b>已有执行状态和 KV blocks</b><div class="queue-list"><span>req A · decode-like progress</span><span>req B · prompt chunk</span><span>req C · decode-like progress</span></div></div></div>
+        <p>当前 vLLM V1 的 scheduler 还处理 structured output、speculative decoding、multimodal、KV Connector 等额外状态。初学时不要一次吃完；先抓住 waiting / running、token progress 与资源预算。</p>
       </section>
 
       <section class="article-section" id="budgets">
         <div class="section-no">04 · THE SCHEDULER HAS HARD BUDGETS</div>
-        <h2>“想跑谁”不够，必须同时满足本轮 token 数、并发数和 KV 空间。</h2>
-        <div class="budget-grid"><div class="budget-card tokens"><small>TOKEN BUDGET</small><b>max scheduled tokens</b><span>一轮里总共允许推进多少 tokens；当前源码把它作为 scheduler 的核心约束之一。</span></div><div class="budget-card seqs"><small>REQUEST BUDGET</small><b>max running requests</b><span>同时运行的 request 数不能无限增长；会受最大 sequences 等配置限制。</span></div><div class="budget-card kv"><small>KV BUDGET</small><b>available blocks</b><span>即使 token budget 还有，KV block 不够也不能继续盲目 append。</span></div></div>
-        <p>因此 scheduler 实际做的是一个受多重资源限制的在线选择问题。吞吐高的选择，不一定有最低 TTFT；最照顾 decode 的选择，也可能让新长 prompt 饿很久。</p>
+        <h2>“想跑谁”不够，必须同时满足本轮 token 数、输入规模、并发数和 KV 空间。</h2>
+        <div class="budget-grid"><div class="budget-card tokens"><small>SCHEDULED-TOKEN BUDGET</small><b>max_num_scheduled_tokens</b><span>当前源码先建立本轮可推进多少 tokens 的总预算；未单独配置时会回落到 max_num_batched_tokens。</span></div><div class="budget-card seqs"><small>REQUEST BUDGET</small><b>max_num_seqs</b><span>同时处于运行资源域的 request 数不能无限增长。</span></div><div class="budget-card kv"><small>KV BUDGET</small><b>available blocks</b><span>即使 token budget 还有，KV block 不够也不能继续盲目 append。</span></div></div>
+        <p>当前 <code>schedule()</code> 里还维护 <code>input_budget = max_num_batched_tokens</code>，并叠加 speculative lookahead、encoder budget 等约束。因此 scheduler 实际做的是一个受多重资源限制的在线选择问题，不是只看一个 batch size。</p>
       </section>
 
       <section class="article-section" id="mix">
-        <div class="section-no">05 · PREFILL AND DECODE SHARE THE MACHINE</div>
-        <h2>一轮 scheduler 可能同时面对“老请求 decode”和“新请求 prefill”。</h2>
-        <div class="batch-snapshots"><div class="batch-row"><small>scheduled</small><span class="run">A d1</span><span class="run">B d1</span><span class="run">C d1</span><span class="prefill">D p0</span><span class="prefill">D p1</span><span class="prefill">D p2</span><span class="prefill">D p3</span><span class="prefill">…</span></div></div>
-        <p>这里的关键单位是 <strong>scheduled tokens</strong>，而不是“一个 request 算一次”。Decode request 通常本轮推进少量 token；长 prompt prefill 可能一次吃掉很多 token budget。如果任由一个超长 prefill 独占大块计算，它会把已有 decode 的下一 token 推迟。</p>
+        <div class="section-no">05 · ONE TOKEN-PROGRESS SCHEDULER</div>
+        <h2>教学上可以说 Prefill 与 Decode 共享机器；源码里更准确的说法是：Scheduler 统一推进每个 request 的 token progress。</h2>
+        <div class="batch-snapshots"><div class="batch-row"><small>scheduled</small><span class="run">A +1</span><span class="run">B +1</span><span class="run">C +1</span><span class="prefill">D +chunk</span><span class="prefill">D</span><span class="prefill">D</span><span class="prefill">D</span><span class="prefill">…</span></div></div>
+        <p>当前 V1 <code>schedule()</code> 的源码注释明确写着：Scheduler 内部没有独立的 “decoding phase” 或 “prefill phase”。它看的是 <code>num_computed_tokens</code> 与当前已知 token 数之间还差多少，再在预算允许时推进。长 prompt 因此可以推进很多 tokens；普通 decode request 通常只多一个当前已知 token。</p>
+        <div class="concept-note"><p><strong>这条区别对读源码很重要。</strong>Prefill / Decode 仍然是理解 workload 的好概念，但不要进 <code>scheduler.py</code> 后去寻找两套独立的 phase loop。Prefix caching、chunked prefill、speculative decoding 都被统一进“还差多少 token progress”这套模型里。</p></div>
       </section>
 
       <section class="article-section" id="chunked">
         <div class="section-no">06 · CHUNKED PREFILL</div>
-        <h2>长 Prefill 不必每次都被当成一个不可切分的大石头。</h2>
-        <p>Chunked prefill 的思路，是允许一个长 prompt 分多轮推进。例如 8000-token prompt 不必在一次 scheduler iteration 中全部处理；可以先给它 1024 或某个受预算限制的 chunk，同时给 decode 留出执行机会。</p>
-        <div class="shape-flow"><div><small>LONG PROMPT</small><code>8000 tokens</code></div><span>→</span><div><small>ITERATION</small><code>chunk 0..1023</code></div><span>→</span><div><small>NEXT</small><code>continue later</code></div></div>
-        <p>这会改善调度粒度，但并非“越碎越好”。Chunk 太小可能增加调度/launch 开销、让大 GEMM 变差；chunk 太大又可能伤害 decode latency。实际配置要看服务目标。</p>
+        <h2>长 prompt 不必被当成一个不可切分的大石头。</h2>
+        <p>Chunked prefill 允许一个长 prompt 分多轮推进。例如 8000-token prompt 不必在一次 scheduler iteration 中全部处理；可以只推进受当前 token/input budget 限制的一段，之后继续。</p>
+        <div class="shape-flow"><div><small>LONG PROMPT</small><code>8000 tokens</code></div><span>→</span><div><small>ITERATION</small><code>budget-limited chunk</code></div><span>→</span><div><small>NEXT</small><code>continue later</code></div></div>
+        <p>当前 vLLM V1 的优化文档说明：在条件允许时 chunked prefill 默认启用；调度策略会优先安排 pending decode work，再用剩余的 <code>max_num_batched_tokens</code> budget 安排 prefill，放不下的 prefill 自动切 chunk。这解释了为什么它能保护 ITL，同时又尽量利用剩余 GPU 工作量。</p>
+        <div class="source-note">当前说明：<a href="https://github.com/vllm-project/vllm/blob/main/docs/configuration/optimization.md">vLLM · Optimization and Tuning</a>，见 Chunked Prefill；源码主循环见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a>。</div>
       </section>
 
       <section class="article-section" id="preempt">
         <div class="section-no">07 · WHAT HAPPENS WHEN KV IS NOT ENOUGH?</div>
-        <h2>Scheduler 可能需要让已有 request 暂时退让。</h2>
-        <p>当前 V1 scheduler 的代码里存在明确的 preemption 路径：当一个 running request 无法获得需要的新 blocks，scheduler 可以选择 preempt request，释放资源，再把工作重新安排。之后请求可能需要恢复或重算部分进度，具体行为受当前实现与 connector 等配置影响。</p>
-        <div class="warning-note"><b>Preemption 不是异常。</b><p>它是“有限 KV capacity 下如何保证整个服务继续向前”的资源管理策略。真正要关注的是 preemption 频率、重算代价，以及它对 TTFT/ITL/throughput 的影响。</p></div>
+        <h2>Scheduler 可能需要让已有 request 暂时退让；当前 V1 默认通过 recompute 恢复。</h2>
+        <p>当前 V1 scheduler 在 running request 无法分到需要的新 blocks 时，会进入明确的 preemption 路径：根据 scheduling policy 选 victim，释放它占用的资源，并把请求重新安排。当前 V1 的优化文档明确说明默认 preemption mode 是 <strong>RECOMPUTE</strong>，而不是旧 V0 路径常见的 SWAP；恢复时会重新计算被释放的 KV 状态。</p>
+        <div class="warning-note"><b>Preemption 不是异常，也不是免费的。</b><p>它是有限 KV capacity 下继续服务的资源管理策略，但频繁 recompute 会浪费算力并恶化端到端 latency。带 KV Connector 时，正在进行的可靠 handoff 还会增加额外的正确性约束，08.3 会继续拆。</p></div>
       </section>
 
       <section class="article-section" id="pseudo">
         <div class="section-no">08 · A TINY SCHEDULER MENTAL MODEL</div>
-        <h2>把几千行 scheduler 先压成下面这个伪代码。</h2>
+        <h2>把几千行 scheduler 先压成“推进 token progress + 分配 KV”的伪代码。</h2>
         <div class="code-block"><div class="code-head"><span>python-like pseudocode</span><span>one scheduling iteration</span></div><pre><code>token_budget = max_scheduled_tokens
 
-<span class="comment"># 1. consider requests already running</span>
+<span class="comment"># 1. running requests first</span>
 for req in running:
-    want = tokens_to_advance(req)
-    need_blocks = kv_manager.blocks_needed(req, want)
-    if fits(token_budget, need_blocks):
+    want = known_tokens(req) - req.num_computed_tokens
+    want = cap_by_budgets(want, token_budget, input_budget)
+    blocks = kv_manager.allocate_slots(req, want)
+    if blocks is None:
+        preempt_victim_and_retry()
+    else:
         schedule(req, want)
         token_budget -= want
-    else:
-        maybe_preempt_or_stop()
 
 <span class="comment"># 2. admit waiting requests if capacity remains</span>
 while waiting and token_budget &gt; 0 and running_slots_available():
     req = choose(waiting)
-    cached = kv_manager.find_cached_prefix(req)
-    chunk = choose_prefill_or_decode_tokens(req, cached, token_budget)
-    blocks = kv_manager.allocate(req, chunk)
+    local_hit = kv_manager.find_cached_prefix(req)
+    remote_hit = connector_match_if_any(req, local_hit)
+    want = remaining_known_tokens(req, local_hit, remote_hit)
+    chunk = cap_by_budgets(want, token_budget, input_budget)
+    blocks = kv_manager.allocate_slots(req, chunk)
     if blocks is None:
         break
     schedule(req, chunk)
     token_budget -= chunk
 
 return SchedulerOutput(...)</code></pre></div>
-        <p>真实实现复杂得多，但以后你读 <code>schedule()</code> 时，先不断把分支归类到这几个问题：<strong>谁先？推进多少？缓存命中多少？要多少 blocks？预算够不够？</strong></p>
+        <p>这仍是教学伪代码，不是逐行复刻；但它和当前源码的关键抽象一致：<strong>谁先？已计算到哪？这轮还能推进多少？缓存命中多少？要多少 blocks？预算够不够？</strong></p>
       </section>
 
       <section class="article-section" id="source">
         <div class="section-no">09 · SOURCE MAP</div>
-        <h2>这次只读 scheduler 周围的三个文件。</h2>
-        <div class="source-map-vllm"><div class="source-card"><small>MAIN</small><b>Scheduler</b><code>vllm/v1/core/sched/scheduler.py</code><span>当前 <code>Scheduler</code> 类、资源预算、running/waiting scheduling、preemption、KV Connector hooks。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div><div class="source-card"><small>QUEUE</small><b>RequestQueue</b><code>vllm/v1/core/sched/request_queue.py</code><span>等待队列与 scheduling policy 的抽象，不要把 queue 行为全塞进 scheduler 主文件理解。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/request_queue.py">打开源码 ↗</a></div><div class="source-card"><small>CONTRACT</small><b>SchedulerOutput</b><code>vllm/v1/core/sched/output.py</code><span>看 scheduler 最终交给 worker/executor 的计划里究竟有哪些字段。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/output.py">打开源码 ↗</a></div><div class="source-card"><small>REQUEST</small><b>Request</b><code>vllm/v1/request.py</code><span>状态、prompt/output token 信息、P/D connector params 等 request-level 数据。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/request.py">打开源码 ↗</a></div></div>
+        <h2>这次只读 scheduler 周围的四个文件。</h2>
+        <div class="source-map-vllm"><div class="source-card"><small>MAIN</small><b>Scheduler</b><code>vllm/v1/core/sched/scheduler.py</code><span>token-progress scheduling、资源预算、running/waiting、preemption、KV Connector hooks。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div><div class="source-card"><small>QUEUE</small><b>RequestQueue</b><code>vllm/v1/core/sched/request_queue.py</code><span>等待队列与 scheduling policy 的抽象。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/request_queue.py">打开源码 ↗</a></div><div class="source-card"><small>CONTRACT</small><b>SchedulerOutput</b><code>vllm/v1/core/sched/output.py</code><span>看 scheduler 最终交给 worker/executor 的计划里究竟有哪些字段。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/output.py">打开源码 ↗</a></div><div class="source-card"><small>REQUEST</small><b>Request</b><code>vllm/v1/request.py</code><span>状态、token progress、connector params 等 request-level 数据。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/request.py">打开源码 ↗</a></div></div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.2</span></div><h2>能解释 scheduler，才算开始懂 serving。</h2><div class="quiz-item"><div class="quiz-q">1. Continuous batching 最准确的心智模型是什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">每个 execution/scheduling iteration 之间可以重新组成 batch：完成的 request 离开，新 request 可以进入，已有 request 继续推进。它不是在一个正在运行的 GPU kernel 里随时插人。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 scheduler 有 token budget 还不够，还要看 KV blocks？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为每个需要缓存的新 token 都要有实际 KV memory slot。算力预算允许并不等于显存容量允许。</div></div><div class="quiz-item"><div class="quiz-q">3. Chunked prefill 主要解决什么矛盾？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">长 prefill 一次占用过大的计算/token budget，会阻塞已有 decode。切成 chunks 可以提高调度粒度，在 TTFT、ITL 和吞吐之间更灵活地权衡。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.2</span></div><h2>能解释 scheduler，才算开始懂 serving。</h2><div class="quiz-item"><div class="quiz-q">1. Continuous batching 最准确的心智模型是什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">每个 scheduling/execution iteration 之间可以重新组成 batch：完成的 request 离开，新 request 可以进入，已有 request 继续推进。它不是在一个正在运行的 GPU kernel 里随时插人。</div></div><div class="quiz-item"><div class="quiz-q">2. 当前 V1 Scheduler 为什么不需要一套 Prefill loop 再加一套 Decode loop？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">它统一追踪 request 的 num_computed_tokens 与当前已知 token progress 之间的差距，再按预算推进。长 prompt 往往一次推进一段；普通 decode 往往只推进新增加的 token，因此 workload 不同，但调度抽象可以统一。</div></div><div class="quiz-item"><div class="quiz-q">3. 当前 V1 preemption 后默认怎样恢复被释放的 KV？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">默认是 RECOMPUTE：请求以后重新获得机会时重新计算必要状态，而不是默认把 KV swap 到 CPU 再 swap 回来。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 07.3</small><br/><strong>KV Cache Manager：逻辑 sequence 怎么映射到一池 physical blocks？</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc"><strong>ON THIS PAGE</strong><a href="#static">Static batch</a><a href="#continuous">Continuous batching</a><a href="#queues">Waiting / Running</a><a href="#budgets">资源预算</a><a href="#mix">Prefill + Decode</a><a href="#chunked">Chunked Prefill</a><a href="#preempt">Preemption</a><a href="#pseudo">伪代码</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc"><strong>ON THIS PAGE</strong><a href="#static">Static batch</a><a href="#continuous">Continuous batching</a><a href="#queues">Waiting / Running</a><a href="#budgets">资源预算</a><a href="#mix">Token progress</a><a href="#chunked">Chunked Prefill</a><a href="#preempt">Preemption</a><a href="#pseudo">伪代码</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((b)=>b.addEventListener('click',()=>{const i=b.closest('.quiz-item');i.classList.toggle('open');b.textContent=i.classList.contains('open')?'收起答案':'看答案';}));</script>
 </body>
