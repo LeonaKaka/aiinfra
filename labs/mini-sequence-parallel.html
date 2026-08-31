@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Sequence Parallel：把 TP row-parallel partial output 直接 reduce-scatter 成 sequence-sharded activation，再 all-gather 与 dense reference 对齐。" />
+  <title>Lab A8 · Mini Sequence Parallel</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A8</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Sequence Parallel</span></div>
+    <div class="lab-kicker">LAB A8 · SEQUENCE PARALLEL</div>
+    <h1>SP 不是“把句子随便切两半”。<br />关键是：TP 的 partial output 可以直接落成 sequence shard。</h1>
+    <p class="dek">05.3 里讲过 Sequence Parallel (SP) 通常和 Tensor Parallel (TP) 配合。这个最小实验只验证最核心的一次 layout transition：两个 TP ranks 各自产生完整 sequence 的 partial output，不先 all-reduce 成两份完整 activation，而是用 reduce-scatter 一边求和、一边让每个 rank 只留下自己的 sequence chunk。</p>
+
+    <section class="lab-section" id="flow"><div class="lab-kicker">01 · THE TRANSITION</div><h2>同样是把 TP partials 合起来，结果可以 replicated，也可以 sequence-sharded。</h2>
+      <div class="command"><div class="command-head"><span>MENTAL MODEL</span><span>TP=2</span></div><pre>Rank 0: y_partial[0] ─┐
+                      ├─ reduce-scatter over sequence ─→ Rank 0 owns tokens 0..S/2-1
+Rank 1: y_partial[1] ─┘                               └→ Rank 1 owns tokens S/2..S-1
+
+all-reduce      : every rank gets full [S,H]
+reduce-scatter  : every rank gets only [S/TP,H]</pre></div>
+      <p>这个差别就是 SP 的系统价值来源之一：后续某些可以按 token 独立执行的 activation-side work，不必在每个 TP rank 上继续保留完整 sequence。</p>
+    </section>
+
+    <section class="lab-section" id="reference"><div class="lab-kicker">02 · CORRECTNESS REFERENCE</div><h2>我们故意选一个简单局部算子，只验证“切分不改变数学结果”。</h2>
+      <div class="stage-flow"><div class="stage-card train"><small>TP LOCAL</small><b>x_shard @ W_shard</b><span>每个 rank 只算自己的 hidden-input shard，得到完整 [S,H] partial contribution。</span></div><div class="stage-card comm"><small>SP TRANSITION</small><b>reduce_scatter_single</b><span>对 TP partials 求和，同时沿 sequence 把结果分给不同 ranks。</span></div><div class="stage-card train"><small>LOCAL OP</small><b>tanh(sequence shard)</b><span>每个 rank 只处理自己的 token chunk；最后为了验证才 all-gather 回完整 sequence。</span></div></div>
+      <p>reference 是直接计算 <code>tanh(x @ W)</code>。实验只要证明 gather 后结果一致，就说明“replicated full activation → sequence-sharded activation”没有改变数学语义。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN IT</div><h2>先在 CPU/Gloo 上验证 collective 与 shape，再去真实 GPU 看性能。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_sequence_parallel.py</pre></div>
+      <p>这个 Lab 不把 CPU timing 当成 SP 性能结论。真实收益还取决于 tensor size、kernel fusion、TP topology，以及 gather/reduce-scatter 是否被别的计算隐藏。</p>
+      <a class="code-link" href="./code/mini_sequence_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_sequence_parallel.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>回到源码时，优先追“哪里从 TP layout 进入 sequence-parallel layout”。</h2>
+      <div class="source-bridge"><div><small>OUR LAB</small><b>TP partial → reduce-scatter(sequence)</b><code>[S,H] partials → [S/TP,H] local activation</code></div><span>maps to →</span><div><small>MEGATRON</small><b>tensor_parallel mappings / layers</b><code>sequence-parallel gather / reduce-scatter transitions</code></div></div>
+      <p>不要把 SP 记成另一套独立模型并行。它更像是在 TP 体系里选择一种更省 activation replication 的布局，并在需要 full sequence 的边界再显式 gather。</p>
+    </section>
+
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>能回答这三问，才算看懂这个 Lab。</h2><div class="check-list"><div>① 为什么这里不能把 reduce-scatter 简单理解成“通信更快的 all-reduce”？</div><div>② local <code>tanh</code> 为什么可以在 sequence shard 上独立执行？</div><div>③ 如果下一层需要每个 rank 都看到完整 sequence，必须发生什么 layout transition？</div></div></section>
+
+    <nav class="lab-footer-nav"><a href="./mini-profiler-overlap.html">← Lab A7 · Profiler-ready Overlap</a><a href="./mini-pipeline-parallel.html">Lab A9 · Pipeline Parallel →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
