@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Report high-confidence acronym-like terms missing from the lesson registry.
+"""Fail on high-confidence acronym-like terms missing from the lesson registry.
 
 Only paragraph/list teaching prose is scanned. Code, headings, diagrams and UI
 labels are deliberately excluded: their identifiers are useful locally but
-should not force glossary entries or invented acronym expansions.
+should not force glossary entries or invented acronym expansions. A new
+unexplained acronym in learner-facing prose is a CI regression.
 """
 from __future__ import annotations
 
@@ -93,7 +94,7 @@ def main() -> int:
     for token in sorted(hits, key=str.casefold):
         pages = ", ".join(sorted(hits[token]))
         print(f"{token}: {pages}")
-    return 0
+    return 1
 
 
 if __name__ == "__main__":
