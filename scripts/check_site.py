@@ -14,7 +14,7 @@ CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 CSS_IMPORT_RE = re.compile(r"@import\s+(['\"])(.*?)\1", re.IGNORECASE)
 LESSON_ROUTE_RE = re.compile(r"['\"](?P<key>\d{2}\.\d+)['\"]\s*:\s*['\"](?P<path>[^'\"]+)['\"]")
 CAPSTONE_ROUTE_RE = re.compile(r"route\s*:\s*['\"](?P<path>labs/[^'\"]+\.html)['\"]")
-LESSON_KEY_RE = re.compile(r"\b(?P<key>\d{2}\.\d+)\b")
+LESSON_KEY_RE = re.compile(r"(?<!\d)(?P<key>\d{2}\.\d+)(?!\d)")
 CAPSTONE_LABEL_RE = re.compile(r"mini\s+(?:megatron|kv\s+(?:connector|handoff))", re.IGNORECASE)
 STALE_PLACEHOLDERS = (
     "课程正文即将加入",
