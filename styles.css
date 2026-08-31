@@ -246,6 +246,14 @@ code, pre {
 .road-tags span { border: 1px solid #d0d2ca; background: rgba(255,255,255,.5); border-radius: 6px; padding: 5px 7px; color: #5d615a; font: 500 10px/1 ui-monospace, monospace; }
 .road-outcome { max-width: 720px; padding-top: 13px; border-top: 1px solid #d3d5cd; color: #4f534c; font-size: 12px; }
 .road-outcome small { display: inline-block; margin-right: 8px; color: #90938c; font-size: 10px; }
+.road-enter {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 14px;
+  color: #47514a; font: 700 10px/1.2 ui-monospace, monospace; letter-spacing: .04em;
+  text-decoration: none; border-bottom: 1px solid #aeb5ad; padding-bottom: 3px;
+}
+.road-enter span { transition: transform .16s ease; }
+.road-enter:hover { color: var(--ink); border-bottom-color: #697269; }
+.road-enter:hover span { transform: translateX(3px); }
 
 .method-grid { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line-dark); border-left: 1px solid var(--line-dark); }
 .method-grid article { min-height: 200px; padding: 25px; border-right: 1px solid var(--line-dark); border-bottom: 1px solid var(--line-dark); background: rgba(255,255,255,.35); }

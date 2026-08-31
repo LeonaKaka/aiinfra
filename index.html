@@ -153,6 +153,7 @@
               <p>只学读 Infra 源码真正需要的 Python、Tensor、PyTorch 与训练循环。</p>
               <div class="road-tags"><span>class</span><span>tensor shape</span><span>autograd</span><span>optimizer</span></div>
               <div class="road-outcome"><small>完成后</small> 能顺着一个最小训练循环追踪数据、参数和梯度。</div>
+              <a class="road-enter" href="./learn/01-foundations/tensor.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -164,6 +165,7 @@
               <p>围绕 shape 和数据流理解 Linear、Attention、MHA/GQA 与 Transformer Block。</p>
               <div class="road-tags"><span>[B,S,H]</span><span>GEMM</span><span>Q/K/V</span><span>attention</span></div>
               <div class="road-outcome"><small>完成后</small> 知道一个 token 经过 Transformer 时每一步发生了什么。</div>
+              <a class="road-enter" href="./learn/02-transformer/attention.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -175,6 +177,7 @@
               <p>建立 GPU 心智模型：device memory（数据中心卡常见 HBM，消费级 GPU 常见 GDDR）、kernel、Tensor Core，以及 compute / memory / launch 等不同瓶颈。</p>
               <div class="road-tags"><span>device memory</span><span>CUDA kernel</span><span>memory bound</span><span>compute bound</span></div>
               <div class="road-outcome"><small>完成后</small> 能估算“这个模型为什么塞不进一张 GPU”。</div>
+              <a class="road-enter" href="./learn/03-gpu-systems/gpu-mental-model.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -186,6 +189,7 @@
               <p>从 process group 到 NCCL，把常见 collective 真正画出来、算一次通信量。</p>
               <div class="road-tags"><span>all-reduce</span><span>all-gather</span><span>reduce-scatter</span><span>all-to-all</span></div>
               <div class="road-outcome"><small>完成后</small> 面对并行算法会先问：数据在哪、搬多少、谁在等谁。</div>
+              <a class="road-enter" href="./learn/04-distributed/process-rank.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -197,6 +201,7 @@
               <p>不按仓库目录硬啃，而是按“问题 → 并行策略 → 通信 → 源码”逐层进入。</p>
               <div class="road-tags"><span>Data Parallel</span><span>Tensor Parallel</span><span>Pipeline</span><span>Distributed Optimizer</span><span>Context / Expert</span><span>Overlap</span></div>
               <div class="road-outcome"><small>阶段项目</small> Mini Megatron 系列从 TP 一路做到 TP×DP 与 profiler evidence。</div>
+              <a class="road-enter" href="./learn/05-megatron/why-model-parallel.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -208,6 +213,7 @@
               <p>理解 autoregressive decode、Prefill / Decode 的计算差异，以及 KV Cache 为什么存在。</p>
               <div class="road-tags"><span>prefill</span><span>decode</span><span>TTFT</span><span>ITL</span><span>KV memory</span></div>
               <div class="road-outcome"><small>完成后</small> 能解释推理系统为什么和训练系统是两种不同的工程问题。</div>
+              <a class="road-enter" href="./learn/06-llm-inference/autoregressive-generation.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -219,6 +225,7 @@
               <p>先理解 Scheduler、Continuous Batching、KV Cache Manager 与 PagedAttention，再读实现。</p>
               <div class="road-tags"><span>scheduler</span><span>blocks</span><span>continuous batching</span><span>PagedAttention</span></div>
               <div class="road-outcome"><small>完成后</small> 能沿着一次 request 追踪调度、KV block 分配与生成。</div>
+              <a class="road-enter" href="./learn/07-vllm/architecture.html">进入模块 <span>→</span></a>
             </div>
           </article>
 
@@ -230,6 +237,7 @@
               <p>从单机 KV 传输一路进入多节点：P/D disaggregation、RDMA、GPUDirect 与 NIXL。</p>
               <div class="road-tags"><span>KV transfer</span><span>P/D disaggregation</span><span>RDMA</span><span>GPUDirect</span><span>NIXL</span></div>
               <div class="road-outcome"><small>毕业项目</small> B1–B7 从 raw KV handoff 一路做到 registration、handshake 与 lease/expiry 生命周期。</div>
+              <a class="road-enter" href="./learn/08-kv-connector/why-move-kv.html">进入模块 <span>→</span></a>
             </div>
           </article>
         </div>
