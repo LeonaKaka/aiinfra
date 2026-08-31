@@ -130,7 +130,8 @@ dist.destroy_process_group()</code></pre></div>
       <section class="article-section" id="bridge">
         <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
         <h2>rank / group 是训练与推理系统共同的底层语言。</h2>
-        <div class="distributed-truths"><div><b>Megatron</b><span>把 global ranks 组织成 tensor-parallel、pipeline-parallel、data-parallel、context/expert-parallel groups；不同 group 执行不同 collectives。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU TP workers、跨进程执行器、Prefill/Decode Disaggregation (P/D，Prefill/Decode 分离) 节点同样需要明确 worker 身份、device 映射和通信域。</span></div></div>
+        <p>推理侧后面会遇到 Prefill/Decode Disaggregation (P/D，Prefill/Decode 分离)：即使 Prefill 与 Decode 被拆到不同实例，worker 身份、device mapping 和通信域仍然必须先定义清楚。</p>
+        <div class="distributed-truths"><div><b>Megatron</b><span>把 global ranks 组织成 tensor-parallel、pipeline-parallel、data-parallel、context/expert-parallel groups；不同 group 执行不同 collectives。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU TP workers、跨进程执行器、P/D 节点同样需要明确 worker 身份、device 映射和通信域。</span></div></div>
         <p>下一课终于可以学真正的“数据怎么交换”：broadcast、all-reduce、all-gather、reduce-scatter、all-to-all。届时每个 collective 都只问三件事：<strong>哪些 ranks 参加？开始时每人有什么 tensor？结束时每人得到什么？</strong></p>
       </section>
 
