@@ -9,10 +9,13 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_SCHEMES = {"http", "https", "mailto", "tel", "data", "javascript"}
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 CSS_IMPORT_RE = re.compile(r"@import\s+(['\"])(.*?)\1", re.IGNORECASE)
 LESSON_ROUTE_RE = re.compile(r"['\"](?P<key>\d{2}\.\d+)['\"]\s*:\s*['\"](?P<path>[^'\"]+)['\"]")
 CAPSTONE_ROUTE_RE = re.compile(r"route\s*:\s*['\"](?P<path>labs/[^'\"]+\.html)['\"]")
+LESSON_KEY_RE = re.compile(r"\b(?P<key>\d{2}\.\d+)\b")
+CAPSTONE_LABEL_RE = re.compile(r"mini\s+(?:megatron|kv\s+(?:connector|handoff))", re.IGNORECASE)
 STALE_PLACEHOLDERS = (
     "课程正文即将加入",
     "lesson coming soon",
@@ -61,9 +64,14 @@ class PageParser(HTMLParser):
         self.h1s = 0
         self.has_viewport = False
         self.html_lang = False
+        self.locked_items: list[tuple[str, str | None]] = []
+        self.muted_next_labels: list[str] = []
+        self.stack: list[dict[str, object]] = []
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def _record_tag(self, tag: str, attrs: list[tuple[str, str | None]], push: bool) -> None:
         data = dict(attrs)
+        classes = set((data.get("class") or "").split())
+
         if tag == "html" and data.get("lang"):
             self.html_lang = True
         if tag == "meta" and data.get("name", "").lower() == "viewport":
@@ -77,6 +85,69 @@ class PageParser(HTMLParser):
         for attr in ("href", "src"):
             if data.get(attr):
                 self.refs.append((attr, data[attr]))
+
+        if not push:
+            return
+
+        frame: dict[str, object] = {
+            "tag": tag,
+            "parts": [],
+            "module_block": tag == "div" and "module-block" in classes,
+            "module_name": tag == "div" and "module-name" in classes,
+            "capture_module": tag == "b" and any(bool(item.get("module_name")) for item in self.stack),
+            "locked": tag == "span" and {"lesson-link", "locked"}.issubset(classes),
+            "muted_next": {"next-lesson", "muted-next"}.issubset(classes),
+        }
+        if frame["module_block"]:
+            frame["module_id"] = None
+        self.stack.append(frame)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._record_tag(tag, attrs, tag not in VOID_TAGS)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._record_tag(tag, attrs, False)
+
+    def handle_data(self, data: str) -> None:
+        for frame in self.stack:
+            if frame.get("capture_module") or frame.get("locked") or frame.get("muted_next"):
+                parts = frame.get("parts")
+                if isinstance(parts, list):
+                    parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.stack:
+            return
+
+        # Pages are expected to be well formed; search backward only to avoid a
+        # malformed tag making all later navigation-state checks meaningless.
+        index = next(
+            (idx for idx in range(len(self.stack) - 1, -1, -1) if self.stack[idx].get("tag") == tag),
+            None,
+        )
+        if index is None:
+            return
+        frame = self.stack.pop(index)
+        parts = frame.get("parts")
+        text = " ".join("".join(parts).split()) if isinstance(parts, list) else ""
+
+        if frame.get("capture_module"):
+            match = re.search(r"\d{2}", text)
+            if match:
+                for parent in reversed(self.stack):
+                    if parent.get("module_block"):
+                        parent["module_id"] = match.group(0)
+                        break
+
+        if frame.get("locked"):
+            module_id = next(
+                (parent.get("module_id") for parent in reversed(self.stack) if parent.get("module_block")),
+                None,
+            )
+            self.locked_items.append((text, module_id if isinstance(module_id, str) else None))
+
+        if frame.get("muted_next"):
+            self.muted_next_labels.append(text)
 
 
 def parse_page(path: Path) -> PageParser:
@@ -113,24 +184,23 @@ def css_refs(path: Path) -> list[str]:
     return list(dict.fromkeys(refs))
 
 
-def check_dynamic_routes(failures: list[str]) -> tuple[int, int]:
+def check_dynamic_routes(failures: list[str]) -> tuple[dict[str, str], int]:
     """Validate lesson/lab paths that only become hrefs at runtime in app.js."""
     app_js = ROOT / "app.js"
     if not app_js.exists():
         failures.append("app.js: missing dynamic route registry")
-        return 0, 0
+        return {}, 0
 
     text = app_js.read_text(encoding="utf-8")
-    lesson_routes = list(LESSON_ROUTE_RE.finditer(text))
+    lesson_matches = list(LESSON_ROUTE_RE.finditer(text))
     capstone_routes = list(CAPSTONE_ROUTE_RE.finditer(text))
+    lesson_routes = {match.group("key"): match.group("path") for match in lesson_matches}
 
-    keys = [match.group("key") for match in lesson_routes]
+    keys = [match.group("key") for match in lesson_matches]
     if len(keys) != len(set(keys)):
         failures.append("app.js: duplicate lessonRoutes key")
 
-    for match in lesson_routes:
-        key = match.group("key")
-        raw = match.group("path")
+    for key, raw in lesson_routes.items():
         target = ROOT / raw
         if not target.exists():
             failures.append(f"app.js: lesson route {key} points to missing target: {raw}")
@@ -141,7 +211,60 @@ def check_dynamic_routes(failures: list[str]) -> tuple[int, int]:
         if not target.exists():
             failures.append(f"app.js: capstone route points to missing target: {raw}")
 
-    return len(lesson_routes), len(capstone_routes)
+    # Every published course module needs a canonical entry route so legacy
+    # generic sidebar placeholders can safely resolve to the first real lesson.
+    for module_dir in sorted((ROOT / "learn").glob("[0-9][0-9]-*")):
+        if not module_dir.is_dir():
+            continue
+        module_id = module_dir.name[:2]
+        entry_key = f"{module_id}.1"
+        if entry_key not in lesson_routes:
+            failures.append(
+                f"app.js: published module {module_dir.name} has no canonical {entry_key} route"
+            )
+
+    for marker in ("firstLessonRouteByModule", "resolveLockedLessonRoute", "resolveRouteFromText"):
+        if marker not in text:
+            failures.append(f"app.js: missing navigation fallback helper {marker}")
+
+    return lesson_routes, len(capstone_routes)
+
+
+def check_navigation_state(
+    rel: Path,
+    parser: PageParser,
+    lesson_routes: dict[str, str],
+    failures: list[str],
+) -> None:
+    """Make sure old locked/muted markup can resolve to a real published destination."""
+    if not rel.as_posix().startswith("learn/"):
+        return
+
+    for label, module_id in parser.locked_items:
+        match = LESSON_KEY_RE.search(label)
+        if match:
+            key = match.group("key")
+            if key not in lesson_routes:
+                failures.append(f"{rel}: locked lesson {label!r} has no dynamic route for {key}")
+            continue
+
+        if CAPSTONE_LABEL_RE.search(label):
+            continue
+
+        if module_id and f"{module_id}.1" in lesson_routes:
+            continue
+
+        failures.append(
+            f"{rel}: locked sidebar item {label!r} cannot resolve by lesson key, capstone, or module entry"
+        )
+
+    for label in parser.muted_next_labels:
+        match = LESSON_KEY_RE.search(label)
+        if match and match.group("key") in lesson_routes:
+            continue
+        if CAPSTONE_LABEL_RE.search(label):
+            continue
+        failures.append(f"{rel}: muted next-lesson {label!r} has no resolvable destination")
 
 
 def main() -> int:
@@ -150,6 +273,8 @@ def main() -> int:
     lab_python_files = sorted((ROOT / "labs" / "code").glob("*.py"))
     failures: list[str] = []
     cache: dict[Path, PageParser] = {}
+
+    lesson_routes, capstone_route_count = check_dynamic_routes(failures)
 
     for page in html_files:
         text = page.read_text(encoding="utf-8")
@@ -182,6 +307,8 @@ def main() -> int:
                 failures.append(
                     f"{rel}: missing required current-source marker {marker!r}"
                 )
+
+        check_navigation_state(rel, parser, lesson_routes, failures)
 
         for attr, raw in parser.refs:
             target, fragment = resolve_local(page.resolve(), raw)
@@ -223,8 +350,6 @@ def main() -> int:
             if not target.exists():
                 failures.append(f"{rel}: missing local CSS asset/import: {raw}")
 
-    lesson_route_count, capstone_route_count = check_dynamic_routes(failures)
-
     # The lab scripts depend on PyTorch at runtime, which is intentionally not
     # installed by this lightweight site workflow. Still compile every script so
     # syntax regressions never reach the published learning site unnoticed.
@@ -245,10 +370,10 @@ def main() -> int:
 
     print(
         f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files, "
-        f"{len(lab_python_files)} lab scripts, {lesson_route_count} lesson routes, "
+        f"{len(lab_python_files)} lab scripts, {len(lesson_routes)} lesson routes, "
         f"{capstone_route_count} capstone routes; local refs/imports, reading metadata, "
-        "dynamic routes, stale placeholders, semantic guards, current-source markers, "
-        "and lab Python syntax are valid."
+        "dynamic routes, locked/muted navigation fallbacks, stale placeholders, semantic guards, "
+        "current-source markers, and lab Python syntax are valid."
     )
     return 0
 
