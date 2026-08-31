@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 07.5：理解 vLLM prefix caching、block hash、ref count、eviction、preemption，并从本地 KV 管理过渡到 KV Connector。" />
+  <meta name="description" content="AI Infra from Zero 07.5：理解 vLLM V1 prefix caching、block hash、ref count、eviction、RECOMPUTE preemption，并过渡到 KV Connector。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>07.5 Prefix Cache 与 Preemption · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -20,26 +20,27 @@
     <main class="article">
       <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>Prefix Cache / Preemption</span></div>
-      <div class="lesson-kicker"><span>LESSON 07.5 · VLLM</span><span>约 70 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 07.5 · VLLM</span><span>约 75 min</span></div>
       <h1>Prefix Cache 与 Preemption：KV block 不只会“分配和释放”，还会被复用、共享、缓存和淘汰。</h1>
       <p class="dek">到 07.4 为止，我们已经能解释一个 request 怎样申请 blocks、怎样用 block table 做 attention。但 serving 还有两个非常现实的问题：多个请求可能共享相同前缀；KV 池又不可能无限大。于是 block 需要 identity、hash、reference count、free/eviction order，scheduler 也需要在资源压力下 preempt 请求。这里补齐 vLLM 本地 KV 生命周期，下一模块再把问题扩展到“KV 在另一台机器上”。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 prefix caching 为什么能省 prefill compute，而不是“凭空减少模型权重”。</li><li>理解 full/cached blocks 为什么需要 hash，shared blocks 为什么需要 ref count。</li><li>知道 cached block 可以不属于任何 running request，却仍然留在 free/evictable cache 中等待复用。</li><li>理解 eviction 与 preemption 的区别：一个回收 cache block，一个改变 request 的运行状态/进度安排。</li><li>知道当前 V1 <code>RequestStatus</code> 已经包含 <code>WAITING_FOR_REMOTE_KVS</code>，说明 remote KV 已经进入 scheduler 状态机。</li><li>从“本机 block table”自然推导出 KV Connector 的问题。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 prefix caching 为什么能省 prefill compute，而不是“凭空减少模型权重”。</li><li>理解标准 APC 为什么按可缓存 hash block 识别 prefix，以及 shared blocks 为什么需要 ref count。</li><li>知道 cached block 可以不属于任何 running request，却仍然留在 free/evictable cache 中等待复用。</li><li>理解 eviction 与 preemption 的区别：一个回收 cache block，一个改变 request 的运行状态/进度安排。</li><li>知道当前 V1 默认 preemption 恢复方式是 RECOMPUTE，而不是 SWAP。</li><li>知道当前 V1 <code>RequestStatus</code> 已包含 <code>WAITING_FOR_REMOTE_KVS</code>，说明 remote KV 已进入 scheduler 状态机。</li></ul></div>
 
       <section class="article-section" id="prefix">
         <div class="section-no">01 · WHY PREFIX CACHE EXISTS</div>
         <h2>两个请求前 1000 个 tokens 一模一样，第二个请求没必要再算一遍相同 Prefill。</h2>
-        <p>例如很多用户都以同一段 system prompt 开头，或者同一个长文档被重复问不同问题。若某段完整 prefix 的 KV 已经存在，后续请求可以直接把这些 token 视作“already computed”，只计算未命中的 suffix。</p>
-        <div class="cache-grid"><div class="cache-card hit"><small>REQUEST A</small><b>system prompt + question A</b><span>第一次计算，完整 prefix blocks 被缓存。</span></div><div class="cache-card hit"><small>REQUEST B</small><b>same system prompt + question B</b><span>相同 prefix 命中，直接复用 KV blocks，只算后面的不同部分。</span></div><div class="cache-card miss"><small>REQUEST C</small><b>different prefix</b><span>hash 不同，不能误复用；需要正常 prefill。</span></div></div>
-        <p>因此 prefix cache 的收益主要是减少重复 Prefill compute 和 TTFT；它并不让同一份 KV 数据完全“零占显存”。共享 block 仍然是物理 KV memory，只是多个请求可以引用同一份。</p>
+        <p>例如很多用户都以同一段 system prompt 开头，或者同一个长文档被重复问不同问题。若某段可缓存 prefix 的 KV 已经存在，后续请求可以直接把这些 token 视作“already computed”，只计算未命中的 suffix。</p>
+        <div class="cache-grid"><div class="cache-card hit"><small>REQUEST A</small><b>system prompt + question A</b><span>第一次计算，可缓存 prefix blocks 被登记。</span></div><div class="cache-card hit"><small>REQUEST B</small><b>same system prompt + question B</b><span>相同 prefix 命中，复用 KV blocks，只算后面的不同部分。</span></div><div class="cache-card miss"><small>REQUEST C</small><b>different prefix</b><span>hash 不同，不能误复用；需要正常 prefill。</span></div></div>
+        <p>因此 prefix cache 的收益主要是减少重复 Prefill compute 和 TTFT；它并不让同一份 KV 数据“零占显存”。共享 block 仍然是物理 KV memory，只是多个请求可以引用同一份。</p>
       </section>
 
       <section class="article-section" id="hash">
         <div class="section-no">02 · BLOCK HASH</div>
         <h2>系统必须有办法判断“这块 KV 对应的 token prefix 是否真的一样”。</h2>
-        <div class="hash-flow"><div><small>TOKENS</small><b>prefix block content</b></div><span>hash →</span><div><small>KEY</small><b>BlockHash</b></div><span>lookup →</span><div><small>CACHE</small><b>KVCacheBlock #42</b></div></div>
-        <p>当前 V1 的 <code>KVCacheBlock</code> 只有在合适的缓存状态下才带 block hash；<code>BlockPool</code> 维护 hash 到 block 的映射。Request 也会随着输出增长计算新的 full-block hashes。</p>
-        <div class="source-note">当前实现可以从 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">kv_cache_utils.py</a> 的 <code>KVCacheBlock</code> 与 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">block_pool.py</a> 的 <code>BlockHashToBlockMap</code> 开始看。</div>
+        <div class="hash-flow"><div><small>TOKENS</small><b>prefix block content</b></div><span>hash →</span><div><small>KEY</small><b>BlockHash + group</b></div><span>lookup →</span><div><small>CACHE</small><b>KVCacheBlock #42</b></div></div>
+        <p>标准 Automatic Prefix Caching 的教学规则仍然是“缓存完整 hash blocks”：block hash 会包含 parent hash、当前 block tokens，以及 LoRA / multimodal / cache salt 等必要额外信息。当前 <code>KVCacheBlock</code> 内部还记录 group-aware hash 和 <code>_block_hash_num_tokens</code>，说明现代 V1 的 hash granularity、physical allocation block、hybrid cache group 已经不应被当成永远一一等同。</p>
+        <div class="concept-note"><p><strong>先学稳定语义，不要绑死内部尺寸。</strong>“相同 prefix → 可验证 hash identity → 找到可复用 KV”是核心；physical KV block size、hash block size、attention kernel block size 在当前 V1 可能是不同层级的概念。</p></div>
+        <div class="source-note">设计说明：<a href="https://github.com/vllm-project/vllm/blob/main/docs/design/prefix_caching.md">Automatic Prefix Caching</a>；当前 metadata 定义见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">kv_cache_utils.py</a>。</div>
       </section>
 
       <section class="article-section" id="refcount">
@@ -52,23 +53,24 @@
       <section class="article-section" id="free-cache">
         <div class="section-no">04 · FREE DOES NOT ALWAYS MEAN EMPTY</div>
         <h2>一个 block 可以不再被 running request 使用，但仍保留有效 cached KV，等待下一次 prefix hit。</h2>
-        <p>这是很容易混淆的一点。BlockPool 的 free queue 既承担“可被分配”的资源池，也涉及 cached blocks 的 eviction ordering。一个 cached block 可以暂时没有活跃引用，但内容仍有复用价值；直到容量压力要求真正覆盖它。</p>
+        <p>这是很容易混淆的一点。BlockPool 的 free queue 既承担“可被重新分配”的资源池，也参与 cached blocks 的 eviction ordering。一个 cached block 可以暂时没有活跃引用，但内容仍有复用价值；直到容量压力要求真正覆盖它。</p>
         <div class="cache-grid"><div class="cache-card hit"><small>ACTIVE</small><b>ref_cnt &gt; 0</b><span>正在被 request 使用，不能随便重用。</span></div><div class="cache-card hit"><small>CACHED / EVICTABLE</small><b>ref_cnt = 0 + valid hash</b><span>可命中 prefix，也可能在需要空间时被 eviction。</span></div><div class="cache-card evict"><small>REUSED</small><b>old hash invalidated</b><span>真正拿去存新 KV 时，旧 cache identity 必须被清理。</span></div></div>
       </section>
 
       <section class="article-section" id="eviction">
         <div class="section-no">05 · EVICTION</div>
         <h2>KV pool 满了时，系统首先要问：有没有不再被引用、但只是“为了缓存”留着的 block 可以覆盖？</h2>
-        <p>当前 free-block queue 的源码注释描述了 eviction order：前部是更适合先被回收的 block，包含 LRU 语义和同一 sequence 下的额外排序考虑。你不需要背实现细节，但要理解 cache 的基本 trade-off：</p>
+        <p>当前 free-block queue 的设计包含 LRU 语义；请求释放 blocks 时还会按有利于复用的顺序放回 free queue。你不需要背链表实现，但要理解 cache 的基本 trade-off：</p>
         <div class="control-plane"><div class="control-card"><small>KEEP CACHE</small><b>未来 prefix hit 更快</b><span>保留更多历史 KV，可以减少未来重复 prefill，但会占用本来可服务新 token 的 KV capacity。</span></div><div class="control-card"><small>EVICT CACHE</small><b>立即腾出 block</b><span>新请求获得空间，但未来若再次出现同 prefix，需要重新 prefill。</span></div></div>
       </section>
 
       <section class="article-section" id="preemption">
         <div class="section-no">06 · PREEMPTION IS A REQUEST-LEVEL DECISION</div>
         <h2>如果光淘汰无引用 cache 还不够，scheduler 可能必须让正在运行的 request 暂时退出。</h2>
-        <p>Preemption 和 eviction 不在同一个层级。Eviction 是“这个 cached physical block 还值不值得保留”；preemption 是“这个 request 现在还能不能继续占资源运行”。当前 scheduler 在 block allocation 失败时存在明确的 preempt path。</p>
-        <div class="request-life"><div><small>RUNNING</small><b>req A</b><span>已有 KV blocks，准备继续。</span></div><div><small>PRESSURE</small><b>no new block</b><span>本轮无法满足增长。</span></div><div><small>PREEMPT</small><b>release / reschedule</b><span>请求被移出当前 running 路径。</span></div><div><small>WAIT</small><b>PREEMPTED</b><span>稍后重新获得机会。</span></div><div><small>RESUME</small><b>recompute/load as needed</b><span>恢复成本取决于当前系统路径。</span></div></div>
-        <p>Serving 质量不只看“有没有 OOM”。如果系统频繁 preempt，GPU 可能反复重算，ITL/TTFT tail 也会恶化。所以 KV capacity 和 scheduler policy 必须一起评估。</p>
+        <p>Preemption 和 eviction 不在同一个层级。Eviction 是“这个 cached physical block 还值不值得保留”；preemption 是“这个 request 现在还能不能继续占资源运行”。当前 scheduler 在 <code>allocate_slots()</code> 无法满足 running request 时有明确的 victim-selection / preempt path。</p>
+        <div class="request-life"><div><small>RUNNING</small><b>req A</b><span>已有 KV blocks，准备继续。</span></div><div><small>PRESSURE</small><b>no new block</b><span>本轮无法满足增长。</span></div><div><small>PREEMPT</small><b>free / reschedule</b><span>请求被移出当前 running 路径。</span></div><div><small>WAIT</small><b>PREEMPTED</b><span>稍后重新获得机会。</span></div><div><small>RESUME · V1 DEFAULT</small><b>RECOMPUTE</b><span>重新计算必要 KV 状态。</span></div></div>
+        <p>当前 vLLM V1 的优化文档明确写明默认 preemption mode 是 <strong>RECOMPUTE</strong>，而不是 SWAP，因为 V1 中 recomputation 的开销更合适。Serving 质量因此不能只看“有没有 OOM”：频繁 preempt 会反复消耗 Prefill/forward 算力，并恶化 latency tail。</p>
+        <div class="source-note">当前行为说明：<a href="https://github.com/vllm-project/vllm/blob/main/docs/configuration/optimization.md">Optimization and Tuning · Preemption</a>；具体 victim/preempt 路径见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a>。</div>
       </section>
 
       <section class="article-section" id="state-machine">
@@ -90,10 +92,10 @@
       <section class="article-section" id="source">
         <div class="section-no">09 · FINAL VLLM SOURCE MAP</div>
         <h2>完成 07 后，你第一次应该能有目的地读源码。</h2>
-        <div class="source-map-vllm"><div class="source-card"><small>SCHEDULER</small><b>schedule + preempt + remote hooks</b><code>vllm/v1/core/sched/scheduler.py</code><span>下一模块会特别关注这里已经存在的 KVConnector factory/role/metadata 逻辑。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div><div class="source-card"><small>BLOCK CACHE</small><b>BlockPool</b><code>vllm/v1/core/block_pool.py</code><span>hash lookup、cached/free block、eviction。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">打开源码 ↗</a></div><div class="source-card"><small>BLOCK META</small><b>KVCacheBlock</b><code>vllm/v1/core/kv_cache_utils.py</code><span>ref count、hash、free-list state。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">打开源码 ↗</a></div><div class="source-card"><small>REQUEST STATE</small><b>RequestStatus</b><code>vllm/v1/request.py</code><span>WAITING / RUNNING / PREEMPTED / WAITING_FOR_REMOTE_KVS。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/request.py">打开源码 ↗</a></div></div>
+        <div class="source-map-vllm"><div class="source-card"><small>SCHEDULER</small><b>schedule + preempt + remote hooks</b><code>vllm/v1/core/sched/scheduler.py</code><span>下一模块会特别关注 KVConnector factory/role/metadata 与 failure policy。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div><div class="source-card"><small>BLOCK CACHE</small><b>BlockPool</b><code>vllm/v1/core/block_pool.py</code><span>hash lookup、cached/free block、eviction。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">打开源码 ↗</a></div><div class="source-card"><small>BLOCK META</small><b>KVCacheBlock</b><code>vllm/v1/core/kv_cache_utils.py</code><span>ref count、group-aware hash、free-list state。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">打开源码 ↗</a></div><div class="source-card"><small>REQUEST STATE</small><b>RequestStatus</b><code>vllm/v1/request.py</code><span>WAITING / RUNNING / PREEMPTED / WAITING_FOR_REMOTE_KVS。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/request.py">打开源码 ↗</a></div></div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.5</span></div><h2>完成这一关，你已经具备读 KV Connector 的地基。</h2><div class="quiz-item"><div class="quiz-q">1. Prefix cache 命中主要省的是什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">主要省重复的 prefill compute：相同 prefix 已经有有效 KV，就可以把这些 tokens 当作已计算。共享 KV block 本身仍占物理 KV memory。</div></div><div class="quiz-item"><div class="quiz-q">2. Eviction 和 preemption 为什么不是一回事？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">Eviction 是 block/cache 层的资源回收，常针对没有活跃引用的 cached blocks；preemption 是 request 层的调度决定，会改变正在运行请求的状态和后续恢复/重算。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么出现 <code>WAITING_FOR_REMOTE_KVS</code> 后，scheduler 已经不再是纯本机问题？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为 request 是否可运行还取决于外部 KV 是否存在、是否开始传输、是否完成。远端数据传输状态已经进入 request 的调度状态机。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.5</span></div><h2>完成这一关，你已经具备读 KV Connector 的地基。</h2><div class="quiz-item"><div class="quiz-q">1. Prefix cache 命中主要省的是什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">主要省重复的 prefill compute：相同 prefix 已经有有效 KV，就可以把这些 tokens 当作已计算。共享 KV block 本身仍占物理 KV memory。</div></div><div class="quiz-item"><div class="quiz-q">2. 当前 V1 preemption 默认怎样恢复，而 eviction 又是什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">Preemption 是 request 级调度决定，当前 V1 默认通过 RECOMPUTE 恢复被释放的 KV；eviction 是 block/cache 层回收无活跃引用的 cached block。两者不是同一层级。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么出现 <code>WAITING_FOR_REMOTE_KVS</code> 后，scheduler 已经不再是纯本机问题？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为 request 是否可运行还取决于外部 KV 是否存在、是否开始传输、是否完成。远端数据传输状态已经进入 request 的调度状态机。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 08.1</small><br/><strong>KV Connector：Prefill GPU 已经算好的 KV，为什么不能让 Decode GPU“直接接着用”？</strong></div><span>→</span></div>
     </main>
