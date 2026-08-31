@@ -95,17 +95,14 @@ TERMS = {
     "LBNHC": ("LBNHC KV layout", "LBNHC KV 布局", "另一种 KV cache 维度布局记号，本身是维度顺序代码。", False),
 }
 
-# Avoid expanding inside code/diagrams/titles; "first use" means first substantive prose use.
 SKIP_TAGS = {"code", "pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
 SKIP_CLASSES = {"lesson-kicker", "section-no", "breadcrumb", "mobile-course-bar", "lesson-terms", "toc"}
-# Remove only the generated section itself. Surrounding whitespace is canonicalized at insertion.
 TERM_SECTION_RE = re.compile(r'<section class="lesson-terms".*?</section>', re.S)
 MAIN_RE = re.compile(r"(?P<open><main\b[^>]*class=\"[^\"]*\barticle\b[^\"]*\"[^>]*>)(?P<body>.*?)(?P<close></main>)", re.S | re.I)
 TAG_RE = re.compile(r"(<[^>]+>)")
 OPEN_TAG_RE = re.compile(r"<\s*([A-Za-z0-9]+)\b([^>]*)>")
 CLOSE_TAG_RE = re.compile(r"</\s*([A-Za-z0-9]+)\s*>")
 CLASS_RE = re.compile(r'class\s*=\s*[\"\']([^\"\']*)[\"\']', re.I)
-# Consume all whitespace immediately before the next-lesson element so insertion is canonical.
 NEXT_RE = re.compile(r"\s*(?=<a\b[^>]*class=\"[^\"]*\bnext-lesson\b|<div\b[^>]*class=\"[^\"]*\bnext-lesson\b)", re.I)
 
 
@@ -113,6 +110,66 @@ def term_pattern(abbr: str) -> re.Pattern[str]:
     if abbr == "P/D":
         return re.compile(r"(?<![A-Za-z0-9])P/D(?![A-Za-z0-9])")
     return re.compile(rf"(?<![A-Za-z0-9]){re.escape(abbr)}(?![A-Za-z0-9])")
+
+
+def normalized_form(abbr: str) -> str:
+    english, chinese, _, expand = TERMS[abbr]
+    return f"{english} ({abbr}，{chinese})" if expand else abbr
+
+
+def normalized_spans(text: str) -> list[tuple[int, int, str]]:
+    """Return generated terminology spans so nested acronyms stay atomic."""
+    spans = []
+    for abbr, (_, _, _, expand) in TERMS.items():
+        if not expand:
+            continue
+        phrase = normalized_form(abbr)
+        start = 0
+        while True:
+            idx = text.find(phrase, start)
+            if idx < 0:
+                break
+            spans.append((idx, idx + len(phrase), abbr))
+            start = idx + len(phrase)
+    return sorted(spans)
+
+
+def semanticize_text(text: str) -> str:
+    """Collapse generated phrases back to their own acronym for term discovery.
+
+    Example: the RDMA inside the official RoCE expansion must not create a new
+    standalone RDMA occurrence. A later independent RDMA in prose still does.
+    """
+    spans = normalized_spans(text)
+    if not spans:
+        return text
+    out = []
+    cursor = 0
+    for start, end, owner in spans:
+        if start < cursor:
+            continue
+        out.append(text[cursor:start])
+        out.append(owner)
+        cursor = end
+    out.append(text[cursor:])
+    return "".join(out)
+
+
+def first_semantic_match(text: str, abbr: str):
+    """Find first independent use, skipping acronyms nested in another term's phrase."""
+    spans = normalized_spans(text)
+    for match in term_pattern(abbr).finditer(text):
+        owner = None
+        for start, end, span_owner in spans:
+            if start <= match.start() and match.end() <= end:
+                owner = span_owner
+                break
+        if owner is None:
+            return "raw", match
+        if owner == abbr:
+            return "normalized", match
+        # Nested inside another normalized term, e.g. RDMA inside RoCE: skip it.
+    return None
 
 
 def tokenize_body(body: str):
@@ -150,7 +207,7 @@ def visible_text(body: str) -> str:
     chunks = []
     for kind, text, blocked in tokenize_body(body):
         if kind == "text" and not blocked:
-            chunks.append(html_lib.unescape(text))
+            chunks.append(semanticize_text(html_lib.unescape(text)))
     return " ".join(chunks)
 
 
@@ -165,7 +222,6 @@ def found_terms(body: str) -> list[str]:
 
 
 def expand_first_uses(body: str, abbreviations: list[str]) -> str:
-    # Preserve lesson occurrence order. A set made expansion order non-deterministic.
     pending = [abbr for abbr in abbreviations if TERMS[abbr][3]]
     if not pending:
         return body
@@ -175,19 +231,17 @@ def expand_first_uses(body: str, abbreviations: list[str]) -> str:
             parts.append(text)
             continue
         resolved = []
-        # Recompute each match against the current fragment after prior replacements.
         for abbr in pending:
-            english, chinese, _, _ = TERMS[abbr]
-            pat = term_pattern(abbr)
-            m = pat.search(text)
-            if not m:
+            result = first_semantic_match(text, abbr)
+            if result is None:
                 continue
-            window = html_lib.unescape(text[max(0, m.start() - 160): m.end() + 160])
-            if english in window and chinese in window:
+            state, match = result
+            if state == "normalized":
                 resolved.append(abbr)
                 continue
+            english, chinese, _, _ = TERMS[abbr]
             replacement = f"{english} ({abbr}，{chinese})"
-            text = text[:m.start()] + replacement + text[m.end():]
+            text = text[:match.start()] + replacement + text[match.end():]
             resolved.append(abbr)
         if resolved:
             resolved_set = set(resolved)
