@@ -23,7 +23,9 @@
 
 ## Hands-on Labs
 
-当前有 14 个可运行实验：
+当前有 14 个可运行实验，分成两条完整主线：
+
+**Training · A1–A7**
 
 - A1 Mini Megatron TP
 - A2 Mini TP Backward
@@ -32,6 +34,9 @@
 - A5 Bucketed Async Reduce-Scatter
 - A6 TP × DP 2D Topology
 - A7 Profiler-ready Overlap
+
+**Inference · B1–B7**
+
 - B1 Mini KV Handoff
 - B2 Mini Block KV Handoff
 - B3 Mini Async KV Transfer
@@ -40,12 +45,27 @@
 - B6 Registered Region Descriptor
 - B7 KV Lease / Expiry
 
-默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness，不把小 tensor / CPU timing 当真实 GPU、NIXL 或 RDMA benchmark。
+默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness 与依赖结构，不把小 tensor / CPU timing 当成真实 GPU、NIXL 或 RDMA benchmark。
+
+## Source-reading workflow
+
+**Source Map** 不再按仓库目录罗列文件，而是按 `Control → State → Data → Sync` 的阅读镜头组织，并把每个关键源码入口直接映射到对应课程或 Lab。
+
+Megatron 主线：
+
+`TP layers/mappings → parallel groups → PP schedule/P2P → distributed optimizer → param/grad buckets + overlap`
+
+vLLM / NIXL 主线：
+
+`Engine/Scheduler → KV block state → GPU model runner → KVConnector contract → NIXL scheduler lifecycle → metadata → memory registration → pull transfer/completion`
+
+这样读源码时先知道“这一层正在解决什么问题”，再进入 class、buffer、process group 和 transfer handle。
 
 ## Reading tools
 
-- **Source Map**：按问题与 request/data lifecycle 阅读 Megatron / vLLM，而不是从仓库第一行顺序读。
+- **Source Map**：按问题、数据流与生命周期阅读 Megatron / vLLM，并直接跳到对应 Lab。
 - **Glossary**：只收录课程真正用到的概念，并解释它在训练/推理系统里为什么出现。
+- **Labs**：先用小规模 reference 跑通机制，再回源码确认真实工程约束。
 
 ## Quality checks
 
