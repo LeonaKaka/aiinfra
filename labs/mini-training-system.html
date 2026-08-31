@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Training System：把 TP×DP、bucket readiness、async reduce-scatter、optimizer sharding 与 parameter all-gather 串成一个可验证 training step。" />
+  <title>Lab A12 · Mini Training System</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A12</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Training System</span></div>
+    <div class="lab-kicker">LAB A12 · TRAINING CAPSTONE</div>
+    <h1>前 11 个 Training Labs 是零件。<br />这一节把它们第一次装成“一个 training step”。</h1>
+    <p class="dek">4 个 ranks 组成 TP=2 × DP=2。每个 rank 同时属于一个 TP group 和一个 DP group：forward 用 TP shards 合成模型输出；backward 在 W2 gradient ready 后立刻启动 DP async reduce-scatter，同时继续算 W1；optimizer 只更新自己负责的 parameter chunk，再 all-gather 恢复下一次 forward 需要的 TP parameter shard。</p>
+
+    <section class="lab-section" id="step"><div class="lab-kicker">01 · ONE STEP, FOUR LAYERS OF STATE</div><h2>不要再把 TP、DP、optimizer sharding 和 overlap 当四个独立功能。</h2>
+      <div class="stage-flow"><div class="stage-card train"><small>MODEL COMPUTE · TP</small><b>W1/W2 are TP-sharded</b><span>同一个 DP replica 内两个 TP ranks 共同完成 MLP forward；partial output 通过 TP all-reduce 合成。</span></div><div class="stage-card train"><small>DATA · DP</small><b>different samples per replica</b><span>两个 DP replicas 处理不同数据，但相同 TP coordinate 必须对齐同一份模型分片。</span></div><div class="stage-card comm"><small>GRADIENT / OPTIMIZER</small><b>reduce-scatter → local update → all-gather</b><span>global gradient 直接落成 DP-owned shard；每个 rank 更新自己那段，再 materialize 完整 TP shard。</span></div></div>
+    </section>
+
+    <section class="lab-section" id="overlap"><div class="lab-kicker">02 · READINESS CREATES AN OVERLAP WINDOW</div><h2>通信能否隐藏，首先取决于你有没有在正确时机启动它。</h2>
+      <div class="command"><div class="command-head"><span>BACKWARD ORDER</span><span>teaching dependency</span></div><pre>W2 gradient ready
+      │
+      ├─ launch async DP reduce-scatter(W2)
+      │
+      └─ keep computing dH / dpre / dW1
+                         │
+                         └─ launch async DP reduce-scatter(W1)
+
+wait only before the corresponding optimizer shard is consumed</pre></div>
+      <p>这个 Lab 只证明<strong>依赖顺序允许 overlap</strong>：W2 communication 的 post 和 wait 之间确实存在独立 backward work。CPU/Gloo 的耗时不证明 GPU 上真的隐藏了多少通信；A7 的 profiler 证据层仍然有效。</p>
+    </section>
+
+    <section class="lab-section" id="ownership"><div class="lab-kicker">03 · WHY TWO GROUPS EXIST AT ONCE</div><h2>同一个 rank 的“邻居”会随着当前问题改变。</h2>
+      <div class="command"><div class="command-head"><span>WORLD SIZE 4</span><span>TP=2 · DP=2</span></div><pre>TP groups: [0,1] [2,3]
+  ↳ 同一个 data replica 内完成 layer-internal tensor computation
+
+DP groups: [0,2] [1,3]
+  ↳ 相同 TP coordinate 的不同 data replicas 汇总 gradient / optimizer state</pre></div>
+      <p>这就是为什么真实 Megatron 要维护多个 process groups：global rank 只是进程身份；“这一次 collective 应该和谁发生”由并行轴决定。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">04 · RUN + DENSE REFERENCE</div><h2>最终验收不是“collective 全跑完”，而是更新后的每个 TP parameter shard 都等于 dense global-batch SGD。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>4 ranks</span></div><pre>torchrun --standalone --nproc-per-node=4 \
+  labs/code/mini_training_system.py</pre></div>
+      <p>reference 会用同一批 global data 在单个 dense 两层 MLP 上做一次完整 backward + SGD，再切回 TP shard 与分布式结果比较。这样同时覆盖 forward、DP gradient semantics、optimizer ownership 和 parameter rematerialization。</p>
+      <a class="code-link" href="./code/mini_training_system.py"><div><small>FULL SOURCE</small><b>打开 mini_training_system.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">05 · SOURCE READING PAYOFF</div><h2>现在再看 Megatron，应该从“一个 class”升级为“一个 training step 的生命周期”。</h2>
+      <div class="source-bridge"><div><small>OUR CAPSTONE</small><b>TP compute → gradient ready → DP reduce-scatter → local optimizer → param all-gather</b><code>groups · buckets · async handles · owned shards</code></div><span>maps to →</span><div><small>MEGATRON</small><b>parallel_state + tensor_parallel + param_and_grad_buffer + distrib_optimizer</b><code>不同目录共同定义一个 step</code></div></div>
+      <p>这也是以后读工业代码最重要的转变：系统语义经常横跨多个文件。不要期待“Distributed Optimizer”一个类就能独自解释通信什么时候启动、哪个 rank 拥有什么、下一次 forward 之前又要 materialize 什么。</p>
+    </section>
+
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">06 · CHECKPOINT</div><h2>能画出依赖图，比背配置项更重要。</h2><div class="check-list"><div>① 为什么 DP group 只能连接“相同 TP coordinate”的 ranks？</div><div>② reduce-scatter 后为什么每个 rank 不能直接拿自己的 optimizer shard 去做下一次完整 TP forward？</div><div>③ W2 reduce-scatter 应该在什么时候启动，为什么等整个 backward 结束再启动会浪费 overlap 窗口？</div><div>④ 这个 CPU/Gloo Lab 证明了什么，又没有证明什么？</div></div></section>
+
+    <nav class="lab-footer-nav"><a href="./mini-expert-parallel.html">← Lab A11 · Expert Parallel</a><a href="./index.html">返回 Labs 总览 →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
