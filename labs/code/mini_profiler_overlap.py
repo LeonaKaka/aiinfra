@@ -40,7 +40,7 @@ def rs_async(flat_grad: torch.Tensor, world: int):
     if flat_grad.numel() % world:
         raise ValueError('gradient bucket numel must be divisible by WORLD_SIZE')
     out = torch.empty(flat_grad.numel() // world, device=flat_grad.device, dtype=flat_grad.dtype)
-    work = dist.reduce_scatter_tensor(out, flat_grad.contiguous(), op=dist.ReduceOp.SUM, async_op=True)
+    work = dist.reduce_scatter_single(out, flat_grad.contiguous(), op=dist.ReduceOp.SUM, async_op=True)
     return out, work
 
 
