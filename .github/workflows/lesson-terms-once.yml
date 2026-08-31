@@ -1,6 +1,6 @@
 name: One-time lesson terminology migration
 
-# Diagnose the final two non-idempotent lesson diffs.
+# Final migration after making normalized terminology phrases atomic.
 on:
   push:
     paths:
@@ -21,18 +21,21 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: First terminology pass
+      - name: Normalize lesson terminology
+        run: python scripts/lesson_terms.py --write
+      - name: Link terminology stylesheet
+        run: python scripts/link_lesson_terms_css.py
+      - name: Verify normalized site
         run: |
-          python scripts/lesson_terms.py --write
-          python scripts/link_lesson_terms_css.py
-          cp learn/03-gpu-systems/gpu-bottlenecks.html /tmp/gpu-bottlenecks.first.html
-          cp learn/04-distributed/nccl-topology.html /tmp/nccl-topology.first.html
-      - name: Show second-pass drift
-        run: |
-          python scripts/lesson_terms.py --write
-          echo '--- 03.3 second-pass diff ---'
-          diff -u /tmp/gpu-bottlenecks.first.html learn/03-gpu-systems/gpu-bottlenecks.html || true
-          echo '--- 04.3 second-pass diff ---'
-          diff -u /tmp/nccl-topology.first.html learn/04-distributed/nccl-topology.html || true
           python scripts/lesson_terms.py
-          exit 1
+          python scripts/check_site.py
+          python scripts/normalize_navigation.py
+          python scripts/check_diagrams.py
+      - name: Commit normalized lessons
+        run: |
+          git config user.name 'LeonaKaka QA Bot'
+          git config user.email '124779759+LeonaKaka@users.noreply.github.com'
+          git rm .github/workflows/lesson-terms-once.yml
+          git add learn
+          git commit -m 'Add per-lesson terminology tables'
+          git push origin HEAD:main
