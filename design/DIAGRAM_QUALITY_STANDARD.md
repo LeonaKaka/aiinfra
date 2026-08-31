@@ -75,3 +75,6 @@ Do not mark a diagram complete after code generation alone.
 
 - `learn/06-llm-inference/kv-cache.html` — autoregressive loop + one attention layer + persistent KV + cache growth.
 - `learn/07-vllm/kv-cache-manager.html` — logical blocks + block table + BlockPool + scattered physical KV + append rule.
+- `learn/07-vllm/model-runner-paged-attention.html` — separate KV write lane and paged-attention read lane; block-table selection stays visually distinct from data movement.
+- `learn/08-kv-connector/connector-architecture.html` — scheduler control plane + worker data plane + ConnectorMetadata + remote KV transport.
+- `learn/08-kv-connector/transfer-lifecycle.html` — Scheduler / Worker / Memory swimlanes with request-level completion, layer-level readiness, and source-block lifetime on one timeline.
