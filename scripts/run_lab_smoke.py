@@ -71,17 +71,29 @@ def main() -> int:
                 cwd=ROOT,
                 env=env,
                 text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 timeout=180,
                 check=False,
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
+            if exc.stdout:
+                output = exc.stdout.decode() if isinstance(exc.stdout, bytes) else exc.stdout
+                print(output, end="" if output.endswith("\n") else "\n", flush=True)
             failures.append(f"{name}: timed out after 180s")
             continue
 
+        output = completed.stdout or ""
+        if output:
+            print(output, end="" if output.endswith("\n") else "\n", flush=True)
+
+        reported_pass = any(line.strip() == "PASS" for line in output.splitlines())
         if completed.returncode != 0:
             failures.append(f"{name}: exited with status {completed.returncode}")
+        elif not reported_pass:
+            failures.append(f"{name}: process exited 0 but did not report a standalone PASS")
         else:
-            print(f"PASS: {name}", flush=True)
+            print(f"SMOKE PASS: {name}", flush=True)
 
     if failures:
         print("\nLab smoke checks failed:")
