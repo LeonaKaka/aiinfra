@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - scripts/apply_2026_09_01_term_semantics.py
       - scripts/finalize_2026_09_01_term_audit.py
       - .github/workflows/apply-content-maintenance.yml
 
@@ -25,9 +24,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Apply maintenance
-        run: python scripts/apply_2026_09_01_term_semantics.py
-
       - name: Finalize acronym audit
         run: python scripts/finalize_2026_09_01_term_audit.py
 
@@ -44,7 +40,7 @@ jobs:
         run: |
           git config user.name "leona"
           git config user.email "124779759+LeonaKaka@users.noreply.github.com"
-          git add README.md scripts/lesson_terms.py scripts/audit_lesson_acronyms.py learn/
+          git add scripts/audit_lesson_acronyms.py learn/
           if git diff --cached --quiet; then
             echo "No generated changes."
             exit 0
