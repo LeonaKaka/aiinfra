@@ -1,0 +1,14 @@
+/* Per-lesson terminology table */
+.lesson-terms{margin:64px 0 0;padding-top:34px;border-top:1px solid var(--line-dark)}
+.lesson-terms h2{margin-bottom:10px}
+.lesson-terms-intro{max-width:690px;margin-top:0!important;color:#656962!important;font-size:13px!important}
+.lesson-terms-scroll{overflow-x:auto;margin-top:22px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.lesson-terms-table{width:100%;min-width:700px;border-collapse:collapse;text-align:left}
+.lesson-terms-table th{padding:12px 14px;border-bottom:1px solid var(--line-dark);background:#f2f3ef;color:#777b74;font:700 9px/1.3 ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase}
+.lesson-terms-table td{padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:#535750;font-size:12px;line-height:1.65}
+.lesson-terms-table tr:last-child td{border-bottom:0}
+.lesson-terms-table td:first-child{width:82px}
+.lesson-terms-table td:nth-child(2){width:190px;font-weight:650;color:#2d302c}
+.lesson-terms-table td:nth-child(3){width:150px;color:#315f82;font-weight:650}
+.lesson-terms-table code{font-size:11px;font-weight:750;color:#255b46;background:#eef4ef;border:1px solid #d7e2da;border-radius:6px;padding:3px 6px}
+@media(max-width:760px){.lesson-terms{margin-top:50px}.lesson-terms-table{min-width:660px}.lesson-terms-table td{font-size:11.5px}}
