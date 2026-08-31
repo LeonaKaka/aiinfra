@@ -1,0 +1,46 @@
+name: Apply Term Readability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply_term_readability_fixes.py
+      - .github/workflows/apply-term-readability.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Apply prose placement fixes
+        run: python scripts/apply_term_readability_fixes.py
+      - name: Regenerate canonical term placement
+        run: python scripts/lesson_terms.py --write
+      - name: Enforce terminology
+        run: |
+          python scripts/lesson_terms.py
+          python scripts/audit_lesson_acronyms.py
+          python scripts/audit_term_density.py
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit generated lesson changes
+        run: |
+          git config user.name "leona"
+          git config user.email "124779759+LeonaKaka@users.noreply.github.com"
+          git add learn/
+          if git diff --cached --quiet; then
+            echo "No lesson changes."
+            exit 0
+          fi
+          git commit -m "Improve first-use terminology readability"
+          git push origin HEAD:main
