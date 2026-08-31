@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="980" viewBox="0 0 1100 980" role="img" aria-labelledby="title desc">
+<title id="title">Expert Parallel token ownership and All-to-All lifecycle</title>
+<desc id="desc">Four source ranks route tokens to expert owners, dispatch token-expert assignments through an EP All-to-All, run local grouped expert GEMMs, then combine outputs back to original token ownership.</desc>
+<defs>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6f766f"/></marker>
+  <style>
+    .bg{fill:#fff}.panel{fill:#fbfbf8;stroke:#c9cec7;stroke-width:1.4}.panel2{fill:#f4f6f2;stroke:#c9cec7;stroke-width:1.4}
+    .rank0{fill:#eaf1ed;stroke:#b9d0c2;stroke-width:1.4}.rank1{fill:#eef3f7;stroke:#c3d4df;stroke-width:1.4}.rank2{fill:#f6f2e8;stroke:#ddcfb4;stroke-width:1.4}.rank3{fill:#f4eef2;stroke:#d7c7d1;stroke-width:1.4}
+    .band{fill:#1f2622}.band2{fill:#2b322e}.line{stroke:#6f766f;stroke-width:1.5;fill:none}
+    .title{font:700 25px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#20231f}.subtitle{font:500 14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#676d66}
+    .kicker{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:1.6px;fill:#8b918a}.label{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#4d554f}
+    .small{font:500 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#697069}.tiny{font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#737b74}
+    .white{fill:#f5f7f3}.white2{fill:#bdc8c0}.strong{font:700 14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#273029}.strong.white{fill:#f5f7f3}
+    .token{font:700 10px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#273029}.note{font:600 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#405047}
+  </style>
+</defs>
+<rect class="bg" x="0" y="0" width="1100" height="980"/>
+<text class="kicker" x="56" y="49">EXPERT PARALLEL · EP=4 · EXPERT-TP=1 · TOP-1 TEACHING SLICE</text>
+<text class="title" x="56" y="83">Token ownership changes twice: source rank → expert owner → source rank</text>
+<text class="subtitle" x="56" y="109">The All-to-All moves token–expert assignments; expert parameters do not move with each token.</text>
+<g transform="translate(56,146)">
+  <rect class="rank0" x="0" y="0" rx="10" width="225" height="52"/><rect class="rank1" x="243" y="0" rx="10" width="225" height="52"/><rect class="rank2" x="486" y="0" rx="10" width="225" height="52"/><rect class="rank3" x="729" y="0" rx="10" width="225" height="52"/>
+  <text class="label" x="16" y="22">EP RANK 0</text><text class="tiny" x="16" y="39">owns experts E0 · E1</text>
+  <text class="label" x="259" y="22">EP RANK 1</text><text class="tiny" x="259" y="39">owns experts E2 · E3</text>
+  <text class="label" x="502" y="22">EP RANK 2</text><text class="tiny" x="502" y="39">owns experts E4 · E5</text>
+  <text class="label" x="745" y="22">EP RANK 3</text><text class="tiny" x="745" y="39">owns experts E6 · E7</text>
+</g>
+<text class="kicker" x="56" y="231">1 · SOURCE TOKEN OWNERSHIP + ROUTER DECISIONS</text>
+<g transform="translate(56,250)">
+  <rect class="panel" x="0" y="0" rx="12" width="225" height="112"/><rect class="panel" x="243" y="0" rx="12" width="225" height="112"/><rect class="panel" x="486" y="0" rx="12" width="225" height="112"/><rect class="panel" x="729" y="0" rx="12" width="225" height="112"/>
+  <text class="strong" x="16" y="24">local tokens</text><text class="token" x="16" y="51">T0→E0  T1→E4</text><text class="token" x="16" y="73">T2→E2  T3→E7</text><text class="small" x="16" y="96">router chooses destination expert</text>
+  <text class="strong" x="259" y="24">local tokens</text><text class="token" x="259" y="51">T4→E6  T5→E3</text><text class="token" x="259" y="73">T6→E0  T7→E5</text><text class="small" x="259" y="96">same source rank, mixed destinations</text>
+  <text class="strong" x="502" y="24">local tokens</text><text class="token" x="502" y="51">T8→E5  T9→E1</text><text class="token" x="502" y="73">T10→E2 T11→E6</text><text class="small" x="502" y="96">assignment is destination-dependent</text>
+  <text class="strong" x="745" y="24">local tokens</text><text class="token" x="745" y="51">T12→E7 T13→E4</text><text class="token" x="745" y="73">T14→E3 T15→E1</text><text class="small" x="745" y="96">original sequence ownership stays known</text>
+</g>
+<line class="line" marker-end="url(#arrow)" x1="168" y1="367" x2="168" y2="397"/><line class="line" marker-end="url(#arrow)" x1="411" y1="367" x2="411" y2="397"/><line class="line" marker-end="url(#arrow)" x1="654" y1="367" x2="654" y2="397"/><line class="line" marker-end="url(#arrow)" x1="897" y1="367" x2="897" y2="397"/>
+<rect class="band" x="56" y="400" rx="12" width="954" height="92"/><text class="kicker white2" x="76" y="424">2 · DISPATCH CONTROL + BULK TOKEN MOVEMENT</text><text class="strong white" x="76" y="449">permute / group by destination → A2A(EP) → tokens arrive at expert-owner ranks</text><text class="tiny white2" x="76" y="472">send counts differ by source and destination; payload is hidden state (+ routing metadata), not expert weights</text>
+<text class="kicker" x="56" y="531">3 · EXPERT OWNERSHIP + LOCAL COMPUTE</text>
+<g transform="translate(56,550)">
+  <rect class="rank0" x="0" y="0" rx="12" width="225" height="153"/><rect class="rank1" x="243" y="0" rx="12" width="225" height="153"/><rect class="rank2" x="486" y="0" rx="12" width="225" height="153"/><rect class="rank3" x="729" y="0" rx="12" width="225" height="153"/>
+  <text class="label" x="16" y="24">RANK 0 · E0 / E1</text><text class="token" x="16" y="51">recv: T0, T6, T9, T15</text><rect class="panel2" x="16" y="68" rx="8" width="193" height="48"/><text class="tiny" x="29" y="89">GROUPED GEMM</text><text class="small" x="29" y="106">local expert FFNs only</text><text class="note" x="16" y="139">compute owner = rank 0</text>
+  <text class="label" x="259" y="24">RANK 1 · E2 / E3</text><text class="token" x="259" y="51">recv: T2, T5, T10, T14</text><rect class="panel2" x="259" y="68" rx="8" width="193" height="48"/><text class="tiny" x="272" y="89">GROUPED GEMM</text><text class="small" x="272" y="106">local expert FFNs only</text><text class="note" x="259" y="139">compute owner = rank 1</text>
+  <text class="label" x="502" y="24">RANK 2 · E4 / E5</text><text class="token" x="502" y="51">recv: T1, T7, T8, T13</text><rect class="panel2" x="502" y="68" rx="8" width="193" height="48"/><text class="tiny" x="515" y="89">GROUPED GEMM</text><text class="small" x="515" y="106">local expert FFNs only</text><text class="note" x="502" y="139">compute owner = rank 2</text>
+  <text class="label" x="745" y="24">RANK 3 · E6 / E7</text><text class="token" x="745" y="51">recv: T3, T4, T11, T12</text><rect class="panel2" x="745" y="68" rx="8" width="193" height="48"/><text class="tiny" x="758" y="89">GROUPED GEMM</text><text class="small" x="758" y="106">local expert FFNs only</text><text class="note" x="745" y="139">compute owner = rank 3</text>
+</g>
+<line class="line" marker-end="url(#arrow)" x1="168" y1="708" x2="168" y2="735"/><line class="line" marker-end="url(#arrow)" x1="411" y1="708" x2="411" y2="735"/><line class="line" marker-end="url(#arrow)" x1="654" y1="708" x2="654" y2="735"/><line class="line" marker-end="url(#arrow)" x1="897" y1="708" x2="897" y2="735"/>
+<rect class="band2" x="56" y="738" rx="12" width="954" height="76"/><text class="kicker white2" x="76" y="762">4 · COMBINE</text><text class="strong white" x="76" y="787">reverse A2A(EP) → unpermute → restore each source rank's logical token order</text>
+<text class="kicker" x="56" y="851">5 · SOURCE OWNERSHIP RESTORED</text>
+<g transform="translate(56,868)">
+  <rect class="panel" x="0" y="0" rx="10" width="225" height="62"/><rect class="panel" x="243" y="0" rx="10" width="225" height="62"/><rect class="panel" x="486" y="0" rx="10" width="225" height="62"/><rect class="panel" x="729" y="0" rx="10" width="225" height="62"/>
+  <text class="label" x="16" y="24">R0 output</text><text class="tiny" x="16" y="43">T0 · T1 · T2 · T3</text><text class="label" x="259" y="24">R1 output</text><text class="tiny" x="259" y="43">T4 · T5 · T6 · T7</text><text class="label" x="502" y="24">R2 output</text><text class="tiny" x="502" y="43">T8 · T9 · T10 · T11</text><text class="label" x="745" y="24">R3 output</text><text class="tiny" x="745" y="43">T12 · T13 · T14 · T15</text>
+</g>
+<text class="tiny" x="56" y="960">TOP-K &gt; 1: one logical token creates multiple token–expert assignments; combine applies routing weights before restoring the token.</text>
+</svg>
