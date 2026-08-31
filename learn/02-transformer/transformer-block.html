@@ -112,7 +112,7 @@ x = torch.randn(<span class="num">2</span>, <span class="num">16</span>, <span c
 block = TinyBlock()
 y = block(x)
 print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
-        <p>这里用 PyTorch 的高级 <code>MultiheadAttention</code> 是因为上一课已经手写过 Attention shape；这一课重点是观察一个 block 如何组合子模块。真实 LLM 的 attention、mask、Rotary Position Embedding (RoPE，旋转位置编码)、RMSNorm、gated MLP 等会更具体。</p>
+        <p>这里用 PyTorch 的高级 <code>MultiheadAttention</code> 是因为上一课已经手写过 Attention shape；这一课重点是观察一个 block 如何组合子模块。真实 LLM 的 attention、mask、position encoding、RMSNorm、gated MLP 等会更具体。</p>
       </section>
 
       <section class="article-section" id="position-semantics">
@@ -129,7 +129,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
         <p>这会直接影响后面的 KV Cache：缓存不是“随便保存一份 K/V 数字以后就能到处用”。要安全复用本地或远端 KV，至少要保证它仍对应<strong>同一模型语义、同一层/头布局、同一 token 前缀与一致的位置编码约定</strong>。如果 position 或 RoPE 配置不兼容，即使字节数和 shape 都对，语义也可能已经错了。</p>
         <div class="why-grid"><div class="why-card"><b>token identity</b><p>缓存必须对应你以为的那段 prefix，而不是另一段“长度刚好一样”的序列。</p></div><div class="why-card"><b>position semantics</b><p>位置编号、RoPE 参数/缩放等必须与生成这些 K/V 时的约定兼容。</p></div><div class="why-card"><b>layout / format</b><p>layer、head、dtype、cache layout 也必须与消费端契约一致；这会在 06–08 模块继续具体化。</p></div></div>
         <div class="concept-note"><p><strong>实现和语义要分开：</strong>真实 runtime 可以把 Query/Key normalization、RoPE、KV cache write 等步骤融合进 kernel；你不需要背某个函数调用顺序。需要牢牢记住的是：<strong>KV reuse 复用的是带上下文语义的模型状态，不只是搬一段显存。</strong></p></div>
-        <div class="source-note">当前 vLLM 的 Qwen3 路径就是一个直观例子：<code>positions</code> 传入 attention，Q/K 先经过 <code>rotary_emb(positions, q, k)</code>，随后进入 attention。源码入口：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/qwen3.py">vLLM · qwen3.py</a>。具体模型与 fused kernel 可能采用不同实现组织，因此这里把它作为语义示例，不把函数排列当永久 Application Programming Interface (API，应用程序编程接口)。</div>
+        <div class="source-note">当前 vLLM 的 Qwen3 路径就是一个直观例子：<code>positions</code> 传入 attention，Q/K 先经过 <code>rotary_emb(positions, q, k)</code>，随后进入 attention。源码入口：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/qwen3.py">vLLM · qwen3.py</a>。具体模型与 fused kernel 可能采用不同实现组织，因此这里把它作为语义示例，不把函数排列当永久接口定义。</div>
       </section>
 
       <section class="article-section" id="stack">
@@ -177,7 +177,6 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
         <tr><td><code>GELU</code></td><td>Gaussian Error Linear Unit</td><td>高斯误差线性单元</td><td>Transformer/MLP 中常见的非线性激活函数。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>RoPE</code></td><td>Rotary Position Embedding</td><td>旋转位置编码</td><td>把位置信息注入 Query/Key 的常见位置编码方法。</td></tr>
-        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>LM</code></td><td>Language Model</td><td>语言模型</td><td>对 token 序列概率或下一 token 分布进行建模的模型。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
