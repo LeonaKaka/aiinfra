@@ -24,6 +24,14 @@ KNOWN_SEMANTIC_REGRESSIONS = (
     ("<b>HBM / VRAM</b>", "do not use HBM as a synonym for generic GPU/VRAM memory"),
     ("<small>ITL / TPOT</small>", "ITL and TPOT are related but distinct serving metrics"),
     ("处理 prompt 的全部 S tokens", "prefill is a logical phase and may be chunked by the scheduler"),
+    (
+        "gather_from_sequence_parallel_region</code><span>Forward: all-gather；Backward: reduce-scatter。",
+        "sequence-parallel gather backward depends on tensor_parallel_output_grad",
+    ),
+    (
+        "Prefill 一次建立 prompt 的 KV",
+        "a logical prefill may be split across multiple scheduler execution chunks",
+    ),
 )
 
 
