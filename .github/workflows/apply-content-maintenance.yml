@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - scripts/apply_2026_09_01_term_semantics.py
+      - scripts/finalize_2026_09_01_term_audit.py
       - .github/workflows/apply-content-maintenance.yml
 
 permissions:
@@ -27,10 +28,13 @@ jobs:
       - name: Apply maintenance
         run: python scripts/apply_2026_09_01_term_semantics.py
 
+      - name: Finalize acronym audit
+        run: python scripts/finalize_2026_09_01_term_audit.py
+
       - name: Regenerate lesson terminology
         run: python scripts/lesson_terms.py --write
 
-      - name: Preview reverse acronym audit
+      - name: Enforce reverse acronym audit
         run: python scripts/audit_lesson_acronyms.py
 
       - name: Validate generated diff
@@ -45,5 +49,5 @@ jobs:
             echo "No generated changes."
             exit 0
           fi
-          git commit -m "Normalize terminology and refresh prefix-cache semantics"
+          git commit -m "Harden acronym audit and improve term placement"
           git push origin HEAD:main
