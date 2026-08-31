@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 07.4：理解 vLLM GPUModelRunner、GPUInputBatch、BlockTable、standard-attention slot mapping 与 paged KV attention 的执行路径。" />
+  <meta name="description" content="AI Infra from Zero 07.4：理解 vLLM GPUModelRunner、InputBatch、BlockTable/BlockTables、standard-attention slot mapping 与 paged KV attention 的执行路径，并区分当前 V1/V2 runner 目录。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>07.4 ModelRunner 与 Paged Attention · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -20,43 +20,45 @@
     <main class="article">
       <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>ModelRunner / Paged Attention</span></div>
-      <div class="lesson-kicker"><span>LESSON 07.4 · VLLM</span><span>约 75 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 07.4 · VLLM</span><span>约 80 min</span></div>
       <h1>ModelRunner 与 Paged Attention：scheduler 给出的 block IDs，最后怎样变成 GPU attention？</h1>
-      <p class="dek">上一课停在控制层：Request A 的逻辑 blocks 被映射到 physical IDs，例如 <code>[8, 2, 19, 5]</code>。但 GPU attention kernel 不会自己去问 Python 的 KVCacheManager。执行层必须把这些信息整理成设备侧的 block table、slot mapping、input tensors 和 attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
+      <p class="dek">上一课停在控制层：Request A 的逻辑 blocks 被映射到 physical IDs，例如 <code>[8, 2, 19, 5]</code>。但 GPU attention kernel 不会自己去问 Python 的 KVCacheManager。执行层必须把这些信息整理成设备侧的 batch tensors、block tables、slot mappings 和 attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 SchedulerOutput 到 GPU execution 之间还需要一次“元数据压缩/搬运”。</li><li>知道 <code>GPUInputBatch</code>、<code>BlockTable</code>、slot mapping 各自在标准 Attention KV 路径里解决什么。</li><li>解释 paged KV attention 如何让 attention 读取不连续 physical KV blocks。</li><li>知道“PagedAttention”是核心思想，但当前 vLLM 会根据平台/模型选择不同 attention backends，不能把系统等同于一个固定 kernel。</li><li>理解新 token 的 K/V 怎样写入分配好的 slot，Q 又怎样按 block table 读取历史 KV。</li><li>知道 Mamba/GDN 一类 recurrent-state cache group 并不一定使用 token-to-KV slot mapping。</li><li>知道当前上游同时存在 V1/V2 GPU ModelRunner 路径，先从 <code>gpu_worker.py</code> 看本配置实际选择哪一个。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 SchedulerOutput 到 GPU execution 之间还需要一次“元数据压缩/搬运”。</li><li>知道 InputBatch/GPUInputBatch、BlockTable/BlockTables、slot mapping 在执行路径里分别解决什么。</li><li>解释 paged KV attention 如何让 attention 读取不连续 physical KV blocks。</li><li>知道“PagedAttention”是核心思想，但当前 vLLM 会根据平台/模型选择不同 attention backends，不能把系统等同于一个固定 kernel。</li><li>理解新 token 的 K/V 怎样写入分配好的 slot，Q 又怎样按 block table 读取历史 KV。</li><li>知道“所有 cache group 都必须用同一套 token-to-KV-slot API”不是稳定事实；不同 cache/state 类型会有不同寻址语义。</li><li>知道当前上游同时存在 V1/V2 GPU ModelRunner 路径，先从 <code>gpu_worker.py</code> 看本配置实际选择哪一个。</li></ul></div>
 
       <section class="article-section" id="contract">
         <div class="section-no">01 · THE EXECUTION CONTRACT</div>
         <h2>SchedulerOutput 是逻辑计划，ModelRunner 要把它翻译成设备可以直接消费的结构。</h2>
-        <div class="runner-contract"><div><b>Scheduler 视角</b><span>req A 本轮 1 token，req B 本轮 1 token，req C 继续 prefill 128 tokens；各自对应哪些 KV blocks。</span></div><div><b>GPU 视角</b><span>一批 token IDs / positions / request indices、连续 input buffers、block table tensor、slot mapping、attention metadata。</span></div></div>
-        <p>这个转换不能每层都临时用 Python list 做一遍，否则 CPU overhead 和 CPU→GPU metadata copy 会变成新的瓶颈。因此 vLLM 会维护长期复用的 batch buffers 与 block-table buffers。</p>
+        <div class="runner-contract"><div><b>Scheduler 视角</b><span>req A 本轮 1 token，req B 本轮 1 token，req C 继续 prefill 128 tokens；各自对应哪些 KV blocks。</span></div><div><b>GPU 视角</b><span>一批 token IDs / positions / request indices、连续 input buffers、block-table tensors、slot mappings、attention metadata。</span></div></div>
+        <p>这个转换不能每层都临时用 Python list 做一遍，否则 CPU overhead 和 CPU→GPU metadata copy 会变成新的瓶颈。因此 vLLM 会维护可复用的 input buffers、request/batch state 与 block-table buffers。</p>
       </section>
 
       <section class="article-section" id="input-batch">
-        <div class="section-no">02 · GPUINPUTBATCH</div>
-        <h2>动态 requests 最终要被压成一个 GPU batch。</h2>
-        <p>当前 V1 有 <code>vllm/v1/worker/gpu_input_batch.py</code>。它的角色可以先理解为：维护“当前 GPU batch 里有哪些 requests，以及这些 request-level 状态在 batch tensor 中放在哪里”。</p>
+        <div class="section-no">02 · INPUT BATCH</div>
+        <h2>动态 requests 最终要被压成 GPU 能连续消费的一批 tensors；但当前两条 runner 路径的类与目录不完全相同。</h2>
+        <p>当前上游的旧 V1 runner 路径使用 <code>vllm/v1/worker/gpu_input_batch.py</code> 中的 <code>InputBatch</code>，它维护 request state、sampling 状态以及与 block table 相关的执行信息。新的 V2 runner 路径则从 <code>vllm/v1/worker/gpu/input_batch.py</code> 导入 <code>InputBatch</code> / <code>InputBuffers</code>，把 <code>input_ids</code>、positions、query start、sequence lengths、request index mapping 等显式整理成执行批次。</p>
         <div class="batch-snapshots"><div class="batch-row"><small>logical reqs</small><span class="run">A d1</span><span class="run">B d1</span><span class="prefill">C p0</span><span class="prefill">C p1</span><span class="prefill">C p2</span><span class="prefill">…</span><span class="run">D d1</span><span>—</span></div><div class="batch-row"><small>GPU tokens</small><span class="new">tok A</span><span class="new">tok B</span><span class="new">C0</span><span class="new">C1</span><span class="new">C2</span><span class="new">…</span><span class="new">tok D</span><span>pad/unused</span></div></div>
-        <p>模型最终并不关心“这是用户 Alice 的请求”。它需要的是 tensor positions、batch offsets、KV addresses 和 sampling metadata。</p>
+        <p>所以不要把“GPUInputBatch”当成永久类名。更稳定的心智模型是：<strong>动态 request-level 状态必须被压成 batch-level tensors 与索引映射，ModelRunner 才能高效进入设备执行。</strong></p>
+        <div class="source-note">当前 V2：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/input_batch.py">vllm/v1/worker/gpu/input_batch.py</a>；当前仓库仍保留旧 V1 路径 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_input_batch.py">vllm/v1/worker/gpu_input_batch.py</a>。</div>
       </section>
 
       <section class="article-section" id="block-table">
-        <div class="section-no">03 · BLOCKTABLE</div>
-        <h2>BlockTable 是“每个 request 的逻辑块 → physical block ID”的设备可用表示。</h2>
-        <div class="logical-table"><small>REQ A · BLOCK TABLE ROW</small><div class="block-chain"><span>logical 0 → #8</span><span>logical 1 → #2</span><span>logical 2 → #19</span><span>logical 3 → #5</span></div></div>
-        <div class="logical-table"><small>REQ B · BLOCK TABLE ROW</small><div class="block-chain"><span>logical 0 → #11</span><span>logical 1 → #4</span><span>logical 2 → #7</span></div></div>
-        <p>当前 <code>BlockTable</code> 源码维护一个二维 block table buffer，也维护标准 Attention 路径使用的 slot mapping。它还处理 allocation block size 与 attention kernel block size 不一致时的虚拟拆分逻辑。入门先只记住：<strong>block table 告诉执行后端“这个 request 的 cache/state blocks 在哪里”</strong>。</p>
-        <div class="source-note">当前实现：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">vllm/v1/worker/block_table.py</a>。构造参数里能直接看到 <code>block_size</code>、<code>kernel_block_size</code>、<code>slot_mapping_mode</code>，以及 PCP/DCP 相关状态。</div>
+        <div class="section-no">03 · BLOCK TABLE / BLOCK TABLES</div>
+        <h2>无论类名是单数还是复数，核心职责都是把 request 的逻辑 cache blocks 变成执行后端可使用的 physical addressing。</h2>
+        <div class="logical-table"><small>REQ A · LOGICAL VIEW</small><div class="block-chain"><span>logical 0 → #8</span><span>logical 1 → #2</span><span>logical 2 → #19</span><span>logical 3 → #5</span></div></div>
+        <div class="logical-table"><small>REQ B · LOGICAL VIEW</small><div class="block-chain"><span>logical 0 → #11</span><span>logical 1 → #4</span><span>logical 2 → #7</span></div></div>
+        <p>旧 V1 路径的 <code>vllm/v1/worker/block_table.py</code> 定义 <code>BlockTable</code> / <code>MultiGroupBlockTable</code>，会处理 allocation block size、kernel block size 与 slot mapping。V2 路径把这部分重构到 <code>vllm/v1/worker/gpu/block_table.py</code> 的 <code>BlockTables</code>：它直接维护“每个 KV cache group 一张二维 block table”，还保留对应的 device-side input tables 与 <code>slot_mappings</code> tensor。</p>
+        <div class="concept-note"><p><strong>代码会重构，寻址问题不会消失。</strong>Scheduler 分配的是 request/cache 语义上的 physical block IDs；执行层必须把这些 IDs 整理成 attention/state backend 能直接消费的设备结构。</p></div>
+        <div class="source-note">当前 V2：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/block_table.py">vllm/v1/worker/gpu/block_table.py</a>；旧 V1：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">vllm/v1/worker/block_table.py</a>。</div>
       </section>
 
       <section class="article-section" id="slot">
         <div class="section-no">04 · SLOT MAPPING</div>
-        <h2>对标准 Attention KV Cache：block table 解决“读哪些块”，slot mapping 解决“本轮新 KV 写到哪个 token slot”。</h2>
+        <h2>对标准 token-indexed Attention KV Cache：block table 解决“历史块在哪里”，slot mapping 解决“本轮新 KV 写到哪个 token slot”。</h2>
         <p>假设 physical block #5 有 16 个 token slots，而 Request A 当前已经占用了前 12 个。本轮 decode 的新 token 应该写入 #5 的第 12 个 slot。系统需要把当前 scheduled token 映射到这个具体 KV storage slot。</p>
         <div class="attention-page"><small>WRITE PATH · STANDARD ATTENTION</small><div class="attention-page-flow"><div><b>new K/V</b><span>本轮 token 在某层算出的 Kₜ / Vₜ</span></div><i>→</i><div><b>slot mapping</b><span>req A → block #5 → offset 12</span></div><i>→</i><div><b>physical KV</b><span>写进已分配好的 cache storage</span></div></div></div>
-        <p>这就是为什么 scheduler 的 allocation 与 ModelRunner 的 slot mapping 必须严格一致：如果 block ID 或 offset 错一位，attention 读到的历史上下文就直接错了。</p>
-        <div class="concept-note"><p><strong>但别把 slot mapping 当成所有 cache group 的统一真理。</strong>当前 <code>BlockTable</code> 有 <code>SlotMappingMode.NONE</code>：Mamba/GDN 这类 recurrent-state cache group 可以把 block table 当状态索引使用，不做逐 token 的 KV slot mapping。我们这里的“写 slot”心智模型专指标准 token-indexed Attention KV Cache。</p></div>
+        <p>这就是为什么 scheduler 的 allocation 与 ModelRunner 的 addressing metadata 必须严格一致：如果 block ID 或 offset 错一位，attention 读到的历史上下文就直接错了。</p>
+        <div class="concept-note"><p><strong>不要把某个版本的 slot-mapping API 当成跨所有 cache 类型的永久真理。</strong>当前旧 V1 <code>BlockTable</code> API 明确存在 <code>SlotMappingMode.NONE</code>，用于表达 Mamba-like state cache 不采用标准 token→KV-slot 映射；V2 已经重构这部分目录与数据结构。你应该记住的是“不同 cache/state backend 的寻址语义可能不同”，而不是死背某个 enum 永远存在。</p></div>
       </section>
 
       <section class="article-section" id="paged">
@@ -71,14 +73,14 @@
         <div class="section-no">06 · PAGEDATTENTION IS NOT ONE ETERNAL KERNEL</div>
         <h2>现代 vLLM 有 attention backend 抽象，实际 kernel 会随硬件、模型和配置变化。</h2>
         <p>早期介绍 vLLM 时，经常把“PagedAttention kernel”当成整个系统的代表。这个历史直觉很有价值，但读当前源码时必须升级：V1 有 <code>attention/backend.py</code>、<code>attention/backends/</code> 和 selector；不同平台可以使用 FlashAttention、FlashInfer 或其它 backend 路径。</p>
-        <div class="warning-note"><b>不要学成“vLLM = 一个 PagedAttention CUDA kernel”。</b><p>更稳定的核心是：KV 是 block/page 管理的；执行层提供 block table/slot mapping 等 metadata；具体 attention backend 以相应方式消费这些信息。</p></div>
+        <div class="warning-note"><b>不要学成“vLLM = 一个 PagedAttention CUDA kernel”。</b><p>更稳定的核心是：KV 是 block/page 管理的；执行层提供 block table / slot mapping / attention metadata；具体 attention backend 以相应方式消费这些信息。</p></div>
       </section>
 
       <section class="article-section" id="runner-step">
         <div class="section-no">07 · ONE DECODE ITERATION END TO END</div>
         <h2>现在把一次标准 Attention decode 从 scheduler 串到 GPU。</h2>
-        <div class="iteration-flow"><div class="iteration-card"><small>1 · SCHEDULE</small><b>A gets 1 token</b><span>Scheduler 决定 req A 本轮推进 1。</span></div><div class="iteration-card"><small>2 · KV</small><b>block #5 slot 12</b><span>KV manager 已保证有可写 slot。</span></div><div class="iteration-card"><small>3 · PREPARE</small><b>batch + tables</b><span>ModelRunner 更新 batch state、BlockTable、slot mapping。</span></div><div class="iteration-card"><small>4 · FORWARD</small><b>model + attention</b><span>新 K/V 写入 slot；Q 按 block table 读取历史 KV。</span></div><div class="iteration-card"><small>5 · SAMPLE</small><b>next token</b><span>结果返回 scheduler，A 的进度 +1。</span></div></div>
-        <p>你之后读 ModelRunner 时，任何一段复杂代码都先塞回这五步之一。这样即使具体 runner 文件随版本重构，也不会完全失去方向。</p>
+        <div class="iteration-flow"><div class="iteration-card"><small>1 · SCHEDULE</small><b>A gets 1 token</b><span>Scheduler 决定 req A 本轮推进 1。</span></div><div class="iteration-card"><small>2 · KV</small><b>block #5 slot 12</b><span>KV manager 已保证有可写位置。</span></div><div class="iteration-card"><small>3 · PREPARE</small><b>batch + tables</b><span>ModelRunner 更新 batch state、block tables 与 addressing metadata。</span></div><div class="iteration-card"><small>4 · FORWARD</small><b>model + attention</b><span>新 K/V 写入目标位置；Q 按 block table 读取历史 KV。</span></div><div class="iteration-card"><small>5 · SAMPLE</small><b>next token</b><span>结果返回 scheduler，A 的进度 +1。</span></div></div>
+        <p>你之后读 ModelRunner 时，任何一段复杂代码都先塞回这五步之一。这样即使具体 runner、input-batch、block-table 文件随版本重构，也不会完全失去方向。</p>
       </section>
 
       <section class="article-section" id="cuda-graphs">
@@ -90,18 +92,18 @@
 
       <section class="article-section" id="source">
         <div class="section-no">09 · SOURCE MAP</div>
-        <h2>先看 <code>gpu_worker.py</code> 选中了哪条 runner，再进具体实现。</h2>
-        <p>当前上游同时保留两条 GPU ModelRunner 路径。<code>vllm/v1/worker/gpu_worker.py</code> 会读取 <code>vllm_config.use_v2_model_runner</code>：为 true 时实例化 <code>vllm/v1/worker/gpu/model_runner.py</code> 中的 runner；否则使用 <code>vllm/v1/worker/gpu_model_runner.py</code>。因此“ModelRunner 的职责”比某一个永久文件名更稳定。</p>
-        <div class="source-map-vllm"><div class="source-card"><small>SELECTOR</small><b>GPU Worker</b><code>vllm/v1/worker/gpu_worker.py</code><span>先确认当前配置实际实例化 V2 还是 V1 ModelRunner。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py">打开源码 ↗</a></div><div class="source-card"><small>V2 RUNNER PATH</small><b>GPUModelRunner</b><code>vllm/v1/worker/gpu/model_runner.py</code><span>当前上游的新 runner 路径，强调共享、精简的执行主干。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/model_runner.py">打开源码 ↗</a></div><div class="source-card"><small>V1 RUNNER PATH</small><b>GPUModelRunner</b><code>vllm/v1/worker/gpu_model_runner.py</code><span>仍存在的完整 V1 runner 路径；不要在未看 selector 前假定它永远是唯一入口。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">打开源码 ↗</a></div><div class="source-card"><small>BATCH STATE</small><b>GPUInputBatch</b><code>vllm/v1/worker/gpu_input_batch.py</code><span>动态 request 集如何映射成 GPU batch state；具体 runner 使用方式随路径演化。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_input_batch.py">打开源码 ↗</a></div><div class="source-card"><small>ADDRESSING</small><b>BlockTable</b><code>vllm/v1/worker/block_table.py</code><span>block IDs、device buffers、slot mapping mode 与 kernel block-size 适配。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">打开源码 ↗</a></div><div class="source-card"><small>ATTENTION</small><b>Backend abstraction</b><code>vllm/v1/attention/backend.py</code><span>当前 V1 attention backend 接口；具体实现再去 <code>backends/</code>。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backend.py">打开源码 ↗</a></div></div>
-        <div class="source-note"><strong>版本阅读规则：</strong>如果你看到教程只写“打开 <code>gpu_model_runner.py</code>”，先回 <code>gpu_worker.py</code> 验证当前版本/配置。源码重构会移动类，但 SchedulerOutput → execution state → KV addressing → attention backend 这条因果链不会因此消失。</div>
+        <h2>先看 <code>gpu_worker.py</code> 选中了哪条 runner，再顺着同一条路径读 batch 与 block-table 实现。</h2>
+        <p>当前上游同时保留两条 GPU ModelRunner 路径。<code>vllm/v1/worker/gpu_worker.py</code> 会读取 <code>vllm_config.use_v2_model_runner</code>：为 true 时实例化 <code>vllm/v1/worker/gpu/model_runner.py</code> 中的 runner；否则使用 <code>vllm/v1/worker/gpu_model_runner.py</code>。两条 runner 还分别对应重构前后的 input-batch / block-table 代码，所以不要混着按文件名拼一条不存在的路径。</p>
+        <div class="source-map-vllm"><div class="source-card"><small>SELECTOR</small><b>GPU Worker</b><code>vllm/v1/worker/gpu_worker.py</code><span>先确认当前配置实际实例化 V2 还是 V1 ModelRunner。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py">打开源码 ↗</a></div><div class="source-card"><small>V2 RUNNER</small><b>GPUModelRunner</b><code>vllm/v1/worker/gpu/model_runner.py</code><span>新的执行主干；直接导入 <code>gpu/input_batch.py</code> 与 <code>gpu/block_table.py</code>。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/model_runner.py">打开源码 ↗</a></div><div class="source-card"><small>V2 STATE</small><b>InputBatch + BlockTables</b><code>vllm/v1/worker/gpu/input_batch.py<br/>vllm/v1/worker/gpu/block_table.py</code><span>V2 的 batch tensors、request index mapping、per-cache-group block tables 与 slot mappings。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/input_batch.py">input batch ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/block_table.py">block tables ↗</a></div><div class="source-card"><small>V1 RUNNER</small><b>GPUModelRunner</b><code>vllm/v1/worker/gpu_model_runner.py</code><span>仍存在的旧 V1 runner 路径；不要在未看 selector 前假定它永远是唯一入口。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">打开源码 ↗</a></div><div class="source-card"><small>V1 STATE</small><b>InputBatch + BlockTable</b><code>vllm/v1/worker/gpu_input_batch.py<br/>vllm/v1/worker/block_table.py</code><span>旧 V1 路径里的 request/batch state、MultiGroupBlockTable 与 SlotMappingMode。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_input_batch.py">input batch ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">block table ↗</a></div><div class="source-card"><small>ATTENTION</small><b>Backend abstraction</b><code>vllm/v1/attention/backend.py</code><span>attention backend 接口；具体实现再去 <code>backends/</code>。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backend.py">打开源码 ↗</a></div></div>
+        <div class="source-note"><strong>版本阅读规则：</strong>如果你看到教程只写“打开 <code>gpu_model_runner.py</code>”，先回 <code>gpu_worker.py</code> 验证当前版本/配置。然后沿着被选中的 runner 自己的 imports 继续追 InputBatch、BlockTables 和 attention metadata；不要把 V1/V2 文件名硬拼在一起。</div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.4</span></div><h2>能解释“写哪、读哪”，Paged KV 才真正落地。</h2><div class="quiz-item"><div class="quiz-q">1. 对标准 Attention KV，BlockTable 和 slot mapping 分别解决什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">BlockTable 主要告诉 attention 一个 request 的逻辑历史块对应哪些 physical blocks，用于读取历史 KV；slot mapping 把本轮 scheduled tokens 映射到具体 KV 写入位置。</div></div><div class="quiz-item"><div class="quiz-q">2. Paged KV 会改变 Attention 数学吗？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">不会。Attention 仍对逻辑上的历史 K/V 做相同计算；改变的是这些 K/V 在 GPU memory 中的存储与寻址方式。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么不能说“所有 vLLM cache group 都需要 token slot mapping”？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为当前 BlockTable 明确支持 SlotMappingMode.NONE；Mamba/GDN 一类 recurrent-state cache group 可以不使用 token-to-KV-slot 映射。标准 Attention KV 才对应这一课的逐 token slot 心智模型。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.4</span></div><h2>能解释“写哪、读哪”，Paged KV 才真正落地。</h2><div class="quiz-item"><div class="quiz-q">1. 对标准 Attention KV，block table 和 slot mapping 分别解决什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">Block table 主要告诉 attention 一个 request 的逻辑历史块对应哪些 physical blocks，用于读取历史 KV；slot mapping / addressing metadata 则把本轮 scheduled tokens 映射到具体 KV 写入位置。</div></div><div class="quiz-item"><div class="quiz-q">2. Paged KV 会改变 Attention 数学吗？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">不会。Attention 仍对逻辑上的历史 K/V 做相同计算；改变的是这些 K/V 在 GPU memory 中的存储与寻址方式。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么现在读源码不能只记住 <code>gpu_input_batch.py</code> 和 <code>worker/block_table.py</code>？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为当前上游同时保留 V1/V2 runner。V2 runner 使用 <code>worker/gpu/input_batch.py</code> 与 <code>worker/gpu/block_table.py</code>；旧 V1 runner 仍使用重构前的路径。先看 <code>gpu_worker.py</code> 的 selector，再沿被选中的 runner imports 读。</div></div></section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 07.5</small><br/><strong>Prefix Cache 与 Preemption：block 不只是存 KV，还会被共享、缓存和淘汰。</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc"><strong>ON THIS PAGE</strong><a href="#contract">执行契约</a><a href="#input-batch">GPUInputBatch</a><a href="#block-table">BlockTable</a><a href="#slot">Slot mapping</a><a href="#paged">Paged Attention</a><a href="#backend">Attention backend</a><a href="#runner-step">一次 decode</a><a href="#cuda-graphs">动态 shape</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc"><strong>ON THIS PAGE</strong><a href="#contract">执行契约</a><a href="#input-batch">Input batch</a><a href="#block-table">Block tables</a><a href="#slot">Slot mapping</a><a href="#paged">Paged Attention</a><a href="#backend">Attention backend</a><a href="#runner-step">一次 decode</a><a href="#cuda-graphs">动态 shape</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((b)=>b.addEventListener('click',()=>{const i=b.closest('.quiz-item');i.classList.toggle('open');b.textContent=i.classList.contains('open')?'收起答案':'看答案';}));</script>
 </body>
