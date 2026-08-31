@@ -1,34 +1,105 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="900" viewBox="0 0 1100 900" role="img" aria-labelledby="title desc">
-<title id="title">Prefill and Decode: logical workload phases versus vLLM scheduler execution</title>
-<desc id="desc">Top panel shows a request's logical prompt-building prefill followed by repeated decode using KV state. Bottom panel shows a vLLM V1 scheduler iteration prioritizing decode tokens and filling the remaining token budget with a chunk of a long prefill, producing one mixed execution batch.</desc>
-<defs>
-  <marker id="arr" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#737a73"/></marker>
-  <marker id="arrBlue" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#315f82"/></marker>
-  <marker id="arrGold" markerWidth="8" markerHeight="8" refX="6.6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#7b6a3e"/></marker>
-  <style>
-    .bg{fill:#fff}.panel{fill:#fbfbf8;stroke:#c9cec7;stroke-width:1.4}.sub{fill:#fff;stroke:#c9cec7;stroke-width:1.3}.blue{fill:#eef3f7;stroke:#c3d4df;stroke-width:1.3}.gold{fill:#f6f2e8;stroke:#ddcfb4;stroke-width:1.3}.green{fill:#eaf1ed;stroke:#bdd2c4;stroke-width:1.3}.dark{fill:#202622}.muted{fill:#f4f5f1;stroke:#d8dbd5;stroke-width:1.2}.line{stroke:#737a73;stroke-width:1.5;fill:none}.lineBlue{stroke:#315f82;stroke-width:1.5;fill:none}.lineGold{stroke:#7b6a3e;stroke-width:1.5;fill:none}.dash{stroke:#a7aca6;stroke-width:1.1;stroke-dasharray:5 5;fill:none}
-    .title{font:700 25px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#20231f}.subtitle{font:500 14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#666d66}.kicker{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:1.5px;fill:#8b918a}.label{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#4d554f}.strong{font:700 14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#273029}.small{font:500 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#687068}.tiny{font:600 9.5px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#737b74}.white{fill:#f5f7f3}.white2{fill:#bdc8c0}.blueText{fill:#315f82}.goldText{fill:#7b6a3e}.greenText{fill:#255b46}
-  </style>
-</defs>
-<rect class="bg" width="1100" height="900"/>
-<text class="kicker" x="56" y="48">PREFILL vs DECODE · TWO SEMANTIC WORKLOADS, ONE UNIFIED SCHEDULER</text>
-<text class="title" x="56" y="82">Logical phase ≠ scheduler phase: long Prefill can be chunked and mixed with Decode</text>
-<text class="subtitle" x="56" y="109">A request first builds prompt KV, then advances autoregressively. vLLM V1 schedules token work by budget rather than switching a global “Prefill mode / Decode mode”.</text>
-<rect class="panel" x="56" y="145" rx="14" width="988" height="286"/>
-<text class="kicker" x="80" y="174">A · ONE REQUEST · LOGICAL WORKLOAD SEMANTICS</text>
-<text class="small" x="80" y="198">All prompt tokens are known; after their KV is computed, future positions depend on the confirmed prefix.</text>
-<rect class="gold" x="82" y="224" rx="11" width="228" height="142"/>
-<text class="label goldText" x="102" y="250">KNOWN PROMPT</text><text class="strong" x="102" y="276">t0 · t1 · t2 · … · tN</text><text class="small" x="102" y="300">causal mask controls visibility</text><text class="small" x="102" y="320">positions can execute in parallel</text><rect class="muted" x="102" y="338" rx="7" width="188" height="12"/><rect x="102" y="338" width="188" height="12" rx="7" fill="#d7c59d"/>
-<rect class="gold" x="366" y="224" rx="11" width="250" height="142"/>
-<text class="label goldText" x="386" y="250">LOGICAL PREFILL</text><text class="strong" x="386" y="276">compute prompt hidden states</text><text class="small" x="386" y="300">Q/K/V + MLP for prompt positions</text><rect class="green" x="386" y="322" rx="8" width="210" height="28"/><text class="tiny greenText" x="402" y="340">build historical KV state</text><path class="lineGold" marker-end="url(#arrGold)" d="M310 295 H366"/>
-<rect class="blue" x="674" y="214" rx="11" width="338" height="162"/>
-<text class="label blueText" x="694" y="240">REPEATED DECODE</text><rect class="sub" x="694" y="256" rx="8" width="100" height="44"/><text class="tiny" x="712" y="274">current</text><text class="strong" x="718" y="292">token</text><rect class="green" x="694" y="316" rx="8" width="100" height="44"/><text class="tiny greenText" x="712" y="334">history</text><text class="strong" x="721" y="352">KV</text><rect class="blue" x="846" y="272" rx="8" width="138" height="54"/><text class="tiny blueText" x="878" y="291">target model</text><text class="small" x="866" y="312">uses + extends KV</text><path class="lineBlue" marker-end="url(#arrBlue)" d="M794 278 H820 V292 H846"/><path class="lineBlue" marker-end="url(#arrBlue)" d="M794 338 H820 V306 H846"/><rect class="sub" x="846" y="340" rx="8" width="138" height="28"/><text class="tiny" x="884" y="358">selected next token</text><path class="lineBlue" marker-end="url(#arrBlue)" d="M915 326 V340"/><path class="lineBlue" marker-end="url(#arrBlue)" d="M846 354 H814 V248 H744 V256"/><text class="tiny blueText" x="804" y="246">append + repeat</text><path class="line" marker-end="url(#arr)" d="M616 295 H674"/>
-<text class="tiny" x="82" y="403">TTFT mainly includes queue + prompt-building path + first output</text><text class="tiny blueText" x="674" y="403">ITL measures the cadence after generation has started</text>
-<rect class="panel" x="56" y="464" rx="14" width="988" height="350"/>
-<text class="kicker" x="80" y="493">B · ONE vLLM V1 SCHEDULER ITERATION · TOKEN BUDGET VIEW</text><text class="small" x="80" y="517">Current scheduler source explicitly says there is no internal “decoding phase” nor “prefill phase”; requests are advanced by scheduled token counts.</text>
-<rect class="blue" x="82" y="548" rx="11" width="224" height="118"/><text class="label blueText" x="102" y="574">RUNNING DECODE REQUESTS</text><text class="small" x="102" y="598">D0 · D1 · D2 already have KV</text><g transform="translate(102,620)"><rect class="blue" x="0" y="0" width="42" height="28" rx="6"/><rect class="blue" x="51" y="0" width="42" height="28" rx="6"/><rect class="blue" x="102" y="0" width="42" height="28" rx="6"/><text class="tiny blueText" x="14" y="18">+1</text><text class="tiny blueText" x="65" y="18">+1</text><text class="tiny blueText" x="116" y="18">+1</text></g>
-<rect class="gold" x="82" y="690" rx="11" width="224" height="92"/><text class="label goldText" x="102" y="716">WAITING LONG PREFILL</text><text class="small" x="102" y="740">P0 still has many prompt tokens</text><text class="tiny goldText" x="102" y="762">remaining prompt work ≫ one budget</text>
-<rect class="dark" x="362" y="548" rx="12" width="286" height="234"/><text class="kicker white2" x="384" y="576">SCHEDULER</text><text class="strong white" x="384" y="601">max_num_batched_tokens</text><text class="small white2" x="384" y="623">one iteration's token budget</text><rect x="384" y="648" width="242" height="34" rx="7" fill="#eef3f7"/><text class="tiny blueText" x="398" y="669">1 · schedule pending decode tokens first</text><rect x="384" y="694" width="242" height="50" rx="7" fill="#f6f2e8"/><text class="tiny goldText" x="398" y="715">2 · use remaining budget for Prefill</text><text class="tiny goldText" x="398" y="732">if it does not fit → take a chunk</text><path class="lineBlue" marker-end="url(#arrBlue)" d="M306 607 H362"/><path class="lineGold" marker-end="url(#arrGold)" d="M306 736 H334 V718 H362"/>
-<rect class="sub" x="704" y="548" rx="12" width="308" height="234"/><text class="label" x="726" y="576">ONE MIXED EXECUTION BATCH</text><text class="small" x="726" y="599">same ModelRunner iteration</text><text class="tiny" x="726" y="627">scheduled token slots</text><rect class="blue" x="726" y="642" width="38" height="34" rx="5"/><rect class="blue" x="770" y="642" width="38" height="34" rx="5"/><rect class="blue" x="814" y="642" width="38" height="34" rx="5"/><text class="tiny blueText" x="738" y="663">D0</text><text class="tiny blueText" x="782" y="663">D1</text><text class="tiny blueText" x="826" y="663">D2</text><rect class="gold" x="864" y="642" width="126" height="34" rx="5"/><text class="tiny goldText" x="887" y="663">P0 chunk</text><rect class="green" x="726" y="701" rx="8" width="264" height="44"/><text class="tiny greenText" x="744" y="720">ModelRunner updates each request's KV /</text><text class="tiny greenText" x="744" y="736">num_computed_tokens independently</text><path class="line" marker-end="url(#arr)" d="M648 665 H704"/>
-<text class="tiny" x="82" y="843">Interpretation: “Prefill” and “Decode” describe token work and request state; a serving iteration may contain both.</text><text class="tiny" x="82" y="866">Chunk size, batching, cache hits, speculative tokens, model/hardware and load can change the exact execution mix.</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 920" role="img" aria-labelledby="title desc">
+  <title id="title">Prefill and Decode: workload semantics versus vLLM scheduler execution</title>
+  <desc id="desc">Top panel shows one request building prompt KV during logical Prefill and then repeatedly advancing during Decode. Bottom panel shows one vLLM V1 scheduler iteration mixing pending Decode tokens with a chunk of a long Prefill under one token budget.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#747b74"/></marker>
+    <marker id="blueArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#315f82"/></marker>
+    <marker id="goldArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7b6a3e"/></marker>
+    <style>
+      .sans{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+      .ey{font-size:11px;font-weight:700;letter-spacing:1.6px;fill:#8a918a}.ttl{font-size:24px;font-weight:760;fill:#252a25}.sub{font-size:13px;fill:#687069}.sec{font-size:10px;font-weight:700;letter-spacing:1.35px;fill:#8b928b}.label{font-size:11px;font-weight:760;fill:#343c35}.small{font-size:10px;fill:#687069}.tiny{font-size:9px;fill:#687069}.panel{fill:#fcfcfa;stroke:#ccd2cb;stroke-width:1.2}.box{fill:#fff;stroke:#cdd3cc;stroke-width:1.1}.blue{fill:#edf4f8;stroke:#bfd3e0;stroke-width:1.1}.gold{fill:#faf5ea;stroke:#dfceac;stroke-width:1.1}.green{fill:#eaf2ed;stroke:#bfd4c5;stroke-width:1.1}.dark{fill:#222824}.line{fill:none;stroke:#747b74;stroke-width:1.3}.bline{fill:none;stroke:#315f82;stroke-width:1.4}.gldline{fill:none;stroke:#7b6a3e;stroke-width:1.4}
+    </style>
+  </defs>
+
+  <text class="mono ey" x="34" y="34">PREFILL vs DECODE · WORKLOAD SEMANTICS ≠ GLOBAL SCHEDULER PHASE</text>
+  <text class="sans ttl" x="34" y="67">A request has phases;</text>
+  <text class="sans ttl" x="34" y="94">a scheduler iteration may mix their token work</text>
+  <text class="sans sub" x="34" y="119">Long Prefill can be chunked. Decode tokens and Prefill chunks can share one vLLM execution iteration.</text>
+
+  <text class="mono sec" x="34" y="154">1 · ONE REQUEST · LOGICAL WORKLOAD SEMANTICS</text>
+  <rect class="panel" x="34" y="170" width="692" height="320" rx="14"/>
+  <text class="sans small" x="52" y="194">All prompt tokens are known; after their KV is built, future generated tokens depend on the confirmed prefix.</text>
+
+  <rect class="gold" x="52" y="216" width="178" height="112" rx="10"/>
+  <text class="mono sec" x="70" y="240" fill="#7b6a3e">KNOWN PROMPT</text>
+  <text class="sans label" x="70" y="266">t₀ · t₁ · t₂ · … · tN</text>
+  <text class="sans small" x="70" y="289">positions are known up front</text>
+  <text class="sans tiny" x="70" y="309">causal mask limits visibility</text>
+
+  <rect class="gold" x="292" y="216" width="178" height="112" rx="10"/>
+  <text class="mono sec" x="310" y="240" fill="#7b6a3e">LOGICAL PREFILL</text>
+  <text class="sans label" x="310" y="266">process prompt tokens</text>
+  <text class="sans small" x="310" y="289">compute hidden states + K/V</text>
+  <rect class="green" x="310" y="300" width="142" height="20" rx="6"/>
+  <text class="mono tiny" x="381" y="314" text-anchor="middle" fill="#255b46">build historical KV</text>
+  <path class="gldline" d="M230 272 H292" marker-end="url(#goldArrow)"/>
+
+  <rect class="blue" x="526" y="208" width="180" height="128" rx="10"/>
+  <text class="mono sec" x="544" y="232" fill="#315f82">REPEATED DECODE</text>
+  <rect class="box" x="544" y="246" width="64" height="36" rx="7"/>
+  <text class="mono tiny" x="576" y="260" text-anchor="middle">current</text><text class="sans label" x="576" y="276" text-anchor="middle">token</text>
+  <rect class="green" x="544" y="290" width="64" height="36" rx="7"/>
+  <text class="mono tiny" x="576" y="304" text-anchor="middle" fill="#255b46">history</text><text class="sans label" x="576" y="320" text-anchor="middle">KV</text>
+  <rect class="blue" x="628" y="252" width="60" height="54" rx="7"/>
+  <text class="mono tiny" x="658" y="270" text-anchor="middle" fill="#315f82">model</text><text class="sans tiny" x="658" y="288" text-anchor="middle">read +</text><text class="sans tiny" x="658" y="300" text-anchor="middle">extend KV</text>
+  <path class="bline" d="M608 264 H628" marker-end="url(#blueArrow)"/><path class="bline" d="M608 308 H618 V292 H628" marker-end="url(#blueArrow)"/>
+  <path class="bline" d="M658 306 V322" marker-end="url(#blueArrow)"/>
+  <text class="mono tiny" x="658" y="332" text-anchor="middle" fill="#315f82">select next token</text>
+  <path class="line" d="M470 272 H526" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="52" y="356" width="654" height="108" rx="10"/>
+  <text class="mono sec" x="70" y="380">WHAT CHANGES BETWEEN THE TWO WORKLOADS?</text>
+  <text class="sans small" x="70" y="405">Prefill builds prompt state from many known positions; Decode advances generated state from the confirmed prefix.</text>
+  <text class="sans small" x="70" y="428">TTFT includes queue + prompt-building + first output; ITL measures output-token cadence after generation starts.</text>
+  <text class="sans tiny" x="70" y="450">These are request semantics — not a claim that the whole server switches between global Prefill and Decode modes.</text>
+
+  <text class="mono sec" x="34" y="528">2 · ONE vLLM V1 SCHEDULER ITERATION · TOKEN-BUDGET VIEW</text>
+  <rect class="panel" x="34" y="544" width="692" height="350" rx="14"/>
+  <text class="sans small" x="52" y="570">The scheduler advances requests by token counts; it can combine pending Decode work and a chunk of a long Prefill.</text>
+
+  <rect class="blue" x="52" y="598" width="180" height="102" rx="10"/>
+  <text class="mono sec" x="70" y="622" fill="#315f82">RUNNING DECODE</text>
+  <text class="sans small" x="70" y="646">D0 · D1 · D2 already have KV</text>
+  <g transform="translate(70 664)" class="mono tiny">
+    <rect class="blue" width="42" height="24" rx="5"/><text x="21" y="16" text-anchor="middle" fill="#315f82">D0 +1</text>
+    <rect class="blue" x="48" width="42" height="24" rx="5"/><text x="69" y="16" text-anchor="middle" fill="#315f82">D1 +1</text>
+    <rect class="blue" x="96" width="42" height="24" rx="5"/><text x="117" y="16" text-anchor="middle" fill="#315f82">D2 +1</text>
+  </g>
+
+  <rect class="gold" x="52" y="718" width="180" height="102" rx="10"/>
+  <text class="mono sec" x="70" y="742" fill="#7b6a3e">WAITING PREFILL</text>
+  <text class="sans small" x="70" y="766">P0 still has many prompt tokens</text>
+  <text class="sans tiny" x="70" y="788">remaining work > one iteration</text>
+  <text class="sans tiny" x="70" y="806">→ scheduler may take a chunk</text>
+
+  <rect class="dark" x="280" y="598" width="190" height="222" rx="11"/>
+  <text class="mono sec" x="298" y="624" fill="#b8c2bb">SCHEDULER</text>
+  <text class="sans label" x="298" y="649" style="fill:#eef2ed">max_num_batched_tokens</text>
+  <text class="sans tiny" x="298" y="668" style="fill:#b7c0ba">one iteration's token budget</text>
+  <rect x="298" y="688" width="154" height="42" rx="7" fill="#edf4f8"/>
+  <text class="mono tiny" x="310" y="706" fill="#315f82">1 · pending Decode</text><text class="mono tiny" x="310" y="720" fill="#315f82">token work first</text>
+  <rect x="298" y="742" width="154" height="58" rx="7" fill="#faf5ea"/>
+  <text class="mono tiny" x="310" y="760" fill="#7b6a3e">2 · remaining budget</text><text class="mono tiny" x="310" y="774" fill="#7b6a3e">goes to Prefill</text><text class="mono tiny" x="310" y="788" fill="#7b6a3e">chunk if it does not fit</text>
+  <path class="bline" d="M232 649 H280" marker-end="url(#blueArrow)"/>
+  <path class="gldline" d="M232 769 H256 V771 H280" marker-end="url(#goldArrow)"/>
+
+  <rect class="box" x="518" y="598" width="188" height="222" rx="11"/>
+  <text class="mono sec" x="536" y="624">ONE MIXED BATCH</text>
+  <text class="sans small" x="536" y="646">same ModelRunner iteration</text>
+  <text class="mono tiny" x="536" y="670">scheduled token slots</text>
+  <g transform="translate(536 682)" class="mono tiny">
+    <rect class="blue" width="34" height="30" rx="5"/><text x="17" y="20" text-anchor="middle" fill="#315f82">D0</text>
+    <rect class="blue" x="40" width="34" height="30" rx="5"/><text x="57" y="20" text-anchor="middle" fill="#315f82">D1</text>
+    <rect class="blue" x="80" width="34" height="30" rx="5"/><text x="97" y="20" text-anchor="middle" fill="#315f82">D2</text>
+    <rect class="gold" x="120" width="50" height="30" rx="5"/><text x="145" y="20" text-anchor="middle" fill="#7b6a3e">P0 chunk</text>
+  </g>
+  <rect class="green" x="536" y="734" width="152" height="66" rx="8"/>
+  <text class="sans tiny" x="550" y="754" fill="#255b46">each request independently:</text>
+  <text class="mono tiny" x="550" y="772" fill="#255b46">KV state</text>
+  <text class="mono tiny" x="550" y="788" fill="#255b46">num_computed_tokens</text>
+  <path class="line" d="M470 709 H518" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="52" y="842" width="654" height="38" rx="9"/>
+  <text class="sans small" x="70" y="862">Prefill / Decode describe token work + request state; one serving iteration can contain both.</text>
+  <text class="sans tiny" x="34" y="912">Exact mix varies with cache hits, chunking, speculative tokens, model, hardware and load.</text>
 </svg>
