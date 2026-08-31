@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../../lesson.css" />
   <link rel="stylesheet" href="./megatron.css" />
   <link rel="stylesheet" href="./distributed-optimizer.css" />
+  <link rel="stylesheet" href="./megatron-diagrams.css" />
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -56,16 +57,19 @@
 
       <section class="article-section" id="flow">
         <div class="section-no">03 · THE WHOLE UPDATE FLOW</div>
-        <h2>Backward 之后不是全量 all-reduce，而是把“归约”和“分片”合成 reduce-scatter。</h2>
-        <div class="optimizer-flow"><div class="bucket-step"><small>1 · BACKWARD</small><b>local gradients</b><span>每个 DP rank 对自己的 microbatches 算 gradient。</span></div><i>→</i><div class="bucket-step comm"><small>2 · REDUCE-SCATTER</small><b>reduced grad shard</b><span>SUM/average across DP，并把不同 shards 分给不同 ranks。</span></div><i>→</i><div class="bucket-step"><small>3 · OPTIMIZER STEP</small><b>update owned shard</b><span>每个 rank 只用自己持有的 FP32 main params / Adam states 更新自己的 shard。</span></div><i>→</i><div class="bucket-step comm"><small>4 · ALL-GATHER</small><b>sync updated params</b><span>让各 DP replicas 获得下一轮 forward 所需的一致参数。</span></div></div>
-        <p>这条链非常重要，因为它把之前三个模块全部串起来了：autograd 产生 gradients；collective 做 reduce-scatter / all-gather；GPU/NCCL topology 决定这段通信有多贵；Megatron 再用 buckets 和 overlap 尽量把通信藏进计算里。</p>
+        <h2>关键不是“少存几份 Adam”，而是一次完整的 ownership 转移：full local gradients → reduced shards → local update → synchronized model params。</h2>
+        <p>下面沿用 NVIDIA 当前文档里的 16-element / DP=4 教学尺度。每个 rank 从自己的数据得到完整 local gradient buffer；reduce-scatter 后，每个 rank 只拥有四个已经跨 DP 聚合的 gradient elements；它只更新自己的 FP32 main-param / Adam shard，最后再 all-gather 回下一轮 forward 使用的模型参数 buffer。</p>
+        <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>DISTRIBUTED OPTIMIZER · DP=4</span><span>gradient ownership → parameter synchronization</span></div><img class="megatron-core-svg" src="./distributed-optimizer-flow.svg" alt="Distributed Optimizer 数据流：四个 DP ranks 的完整 local gradient buffers 经过 reduce-scatter 后分别得到 reduced gradient shard，各 rank 仅用本地 FP32 main parameter 和 Adam state 更新自己的 shard，随后 parameter all-gather 恢复各 replica 下一轮 forward 所需的一致模型参数。" /></div>
+        <div class="megatron-core-takeaway"><strong>最重要的不变量：</strong>optimizer/master state 可以长期按 DP rank 分片，但 data-parallel forward 仍需要数学上一致的模型参数。于是 reduce-scatter 把“谁负责更新哪一段”分出去，parameter all-gather 再把更新结果同步回模型参数 buffer。</div>
+        <p>这条链把之前几个模块真正串起来了：autograd 产生 gradients；DP collective 改变 gradient ownership；optimizer 在本地 shard 上更新；参数同步后下一轮 forward 才能继续。Megatron 再用 contiguous buffers、buckets 和 overlap 尽量把这两次通信隐藏进计算。</p>
+        <div class="source-note">NVIDIA 当前 Distributed Optimizer 文档的 Key Steps 明确采用同一条路径：16-element gradient buffer → DP reduce-scatter → 每 rank 4 个 reduced elements → local optimizer step → 把 FP32 main-param shard 写回 compute-param buffer → all-gather 完整 updated parameter buffer。</div>
       </section>
 
       <section class="article-section" id="allreduce">
         <div class="section-no">04 · WHY REDUCE-SCATTER INSTEAD OF ALL-REDUCE</div>
         <h2>普通 DP 想让每张卡拿完整 gradient；Distributed Optimizer 只需要每张卡拿自己负责的 gradient shard。</h2>
         <div class="dist-vs-tp"><div><small>ORDINARY DP SYNC</small><b>all-reduce gradients</b><span>每个 rank 最后都得到完整 reduced gradient，因此每个 rank 都可以 independently update 全部参数。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>reduce-scatter gradients</b><span>每个 rank 只得到自己负责的 reduced gradient shard，正好对应自己保存的 optimizer state / main-param shard。</span></div></div>
-        <p>Megatron Core 当前 <code>DistributedDataParallelConfig</code> 的 <code>use_distributed_optimizer</code> 文档明确写到：启用时，gradient aggregation 使用 reduce-scatter；否则使用 all-reduce。</p>
+        <p>Megatron Core 当前 <code>DistributedDataParallelConfig</code> 的 <code>use_distributed_optimizer</code> 源码说明仍然明确：启用时用 reduce-scatter 聚合 gradients；否则走 all-reduce。当前同一个配置里也仍保留 <code>overlap_grad_reduce</code> 与 <code>overlap_param_gather</code>。</p>
         <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.distributed_data_parallel_config.html">core.distributed.distributed_data_parallel_config</a>。其中 <code>use_distributed_optimizer</code>、<code>overlap_grad_reduce</code>、<code>overlap_param_gather</code> 都是当前配置项。</div>
       </section>
 
@@ -77,7 +81,7 @@
         <p>例如 BF16 + FP32 grads、DP=4 时，理论主模型状态从 18 B/param 降到 <code>6 + 12/4 = 9 B/param</code>。DP 越大，shardable optimizer 部分越薄；但那几个不随 d 消失的常驻部分仍然存在。</p>
         <div class="memory-formula"><small>OFFICIAL CURRENT MODEL · BF16 PARAMS / FP32 GRADS</small><b>distributed bytes / param = <span>6 + 12/d</span></b></div>
         <p>这些是官方实现模型下的理论数字，不等于 <code>nvidia-smi</code> 最终峰值。activation、temporary buffers、fragmentation、communication workspace、模型特殊参数等都还在账本里。</p>
-        <div class="source-note">官方说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/dist_optimizer.html">Megatron Core · Distributed Optimizer</a>。页面同时给出理论 bytes/parameter 表和 contiguous parameter/main-gradient buffer 说明。</div>
+        <div class="source-note">官方说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/dist_optimizer.html">Megatron Core · Distributed Optimizer</a>。当前文档仍给出 20 / 18 / 16 B/param 的 non-distributed 基线，以及 <code>4+16/d</code>、<code>6+12/d</code>、<code>8+8/d</code> 三条 distributed 理论公式。</div>
       </section>
 
       <section class="article-section" id="buffers">
@@ -102,7 +106,7 @@
         <h2>optimizer step 更新完参数 shards 后，下一轮 forward 不必先停下来等“全模型 gather 完”。</h2>
         <p>Distributed Optimizer 的另一个通信方向是 updated parameter all-gather。Megatron 可以把 parameter buffers 分 bucket，并在 forward 即将需要某一层参数之前预取/启动对应 all-gather。</p>
         <div class="overlap-timeline"><div class="overlap-row"><small>PARAM AG</small><span class="comm">bucket L1</span><span class="comm">bucket L2</span><span class="comm">bucket L3</span><span class="comm">bucket L4</span><span class="comm">bucket L5</span><span class="empty">—</span></div><div class="overlap-row"><small>FORWARD</small><span class="empty">wait first</span><span class="compute">Layer 1</span><span class="compute">Layer 2</span><span class="compute">Layer 3</span><span class="compute">Layer 4</span><span class="compute">Layer 5</span></div></div>
-        <p>当前配置项 <code>--overlap-param-gather</code> 的语义就是把 parameter all-gather 与 forward compute overlap。更近期的 optimizer config 里甚至还有 <code>overlap_param_gather_with_optimizer_step</code>，用于把第一个 bucket 的 all-gather 与 optimizer step 重叠。</p>
+        <p>当前配置项 <code>--overlap-param-gather</code> 的语义就是把 parameter all-gather 与 forward compute overlap。当前 optimizer config 里也仍存在 <code>overlap_param_gather_with_optimizer_step</code>，用于进一步把 parameter-gather 工作与 optimizer step 重叠。</p>
         <div class="source-note">当前 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.optimizer.optimizer_config.html">core.optimizer.optimizer_config</a>；其中包含 <code>use_distributed_optimizer</code> 与 <code>overlap_param_gather_with_optimizer_step</code>。</div>
       </section>
 
