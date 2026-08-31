@@ -26,5 +26,7 @@ jobs:
         run: python scripts/lesson_terms.py
       - name: Audit unregistered acronym candidates
         run: python scripts/audit_lesson_acronyms.py
+      - name: Check curated global glossary
+        run: python scripts/check_glossary_terms.py
       - name: Check core diagrams
         run: python scripts/check_diagrams.py
