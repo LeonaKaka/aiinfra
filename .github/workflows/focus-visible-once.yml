@@ -1,0 +1,45 @@
+name: One-time keyboard focus patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/focus-visible-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Add shared keyboard focus style
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('styles.css')
+          text = path.read_text(encoding='utf-8')
+          anchor = 'a { color: inherit; }\n'
+          addition = '''\n:where(a, button, input, select, textarea, [tabindex]):focus-visible {\n  outline: 2px solid #315f82;\n  outline-offset: 3px;\n}\n'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f'styles.css: expected one global link anchor, got {text.count(anchor)}')
+          if ':focus-visible' in text:
+              raise SystemExit('styles.css already contains focus-visible styling')
+          text = text.replace(anchor, anchor + addition, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Verify site
+        run: |
+          python scripts/check_site.py
+          python scripts/normalize_navigation.py
+          python scripts/check_diagrams.py
+      - name: Commit patch and remove one-time workflow
+        run: |
+          git config user.name 'LeonaKaka QA Bot'
+          git config user.email '124779759+LeonaKaka@users.noreply.github.com'
+          git rm .github/workflows/focus-visible-once.yml
+          git add styles.css
+          git commit -m 'Add shared keyboard focus visibility'
+          git push origin HEAD:main
