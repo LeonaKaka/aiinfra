@@ -82,6 +82,8 @@ vLLM / NIXL 主线：
 
 每次 push 会运行站点检查，验证：HTML 阅读元数据、重复 ID、本地页面/fragment/asset 链接、CSS imports/`url(...)`、`app.js` 动态 lesson/Lab routes、已发布课程的旧 `locked` / `muted-next` 导航能否解析到真实目标、已知语义回归字符串、过期 placeholder，以及所有 Lab Python 源码的语法编译。已人工验收为 lesson-native 的核心 SVG 另外由 `scripts/check_diagrams.py` 做宽度回归保护，防止重新退回“超宽小字号画布再整体缩小”的旧模式。
 
+Lab 代码或 smoke harness 变化还会触发独立的 **Lab Correctness Smoke**：在干净的 GitHub runner 上安装 CPU PyTorch，用 `torchrun` / Gloo 实际执行 A1–A7 与 B1–B7 共 14 个实验。每个实验都必须正常退出并输出自身的独立 `PASS`，否则 workflow 失败。这个检查验证 reference 数值、collective/state-machine correctness 与脚本可运行性；CPU timing 仍不被解释为 GPU、NCCL、NIXL、RDMA 或 GPUDirect 性能 benchmark。
+
 这个轻量 CI 不会伪装成 GPU/NCCL/NIXL 性能测试；需要真实硬件才能下结论的内容，在课程和 Lab 中会显式标出。
 
 ## Site
