@@ -76,11 +76,12 @@
 
       <section class="article-section" id="backward">
         <div class="section-no">05 · BACKWARD IS THE MIRROR IMAGE</div>
-        <h2>Forward 里 all-gather 的地方，Backward 往往会出现对应的 reduce-scatter。</h2>
-        <p>Megatron 的 tensor-parallel mappings 用 autograd Function 把 forward/backward 的 collective 配对。例如当前 API 中：</p>
-        <div class="mini-code-map"><div class="mini-code-row"><code>gather_from_sequence_parallel_region</code><span>Forward: all-gather；Backward: reduce-scatter。</span></div><div class="mini-code-row"><code>reduce_scatter_to_sequence_parallel_region</code><span>Forward: reduce-scatter；Backward: all-gather。</span></div><div class="mini-code-row"><code>scatter_to_sequence_parallel_region</code><span>Forward: split；Backward: all-gather。</span></div></div>
-        <p>这就是为什么读 Megatron 时不能只搜索 <code>dist.all_gather</code> 然后数调用次数。很多通信被包装在 autograd mapping 里，forward 和 backward 是成对设计的。</p>
-        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.mappings.html">Megatron Core · core.tensor_parallel.mappings</a>。当前文档明确列出 sequence-parallel gather / reduce-scatter 的 forward/backward 语义。</div>
+        <h2>Forward 里的 collective 会在 autograd 中配上对应的 backward 语义，但不是所有 gather 都固定反向 reduce-scatter。</h2>
+        <p>Megatron 的 tensor-parallel mappings 用 autograd Function 把 forward/backward 的 collective 配对。当前实现里，最容易被一句话说错的是 <code>gather_from_sequence_parallel_region</code>：它的 backward 取决于 gather 之后的计算是否仍处于 tensor-parallel 模式。</p>
+        <div class="mini-code-map"><div class="mini-code-row"><code>gather_from_sequence_parallel_region</code><span>Forward: all-gather；Backward: 默认 <code>tensor_parallel_output_grad=True</code> 时 reduce-scatter；若为 false，则只按 sequence split gradient。</span></div><div class="mini-code-row"><code>reduce_scatter_to_sequence_parallel_region</code><span>Forward: reduce-scatter；Backward: all-gather。</span></div><div class="mini-code-row"><code>scatter_to_sequence_parallel_region</code><span>Forward: split；Backward: all-gather。</span></div></div>
+        <p><strong>为什么会有这个分支？</strong>如果 gather 后进入 TP computation，不同 TP partitions 会对输入 gradient 产生需要相加的贡献，所以 backward 要 reduce-scatter；如果 gather 后的 computation 是 duplicated，每个 rank 已经在做同一份计算，就不该再多做一次 reduction，只需要把 gradient 切回各自的 sequence shard。</p>
+        <p>这就是为什么读 Megatron 时不能只搜索 <code>dist.all_gather</code> 然后数调用次数。很多通信被包装在 autograd mapping 里，forward 和 backward 是成对设计的，而且具体 backward 语义还可能由调用上下文/flag 决定。</p>
+        <div class="source-note">源码入口：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">megatron/core/tensor_parallel/mappings.py</a>。当前 <code>_GatherFromSequenceParallelRegion.backward()</code> 会检查 <code>tensor_parallel_output_grad</code>，再选择 reduce-scatter 或 plain split。</div>
       </section>
 
       <section class="article-section" id="layers">
