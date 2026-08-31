@@ -87,10 +87,11 @@ Do not mark a diagram complete after code generation alone.
 - `learn/07-vllm/scheduler-continuous-batching.html` — running/waiting request state → token/request/KV resource checks → SchedulerOutput, plus preemption side path and between-iteration membership update; continuous batching must not look like requests are inserted into a running kernel.
 - `learn/07-vllm/kv-cache-manager.html` — logical blocks + block table + BlockPool + scattered physical KV + append rule.
 - `learn/07-vllm/model-runner-paged-attention.html` — separate KV write lane and paged-attention read lane; block-table selection stays visually distinct from data movement.
+- `learn/07-vllm/prefix-cache-preemption.html` — prefix identity → shared physical block/ref-count lifetime → free-but-still-cached state → cache-level eviction, then a separate allocation failure path to request-level preemption and recompute. Never equate `ref_cnt=0` with empty KV or eviction with preemption.
 - `learn/08-kv-connector/why-move-kv.html` — token IDs vs computed KV state; explicitly separates the recompute-only token path from the valid state-handoff path.
 - `learn/08-kv-connector/connector-architecture.html` — scheduler control plane + worker data plane + ConnectorMetadata + remote KV transport.
 - `learn/08-kv-connector/transfer-lifecycle.html` — Scheduler / Worker / Memory swimlanes with request-level completion, layer-level readiness, and source-block lifetime on one timeline.
 - `learn/08-kv-connector/nixl-rdma.html` — side-channel handshake is visually separated from registered-memory bulk KV transfer through NIXL / UCX / RDMA layers.
 - `learn/08-kv-connector/production-pd.html` — Router + P/D queues + Prefill + pinned source KV + handoff + Decode paged KV + heartbeat + TTFT/ITL on one end-to-end production canvas.
 
-The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, ownership transitions, critical-path wait points, request-state feedback loops, and user-visible SLOs must remain visually distinct.
+The infrastructure references are regression baselines for multi-lane diagrams: control traffic, bulk data, memory lifetime, invalid/recompute paths, collective boundaries, schedule dependencies, ownership transitions, critical-path wait points, request-state feedback loops, cache identity vs physical ownership, and user-visible SLOs must remain visually distinct.
