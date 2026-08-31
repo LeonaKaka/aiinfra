@@ -34,6 +34,23 @@ KNOWN_SEMANTIC_REGRESSIONS = (
     ),
 )
 
+# Some current-source facts are important enough that silently losing them would
+# make an otherwise well-formed page misleading. These checks are intentionally
+# page-specific rather than pretending to be a general technical-prose linter.
+REQUIRED_PAGE_MARKERS: dict[str, tuple[str, ...]] = {
+    "learn/07-vllm/architecture.html": (
+        "vllm/v1/worker/gpu_worker.py",
+        "vllm/v1/worker/gpu/model_runner.py",
+        "vllm/v1/worker/gpu/block_table.py",
+    ),
+    "learn/07-vllm/model-runner-paged-attention.html": (
+        "vllm/v1/worker/gpu_worker.py",
+        "vllm/v1/worker/gpu/input_batch.py",
+        "vllm/v1/worker/gpu/block_table.py",
+        "vllm/v1/worker/gpu_model_runner.py",
+    ),
+}
+
 
 class PageParser(HTMLParser):
     def __init__(self) -> None:
@@ -140,6 +157,7 @@ def main() -> int:
         parser.feed(text)
         cache[page.resolve()] = parser
         rel = page.relative_to(ROOT)
+        rel_key = rel.as_posix()
 
         if not parser.html_lang:
             failures.append(f"{rel}: missing html lang")
@@ -159,6 +177,11 @@ def main() -> int:
         for needle, reason in KNOWN_SEMANTIC_REGRESSIONS:
             if needle in text:
                 failures.append(f"{rel}: known semantic regression {needle!r}: {reason}")
+        for marker in REQUIRED_PAGE_MARKERS.get(rel_key, ()):
+            if marker not in text:
+                failures.append(
+                    f"{rel}: missing required current-source marker {marker!r}"
+                )
 
         for attr, raw in parser.refs:
             target, fragment = resolve_local(page.resolve(), raw)
@@ -224,8 +247,8 @@ def main() -> int:
         f"Site checks passed: {len(html_files)} HTML pages, {len(css_files)} CSS files, "
         f"{len(lab_python_files)} lab scripts, {lesson_route_count} lesson routes, "
         f"{capstone_route_count} capstone routes; local refs/imports, reading metadata, "
-        "dynamic routes, stale placeholders, known semantic regressions, and lab Python syntax "
-        "are valid."
+        "dynamic routes, stale placeholders, semantic guards, current-source markers, "
+        "and lab Python syntax are valid."
     )
     return 0
 
