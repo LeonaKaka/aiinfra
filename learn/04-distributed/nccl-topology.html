@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>04.3 NCCL 与拓扑 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./distributed.css" />
   <link rel="stylesheet" href="./nccl.css" />
   <link rel="stylesheet" href="./distributed-diagrams.css" />
@@ -34,16 +34,16 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>NCCL &amp; Topology</span></div>
       <div class="lesson-kicker"><span>LESSON 04.3 · DISTRIBUTED</span><span>约 60 min</span></div>
       <h1>NCCL 与拓扑：同一个 all-reduce，为什么换台机器就可能差很多？</h1>
-      <p class="dek">上一课只讲“collective 的语义”。但真实系统还要回答：这些 bytes 到底走哪条链路？四张 GPU 是通过 NVLink 连着，还是绕 PCIe？跨节点时 GPU 数据是不是要先经过 host staging？NCCL 的价值，就是把 collective contract 映射到真实 GPU 拓扑和通信链路上，并选择合适的算法与 transport。</p>
+      <p class="dek">上一课只讲“collective 的语义”。但真实系统还要回答：这些 bytes 到底走哪条链路？四张 Graphics Processing Unit (GPU，图形处理器) 是通过 NVLink 连着，还是绕 Peripheral Component Interconnect Express (PCIe，高速外设组件互连)？跨节点时 GPU 数据是不是要先经过 host staging？NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) 的价值，就是把 collective contract 映射到真实 GPU 拓扑和通信链路上，并选择合适的算法与 transport。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 NCCL 是什么，也解释它不是什么。</li><li>区分 NVLink/NVSwitch、PCIe、InfiniBand/RoCE 这些链路大致处在什么层级。</li><li>把“collective 的数学语义”和“NCCL 实际怎样走硬件”分成两层思考。</li><li>用 ring 的直觉理解 all-reduce 为什么能拆成 reduce-scatter + all-gather。</li><li>知道 NCCL 并不永远固定用 ring；现代版本会根据 collective、拓扑、消息大小和平台选择 Ring、Tree、NVLS 等算法。</li><li>理解 GPUDirect RDMA 为什么能减少跨节点 GPU 通信中的 host staging。</li><li>知道如何用 <code>nvidia-smi topo -m</code>、<code>NCCL_DEBUG=INFO</code>、<code>nccl-tests</code> 开始定位通信问题。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 NCCL 是什么，也解释它不是什么。</li><li>区分 NVLink/NVSwitch、PCIe、InfiniBand/RDMA over Converged Ethernet (RoCE，基于融合以太网的 RDMA) 这些链路大致处在什么层级。</li><li>把“collective 的数学语义”和“NCCL 实际怎样走硬件”分成两层思考。</li><li>用 ring 的直觉理解 all-reduce 为什么能拆成 reduce-scatter + all-gather。</li><li>知道 NCCL 并不永远固定用 ring；现代版本会根据 collective、拓扑、消息大小和平台选择 Ring、Tree、NVLS 等算法。</li><li>理解 GPUDirect Remote Direct Memory Access (RDMA，远程直接内存访问) 为什么能减少跨节点 GPU 通信中的 host staging。</li><li>知道如何用 <code>nvidia-smi topo -m</code>、<code>NCCL_DEBUG=INFO</code>、<code>nccl-tests</code> 开始定位通信问题。</li></ul></div>
 
       <section class="article-section" id="what">
         <div class="section-no">01 · WHAT NCCL IS</div>
         <h2>NCCL 不是“网络”，而是一套针对 NVIDIA GPU 的通信库。</h2>
         <p>NVIDIA 官方把 NCCL 定义为 topology-aware 的 inter-GPU communication library。它提供 AllReduce、Broadcast、AllGather、ReduceScatter、AllToAll，以及 point-to-point send/recv 等 primitive。</p>
-        <div class="distributed-truths"><div><b>NCCL 做什么</b><span>把 collective/P2P contract 映射成在真实 GPU 拓扑上执行的 CUDA communication kernels、算法与 transport。</span></div><div><b>NCCL 不是什么</b><span>它不是完整分布式训练框架，也不是 InfiniBand、RoCE、NVLink 这些物理/网络链路本身。</span></div></div>
-        <p>PyTorch <code>torch.distributed</code> 使用 NCCL backend 时，你调用的是 PyTorch collective API；底层 CUDA GPU 通信由 NCCL communicator 承担。最重要的是：<strong>API 的数学结果不因为物理路径改变，执行代价却会改变。</strong></p>
+        <div class="distributed-truths"><div><b>NCCL 做什么</b><span>把 collective/Peer-to-Peer (P2P，点对点通信) contract 映射成在真实 GPU 拓扑上执行的 CUDA communication kernels、算法与 transport。</span></div><div><b>NCCL 不是什么</b><span>它不是完整分布式训练框架，也不是 InfiniBand、RoCE、NVLink 这些物理/网络链路本身。</span></div></div>
+        <p>PyTorch <code>torch.distributed</code> 使用 NCCL backend 时，你调用的是 PyTorch collective Application Programming Interface (API，应用程序编程接口)；底层 CUDA GPU 通信由 NCCL communicator 承担。最重要的是：<strong>API 的数学结果不因为物理路径改变，执行代价却会改变。</strong></p>
         <div class="source-note">官方参考：<a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/overview.html">NCCL Overview</a>。NCCL 专注 inter-GPU collective 与 P2P primitives，不是完整 parallel programming framework。</div>
       </section>
 
@@ -52,8 +52,8 @@
         <h2>先分清“我要什么结果”，再追“这些 bytes 实际跨过哪些链路”。</h2>
         <p>同一个 <code>all_reduce(tensor, TP group)</code>，在程序语义上始终要求参与 ranks 得到 reduced tensor；但 NCCL 会结合 collective、message size、rank count、拓扑和平台能力选择实际执行方案。下面把逻辑 contract 与物理 data path 放在同一张图里：</p>
         <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>NCCL · LOGICAL CONTRACT → PHYSICAL PATH</span><span>same collective · different cost</span></div><img class="distributed-core-svg" src="./nccl-topology-path.svg" alt="NCCL 逻辑到物理数据路径：PyTorch all-reduce 的逻辑 contract 进入 NCCL communicator，NCCL 根据消息大小、rank 数、拓扑和平台选择 Ring、Tree 等算法与 P2P、SHM、NET 等 transport；单机数据可能留在 NVLink、NVSwitch 或 PCIe P2P GPU fabric，跨节点则还需经过 GPU 到 NIC 路径以及 InfiniBand、RoCE 或 Ethernet network fabric。" /></div>
-        <div class="distributed-core-takeaway"><strong>稳定心智模型：</strong>collective 名字描述“通信结束后每个 rank 应该拿到什么”；NCCL/topology 描述“为了实现这个 contract，哪些 chunks 沿哪些链路移动”。后面判断 TP/DP/PP 是否划算时，必须同时看这两层。</div>
-        <div class="topology-stack"><div class="topology-level"><small>GPU LOCAL</small><div><b>GPU device memory / VRAM</b><span>数据首先住在某张 GPU 自己的显存；物理实现可能是 HBM 或 GDDR，取决于具体 GPU。</span></div></div><div class="topology-level"><small>INTRA-NODE</small><div><b>NVLink / NVSwitch / PCIe</b><span>同一台机器里 GPU↔GPU 的路径可能非常不同。</span></div></div><div class="topology-level"><small>GPU ↔ NIC</small><div><b>PCIe / platform fabric</b><span>跨节点之前，GPU 数据还要到达网络接口；GPU/NIC affinity 与 direct-access 能力很关键。</span></div></div><div class="topology-level"><small>INTER-NODE</small><div><b>InfiniBand / RoCE / Ethernet fabric</b><span>跨服务器的数据最终进入网络；带宽、延迟、交换结构、routing 和拥塞都会影响 collective。</span></div></div></div>
+        <div class="distributed-core-takeaway"><strong>稳定心智模型：</strong>collective 名字描述“通信结束后每个 rank 应该拿到什么”；NCCL/topology 描述“为了实现这个 contract，哪些 chunks 沿哪些链路移动”。后面判断 Tensor Parallel (TP，张量并行)/Data Parallel (DP，数据并行)/Pipeline Parallel (PP，流水线并行) 是否划算时，必须同时看这两层。</div>
+        <div class="topology-stack"><div class="topology-level"><small>GPU LOCAL</small><div><b>GPU device memory / Video Random Access Memory (VRAM，显存)</b><span>数据首先住在某张 GPU 自己的显存；物理实现可能是 High Bandwidth Memory (HBM，高带宽内存) 或 Graphics Double Data Rate (GDDR，图形双倍数据速率存储器)，取决于具体 GPU。</span></div></div><div class="topology-level"><small>INTRA-NODE</small><div><b>NVLink / NVSwitch / PCIe</b><span>同一台机器里 GPU↔GPU 的路径可能非常不同。</span></div></div><div class="topology-level"><small>GPU ↔ Network Interface Card (NIC，网络接口卡)</small><div><b>PCIe / platform fabric</b><span>跨节点之前，GPU 数据还要到达网络接口；GPU/NIC affinity 与 direct-access 能力很关键。</span></div></div><div class="topology-level"><small>INTER-NODE</small><div><b>InfiniBand / RoCE / Ethernet fabric</b><span>跨服务器的数据最终进入网络；带宽、延迟、交换结构、routing 和拥塞都会影响 collective。</span></div></div></div>
         <p>因此“8×GPU”远远不够描述一台训练机器。8 张卡之间是全连接 NVSwitch、部分 NVLink，还是只靠 PCIe，会直接改变高频 Tensor Parallel collective 的代价。</p>
       </section>
 
@@ -78,7 +78,7 @@
       <section class="article-section" id="links">
         <div class="section-no">05 · THE LINKS ARE NOT INTERCHANGEABLE</div>
         <h2>同一个 GPU↔GPU 逻辑通信，可能落到完全不同的物理路径。</h2>
-        <div class="link-grid"><div class="link-card fast"><small>NVLINK / NVSWITCH</small><b>高带宽 GPU fabric</b><span>典型高端训练服务器里用于快速 GPU↔GPU 通信；拓扑和代际决定具体能力。</span></div><div class="link-card mid"><small>PCIE</small><b>通用 I/O fabric</b><span>GPU、CPU、NIC 都可能挂在 PCIe hierarchy 上；GPU↔GPU 可能经过 switch / root complex。</span></div><div class="link-card net"><small>IB / ROCE</small><b>跨节点 network</b><span>InfiniBand 或基于 Ethernet 的 RoCE 可承担 node↔node RDMA 网络通信。</span></div></div>
+        <div class="link-grid"><div class="link-card fast"><small>NVLINK / NVSWITCH</small><b>高带宽 GPU fabric</b><span>典型高端训练服务器里用于快速 GPU↔GPU 通信；拓扑和代际决定具体能力。</span></div><div class="link-card mid"><small>PCIE</small><b>通用 I/O fabric</b><span>GPU、Central Processing Unit (CPU，中央处理器)、NIC 都可能挂在 PCIe hierarchy 上；GPU↔GPU 可能经过 switch / root complex。</span></div><div class="link-card net"><small>InfiniBand (IB，InfiniBand 高速互连) / ROCE</small><b>跨节点 network</b><span>InfiniBand 或基于 Ethernet 的 RoCE 可承担 node↔node RDMA 网络通信。</span></div></div>
         <p>这就是为什么“跨节点 TP 通常比单机高速 GPU fabric 上的 TP 贵得多”是很自然的系统结论：layer 内高频 activation shards 现在要穿过 GPU↔NIC 路径与网络。</p>
       </section>
 
@@ -87,10 +87,10 @@
         <h2>跨节点时，一个关键问题：GPU 数据能不能更直接地到 NIC？</h2>
         <p>没有高效 GPU-direct path 的教学版直觉：</p>
         <div class="gdr-flow"><div><small>GPU MEMORY</small><b>GPU A device memory</b></div><span>copy / staging →</span><div><small>HOST PATH</small><b>CPU / host memory</b></div><span>→ network →</span><div><small>REMOTE</small><b>GPU B</b></div></div>
-        <p>GPUDirect RDMA 的核心目标，是让第三方 PCIe device（典型是 NIC）能更直接 DMA 访问 GPU memory，减少不必要的 host staging / CPU copy：</p>
+        <p>GPUDirect RDMA 的核心目标，是让第三方 PCIe device（典型是 NIC）能更直接 Direct Memory Access (DMA，直接内存访问) 访问 GPU memory，减少不必要的 host staging / CPU copy：</p>
         <div class="gdr-flow direct"><div><small>GPU MEMORY</small><b>GPU A device memory</b></div><span>DMA ↔</span><div><small>NIC</small><b>RDMA capable</b></div><span>network →</span><div><small>REMOTE GPU</small><b>GPU B memory</b></div></div>
         <p>现实路径仍受 PCIe topology、GPU/NIC affinity、IOMMU、driver、NIC 能力与 platform 配置影响。“支持 GPUDirect RDMA”不等于任何 GPU 到任何 NIC 都能自动跑满，也不意味着网络与拓扑代价消失。</p>
-        <div class="concept-note"><p>这也是以后读 vLLM KV Connector / NIXL 时会再次遇到的基础：GPU 上已经算好的 KV，跨节点怎么直接送到另一张 GPU，而不是不必要地绕 host buffer。</p></div>
+        <div class="concept-note"><p>这也是以后读 vLLM Key-Value (KV，键-值) Connector / NVIDIA Inference Xfer Library (NIXL，NVIDIA 推理传输库) 时会再次遇到的基础：GPU 上已经算好的 KV，跨节点怎么直接送到另一张 GPU，而不是不必要地绕 host buffer。</p></div>
       </section>
 
       <section class="article-section" id="topo-command">
@@ -143,7 +143,39 @@ NIC0    ...   ...   ...   ...    X
         <p>这就是为什么 Megatron 的 parallel rank mapping、communication overlap、distributed optimizer 不能脱离集群 topology 单独评价。接下来进入 05 Megatron 后，我们会把这套硬件/通信地基真正套到 TP、PP、DP 上。</p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.3</span></div><h2>看到通信慢，先画数据路径。</h2><div class="quiz-item"><div class="quiz-q">1. NCCL 和 InfiniBand 是同一种东西吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。NCCL 是实现 GPU collective/P2P 的通信库；InfiniBand 是跨节点网络技术/互连。NCCL 可以在支持的环境中利用 InfiniBand/RDMA transport。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么不能把“NCCL all-reduce 永远使用 ring”当成规则？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 NCCL 支持多种算法，并会根据 topology、architecture、collective、message size 等自动选择。Ring 是重要理解模型，但不是所有环境里的固定实现。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 Tensor Parallel 特别在意 GPU 间是不是高速近邻？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个 Transformer layer 内就会发生高频 collective。通信位于关键路径，若链路带宽低/延迟高，GPU 很容易等待通信，local GEMM 并行带来的收益会被抵消。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.3</span></div><h2>看到通信慢，先画数据路径。</h2><div class="quiz-item"><div class="quiz-q">1. NCCL 和 InfiniBand 是同一种东西吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。NCCL 是实现 GPU collective/P2P 的通信库；InfiniBand 是跨节点网络技术/互连。NCCL 可以在支持的环境中利用 InfiniBand/RDMA transport。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么不能把“NCCL all-reduce 永远使用 ring”当成规则？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 NCCL 支持多种算法，并会根据 topology、architecture、collective、message size 等自动选择。Ring 是重要理解模型，但不是所有环境里的固定实现。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 Tensor Parallel 特别在意 GPU 间是不是高速近邻？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个 Transformer layer 内就会发生高频 collective。通信位于关键路径，若链路带宽低/延迟高，GPU 很容易等待通信，local General Matrix Multiply (GEMM，通用矩阵乘法) 并行带来的收益会被抵消。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>RoCE</code></td><td>RDMA over Converged Ethernet</td><td>基于融合以太网的 RDMA</td><td>在以太网上承载 RDMA 语义的网络技术。</td></tr>
+        <tr><td><code>RDMA</code></td><td>Remote Direct Memory Access</td><td>远程直接内存访问</td><td>允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>
+        <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
+        <tr><td><code>GDDR</code></td><td>Graphics Double Data Rate</td><td>图形双倍数据速率存储器</td><td>很多消费级/工作站 GPU 使用的显存技术。</td></tr>
+        <tr><td><code>NIC</code></td><td>Network Interface Card</td><td>网络接口卡</td><td>主机连接网络 fabric 的硬件接口。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+        <tr><td><code>IB</code></td><td>InfiniBand</td><td>InfiniBand 高速互连</td><td>HPC/AI 集群常见的低延迟高带宽网络技术。</td></tr>
+        <tr><td><code>DMA</code></td><td>Direct Memory Access</td><td>直接内存访问</td><td>设备在较少 CPU 搬运参与下直接读写内存的数据移动机制。</td></tr>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 05.1</small><br /><strong>为什么要模型并行：从一张 GPU 放不下 70B 开始。</strong></div><span>→</span></div>
     </main>

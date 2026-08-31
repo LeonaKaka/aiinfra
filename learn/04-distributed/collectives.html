@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>04.2 Collectives · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./distributed.css" />
   <link rel="stylesheet" href="./collectives.css" />
   <link rel="stylesheet" href="./distributed-diagrams.css" />
@@ -35,12 +35,12 @@
       <h1>Collectives：每张 GPU 开始有什么，结束又得到什么？</h1>
       <p class="dek">all-reduce、all-gather、reduce-scatter 这些名字很像，背定义特别容易混。我们只用一个方法学：固定 4 个 ranks，画出通信前每个 rank 手里的 tensor，再画通信后每个 rank 得到什么。只要这个状态变化看懂，Megatron 里大部分 collective 名字就不再神秘。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>不用背英文定义，直接画出 broadcast、all-reduce、all-gather、reduce-scatter 的输入/输出。</li><li>区分“聚合数值”“收集 shards”“分发结果”这几种不同语义。</li><li>解释 Data Parallel 为什么常用 all-reduce / reduce-scatter 处理 gradients。</li><li>解释 Tensor Parallel 为什么经常需要 gather / reduce 一类通信。</li><li>理解 MoE token dispatch 为什么天然会遇到 all-to-all。</li><li>知道 collective 是 group-level contract：参与 ranks、调用顺序、tensor 元信息不匹配都可能造成错误或 hang。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>不用背英文定义，直接画出 broadcast、all-reduce、all-gather、reduce-scatter 的输入/输出。</li><li>区分“聚合数值”“收集 shards”“分发结果”这几种不同语义。</li><li>解释 Data Parallel 为什么常用 all-reduce / reduce-scatter 处理 gradients。</li><li>解释 Tensor Parallel 为什么经常需要 gather / reduce 一类通信。</li><li>理解 Mixture of Experts (MoE，混合专家模型) token dispatch 为什么天然会遇到 all-to-all。</li><li>知道 collective 是 group-level contract：参与 ranks、调用顺序、tensor 元信息不匹配都可能造成错误或 hang。</li></ul></div>
 
       <section class="article-section" id="rule">
         <div class="section-no">01 · ONE RULE FOR ALL COLLECTIVES</div>
         <h2>不要先背 API 名字。固定 process group，然后看 before → contract → after。</h2>
-        <div class="pattern-grid"><div><small>WHO</small><b>哪些 ranks 参加？</b><span>global group 还是某个 TP / DP / PP 子 group？</span></div><div><small>BEFORE</small><b>每个 rank 手里有什么？</b><span>完整 tensor、一个 shard，还是各自不同的数据？</span></div><div><small>AFTER</small><b>每个 rank 要拿到什么？</b><span>完整聚合结果、拼接后的完整 tensor，还是一个 reduced shard？</span></div></div>
+        <div class="pattern-grid"><div><small>WHO</small><b>哪些 ranks 参加？</b><span>global group 还是某个 Tensor Parallel (TP，张量并行) / Data Parallel (DP，数据并行) / Pipeline Parallel (PP，流水线并行) 子 group？</span></div><div><small>BEFORE</small><b>每个 rank 手里有什么？</b><span>完整 tensor、一个 shard，还是各自不同的数据？</span></div><div><small>AFTER</small><b>每个 rank 要拿到什么？</b><span>完整聚合结果、拼接后的完整 tensor，还是一个 reduced shard？</span></div></div>
         <p>下面把四个最常用 collective 放进同一张画布。你会看到：名字看似相近，本质只是不同的 ownership/state transformation。</p>
         <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>COLLECTIVES · BEFORE → CONTRACT → AFTER</span><span>fixed process group · 4 ranks</span></div><img class="distributed-core-svg" src="./collectives-state-map.svg" alt="四个核心 collective 的状态变换：Broadcast 从一个 source 把 A 分发给所有 ranks；All-Reduce 把每 rank 的局部贡献做 SUM 并让所有 ranks 都得到完整 reduced result；All-Gather 把各 rank 的 A、B、C、D shards 拼成完整 tensor 并复制给所有 ranks；Reduce-Scatter 先对完整向量逐元素求和，再让各 rank 只保留一个 reduced shard。" /></div>
         <div class="distributed-core-takeaway"><strong>选择 collective 的核心不是名字，而是目标数据状态。</strong>所有人都要完整 reduced result → all-reduce；只需要 reduced shards → reduce-scatter；不做 reduction、只是让所有人拿齐 shards → all-gather；一个 source 复制给整个 group → broadcast。</div>
@@ -80,7 +80,7 @@
         <div class="section-no">06 · ALL-REDUCE VS REDUCE-SCATTER + ALL-GATHER</div>
         <h2>把 all-reduce 从数据状态角度拆开，会更容易理解现代分布式训练。</h2>
         <div class="shape-flow"><div><small>START</small><code>local contributions</code></div><span>→</span><div><small>REDUCE-SCATTER</small><code>reduced shards</code></div><span>→</span><div><small>ALL-GATHER</small><code>full reduced tensor</code></div></div>
-        <p>从数学数据状态看，一个 all-reduce 的最终效果可以理解为先得到 reduced shards，再让所有 ranks gather 完整 reduced tensor。<strong>这不是说 NCCL 内部永远机械地调用两个独立 API</strong>；它只是非常有用的语义分解，能帮助理解 ZeRO / FSDP / Megatron 的 sharded states。</p>
+        <p>从数学数据状态看，一个 all-reduce 的最终效果可以理解为先得到 reduced shards，再让所有 ranks gather 完整 reduced tensor。<strong>这不是说 NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) 内部永远机械地调用两个独立 Application Programming Interface (API，应用程序编程接口)</strong>；它只是非常有用的语义分解，能帮助理解 ZeRO / Fully Sharded Data Parallel (FSDP，全分片数据并行) / Megatron 的 sharded states。</p>
       </section>
 
       <section class="article-section" id="alltoall">
@@ -93,7 +93,7 @@
       <section class="article-section" id="p2p">
         <div class="section-no">08 · SEND / RECV IS NOT A COLLECTIVE</div>
         <h2>Point-to-point：明确的 sender 和 receiver。</h2>
-        <p><code>send / recv</code> 不是“整个 group 一起变换 tensor”，而是某些 ranks 直接点对点传数据。Pipeline Parallel 相邻 stages 之间传 activations / gradients 时，就很容易出现 P2P 语义。</p>
+        <p><code>send / recv</code> 不是“整个 group 一起变换 tensor”，而是某些 ranks 直接点对点传数据。Pipeline Parallel 相邻 stages 之间传 activations / gradients 时，就很容易出现 Peer-to-Peer (P2P，点对点通信) 语义。</p>
         <div class="process-device"><div><small>RANK 0 · PIPE STAGE 0</small><b>activation</b></div><span>send → recv</span><div><small>RANK 1 · PIPE STAGE 1</small><b>activation</b></div></div>
         <p>所以后面 Megatron 的不同 parallelism 会对应不同通信模式：TP 经常是 collectives，PP 很多时候更像相邻 stage 的 P2P。</p>
       </section>
@@ -124,7 +124,7 @@ print(f<span class="comment">"rank={rank}, mean={x.item()}"</span>)
 
 dist.destroy_process_group()</code></pre></div>
         <div class="code-block"><div class="code-head"><span>shell</span><span>launch</span></div><pre><code>torchrun --standalone --nproc-per-node=4 05_all_reduce.py</code></pre></div>
-        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以 world size。DDP 梯度同步里的具体 averaging 行为由 DDP 的实现语义处理，不应该把“all-reduce API 本身”记成“自动求平均”。</p>
+        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以 world size。Distributed Data Parallel (DDP，分布式数据并行) 梯度同步里的具体 averaging 行为由 DDP 的实现语义处理，不应该把“all-reduce API 本身”记成“自动求平均”。</p>
         <div class="source-note">官方参考：<a href="https://docs.pytorch.org/docs/stable/distributed.html">PyTorch torch.distributed collective APIs</a>。</div>
       </section>
 
@@ -139,7 +139,7 @@ dist.destroy_process_group()</code></pre></div>
         <div class="section-no">11 · COMMUNICATION HAS A COST MODEL</div>
         <h2>同一个 collective，tensor 越大、group 越大、拓扑越差，代价通常越值得担心。</h2>
         <div class="cost-intuition"><div><small>LATENCY</small><b>一次通信启动的固定成本</b><span>小 tensor / 高频 collective 时尤其显眼。</span></div><div><small>BANDWIDTH</small><b>大量 bytes 搬运的吞吐上限</b><span>大 tensor 时决定传输时间的主要部分。</span></div></div>
-        <p>真正通信量并不等于简单“tensor 大小 × peers”。下一课学 NCCL、ring/tree、NVLink/PCIe/InfiniBand 时，我们再追 collective 怎样映射到真实链路。</p>
+        <p>真正通信量并不等于简单“tensor 大小 × peers”。下一课学 NCCL、ring/tree、NVLink/Peripheral Component Interconnect Express (PCIe，高速外设组件互连)/InfiniBand 时，我们再追 collective 怎样映射到真实链路。</p>
       </section>
 
       <section class="article-section" id="contract">
@@ -150,6 +150,27 @@ dist.destroy_process_group()</code></pre></div>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.2</span></div><h2>别背名字，直接画输入和输出。</h2><div class="quiz-item"><div class="quiz-q">1. 四个 ranks 分别持有 A、B、C、D 四个 shards，最后希望每个 rank 都得到 [A,B,C,D]，最像哪个 collective？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">all-gather。每个 rank 起初只有自己的 shard，结束时所有参与 ranks 都拥有完整拼接结果。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 reduce-scatter 比“先 all-reduce 再丢掉 3/4 结果”更符合 sharded state 的目标？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为最终每个 rank 本来只需要 reduced result 的一个 shard。reduce-scatter 的语义直接产生分片后的聚合结果，不要求每 rank 都保留完整 reduced tensor。</div></div><div class="quiz-item"><div class="quiz-q">3. MoE 为什么更容易出现 all-to-all，而不是简单 broadcast？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 token 会被 router 分配到不同 experts/ranks，所以每个 sender 需要把不同 token 子集发给不同 destinations；这更像全体之间的重排，而不是把同一份数据复制给所有人。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+        <tr><td><code>FSDP</code></td><td>Fully Sharded Data Parallel</td><td>全分片数据并行</td><td>在数据并行域进一步分片参数、梯度或优化器状态的训练方式。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
+        <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 04.3</small><br /><strong>NCCL 与拓扑：同一个 all-reduce，为什么换机器就可能差很多？</strong></div><span>→</span></div>
     </main>

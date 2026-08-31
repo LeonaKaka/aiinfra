@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>03.1 GPU 心智模型 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./gpu.css" />
 </head>
 <body class="lesson-body">
@@ -31,23 +31,23 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>GPU Mental Model</span></div>
       <div class="lesson-kicker"><span>LESSON 03.1 · GPU SYSTEMS</span><span>约 45 min</span></div>
       <h1>GPU 心智模型：模型到底在哪里算、数据又在哪里放？</h1>
-      <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在 CPU 内存还是 GPU 显存？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NCCL、Tensor Parallel、vLLM 性能优化的地基。</p>
+      <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在 Central Processing Unit (CPU，中央处理器) 内存还是 Graphics Processing Unit (GPU，图形处理器) 显存？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库)、Tensor Parallel、vLLM 性能优化的地基。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU/host memory 与 GPU device memory 的角色，并知道 HBM / GDDR 是具体显存技术。</li><li>知道 PyTorch CUDA op 最终会在 GPU 上触发 kernel，而不是 Python 自己在算矩阵。</li><li>理解 SM、Tensor Core、device memory、PCIe/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要 synchronize。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU/host memory 与 GPU device memory 的角色，并知道 High Bandwidth Memory (HBM，高带宽内存) / Graphics Double Data Rate (GDDR，图形双倍数据速率存储器) 是具体显存技术。</li><li>知道 PyTorch CUDA op 最终会在 GPU 上触发 kernel，而不是 Python 自己在算矩阵。</li><li>理解 Streaming Multiprocessor (SM，流式多处理器)、Tensor Core、device memory、Peripheral Component Interconnect Express (PCIe，高速外设组件互连)/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要 synchronize。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
 
       <section class="article-section" id="machine">
         <div class="section-no">01 · ONE MACHINE, TWO MEMORY WORLDS</div>
         <h2>先把一台 AI 机器想成 CPU 世界和 GPU 世界。</h2>
         <div class="machine-map">
-          <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · scheduler · dataloader</span><div class="memory-box"><small>SYSTEM MEMORY</small><strong>RAM</strong></div></div>
+          <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · scheduler · dataloader</span><div class="memory-box"><small>SYSTEM MEMORY</small><strong>Random Access Memory (RAM，随机存取存储器)</strong></div></div>
           <div class="link-box"><span>PCIe / platform interconnect</span><i></i></div>
-          <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · GEMM · attention</span><div class="memory-box"><small>DEVICE MEMORY</small><strong>HBM or GDDR</strong></div></div>
+          <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · General Matrix Multiply (GEMM，通用矩阵乘法) · attention</span><div class="memory-box"><small>DEVICE MEMORY</small><strong>HBM or GDDR</strong></div></div>
         </div>
         <p>最常见的离散 GPU 机器里，CPU 和 GPU 有各自的内存。一个 CPU tensor 不能因为你“想让 GPU 算”就自动变成 GPU tensor，通常需要把数据传到 device memory：</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>device move</span></div><pre><code>x = torch.randn(<span class="num">1024</span>, <span class="num">1024</span>)   <span class="comment"># CPU memory</span>
 x = x.to(<span class="comment">'cuda:0'</span>)              <span class="comment"># move/copy to GPU 0</span>
 print(x.device)                    <span class="comment"># cuda:0</span></code></pre></div>
-        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>VRAM 常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
+        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>Video Random Access Memory (VRAM，显存) 常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
         <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器/PC 常通过 PCIe 连接 CPU 与 GPU；NVLink/NVSwitch 更常用于高带宽 GPU↔GPU 互连，也存在带更紧密 CPU-GPU 互连的特定平台。后面会按具体拓扑再讲。</p></div>
       </section>
 
@@ -74,15 +74,15 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
       <section class="article-section" id="tensor-core">
         <div class="section-no">04 · WHY TENSOR CORES MATTER</div>
         <h2>大模型里的 GEMM，正好是 Tensor Cores 擅长的工作。</h2>
-        <p>Tensor Cores 针对特定数据类型和矩阵乘加模式提供很高吞吐。于是模型训练/推理会大量使用 FP16、BF16、FP8 等较低精度格式，并把 Linear/Attention/MLP 尽量变成高效的大矩阵运算。</p>
-        <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>QKV PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
+        <p>Tensor Cores 针对特定数据类型和矩阵乘加模式提供很高吞吐。于是模型训练/推理会大量使用 16-bit Floating Point (FP16，16 位浮点)、Brain Floating Point 16 (BF16，BF16 16 位浮点)、8-bit Floating Point (FP8，8 位浮点) 等较低精度格式，并把 Linear/Attention/Multi-Layer Perceptron (MLP，多层感知机) 尽量变成高效的大矩阵运算。</p>
+        <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>Query-Key-Value (QKV，查询-键-值) PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
       </section>
 
       <section class="article-section" id="hbm">
         <div class="section-no">05 · COMPUTE NEEDS DATA</div>
         <h2>算力再高，如果数据没及时到计算单元，GPU 也只能等。</h2>
-        <p>权重、activation、KV Cache 等大部分数据常驻在 GPU device memory；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在内存层级之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
-        <div class="compare-limits"><div><small>COMPUTE</small><b>算得不够快</b><span>Tensor Core / ALU 是瓶颈</span></div><div><small>MEMORY</small><b>喂数据不够快</b><span>memory bandwidth / data movement 是瓶颈</span></div></div>
+        <p>权重、activation、Key-Value (KV，键-值) Cache 等大部分数据常驻在 GPU device memory；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在内存层级之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
+        <div class="compare-limits"><div><small>COMPUTE</small><b>算得不够快</b><span>Tensor Core / Arithmetic Logic Unit (ALU，算术逻辑单元) 是瓶颈</span></div><div><small>MEMORY</small><b>喂数据不够快</b><span>memory bandwidth / data movement 是瓶颈</span></div></div>
         <p>下一节会正式学习显存账单，03.3 再把 compute-bound / memory-bound / communication-bound 分开。</p>
       </section>
 
@@ -106,7 +106,7 @@ elapsed = time.perf_counter() - start</code></pre></div>
         <div class="section-no">07 · TWO GPUS ARE TWO DEVICES</div>
         <h2><code>cuda:0</code> 和 <code>cuda:1</code> 不是一个更大的共享显存池。</h2>
         <div class="two-gpu"><div><small>GPU 0</small><b>device memory 0</b><span>X lives here</span></div><div class="gpu-link"><span>NVLink / PCIe / fabric</span><i></i></div><div><small>GPU 1</small><b>device memory 1</b><span>W lives here</span></div></div>
-        <p>如果某个计算需要 GPU 1 用到 GPU 0 上的数据，就必须存在某种数据移动/通信路径。框架、NCCL、P2P、collective 通信等会帮你完成，但代价不会凭空消失。</p>
+        <p>如果某个计算需要 GPU 1 用到 GPU 0 上的数据，就必须存在某种数据移动/通信路径。框架、NCCL、Peer-to-Peer (P2P，点对点通信)、collective 通信等会帮你完成，但代价不会凭空消失。</p>
         <div class="concept-note"><p><strong>这就是分布式训练的核心矛盾：</strong>多 GPU 给了更多计算和显存，但只要把一个问题拆开，就必须考虑“拆完之后哪些数据还需要彼此交换”。</p></div>
       </section>
 
@@ -121,10 +121,42 @@ elapsed = time.perf_counter() - start</code></pre></div>
         <div class="section-no">09 · CONNECT THE ROADMAP</div>
         <h2>把今天的硬件词，放回我们的两条终点路线。</h2>
         <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → scheduler feeds kernels → KV transfer across devices/nodes</span></div></div>
-        <p>之后再看到 “NCCL all-reduce”“GPUDirect RDMA”“NIXL”，不要把它们当成凭空冒出来的新技术。它们都在解决同一个非常具体的问题：<strong>让数据在正确的时间，到正确的设备和内存位置。</strong></p>
+        <p>之后再看到 “NCCL all-reduce”“GPUDirect Remote Direct Memory Access (RDMA，远程直接内存访问)”“NVIDIA Inference Xfer Library (NIXL，NVIDIA 推理传输库)”，不要把它们当成凭空冒出来的新技术。它们都在解决同一个非常具体的问题：<strong>让数据在正确的时间，到正确的设备和内存位置。</strong></p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.1</span></div><h2>先把 GPU 画成一个系统，而不是一块“加速卡”。</h2><div class="quiz-item"><div class="quiz-q">1. <code>torch.randn(...)</code> 默认在 CPU，为什么要 <code>.to('cuda:0')</code> 才能让 GPU 直接使用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为常见离散 GPU 系统里 CPU memory 与 GPU device memory 是不同的内存空间，tensor 必须位于对应 device 可使用的位置；移动数据本身也有成本。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么一行 <code>X @ W</code> 不等于“Python 在做矩阵乘法”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">PyTorch 是高层入口。CUDA tensor 的矩阵乘法会调用底层 CUDA/library 实现并在 GPU 上执行 kernel；Python 主要负责组织和发起这些操作。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么直接用 CPU timer 量一个 CUDA op 可能不准？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 CUDA 工作常异步提交，CPU 可能在 GPU 真正完成前就继续执行。简单计时要控制计时窗口前后的同步；严谨 benchmark 通常使用 CUDA Events、warm-up 等。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
+        <tr><td><code>GDDR</code></td><td>Graphics Double Data Rate</td><td>图形双倍数据速率存储器</td><td>很多消费级/工作站 GPU 使用的显存技术。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>SM</code></td><td>Streaming Multiprocessor</td><td>流式多处理器</td><td>NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元。</td></tr>
+        <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+        <tr><td><code>RAM</code></td><td>Random Access Memory</td><td>随机存取存储器</td><td>这里通常指主机侧系统内存。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>
+        <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
+        <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>FP8</code></td><td>8-bit Floating Point</td><td>8 位浮点</td><td>更低精度的浮点表示，需要硬件与数值策略共同支持。</td></tr>
+        <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
+        <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>ALU</code></td><td>Arithmetic Logic Unit</td><td>算术逻辑单元</td><td>执行通用算术与逻辑运算的硬件单元。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>RDMA</code></td><td>Remote Direct Memory Access</td><td>远程直接内存访问</td><td>允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。</td></tr>
+        <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 03.2</small><br /><strong>显存到底花在哪：Parameters、Gradients、Activations、Optimizer、KV Cache</strong></div><span>→</span></div>
     </main>

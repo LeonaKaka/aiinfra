@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>05.8 Communication Overlap · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./megatron.css" />
   <link rel="stylesheet" href="./communication-overlap.css" />
 </head>
@@ -33,9 +33,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Communication Overlap</span></div>
       <div class="lesson-kicker"><span>LESSON 05.8 · MEGATRON</span><span>约 75 min</span></div>
       <h1>Communication Overlap：真正要找的不是第二条 stream，而是“第一次不得不等”的位置。</h1>
-      <p class="dek">前面每加一种并行都会出现通信：DP 有 gradient reduce / parameter gather，TP 有 activation All-Gather / Reduce-Scatter，PP 有 stage P2P，EP 有 token exchange。Overlap 的目标不是把这些 bytes 变没，而是让通信尽早开始、让独立计算继续推进，把真正的 wait 推迟到数据第一次必须被消费的位置。</p>
+      <p class="dek">前面每加一种并行都会出现通信：Data Parallel (DP，数据并行) 有 gradient reduce / parameter gather，Tensor Parallel (TP，张量并行) 有 activation All-Gather / Reduce-Scatter，Pipeline Parallel (PP，流水线并行) 有 stage Peer-to-Peer (P2P，点对点通信)，Expert Parallel (EP，专家并行) 有 token exchange。Overlap 的目标不是把这些 bytes 变没，而是让通信尽早开始、让独立计算继续推进，把真正的 wait 推迟到数据第一次必须被消费的位置。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用 <code>READY → async launch → independent compute → WAIT</code> 四个事件解释 overlap。</li><li>区分 collective 自身耗时与真正暴露在 critical path 上的 communication tail。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解 bucket size 为什么同时控制“多久才能 ready”和“单次 collective 是否足够大”。</li><li>把同一个方法迁移到 TP AG/RS、PP P2P 与 EP A2A。</li><li>知道 overlap flag 生效不等于吞吐一定上涨，最终必须用 timeline 与 step time 验证。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用 <code>READY → async launch → independent compute → WAIT</code> 四个事件解释 overlap。</li><li>区分 collective 自身耗时与真正暴露在 critical path 上的 communication tail。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解 bucket size 为什么同时控制“多久才能 ready”和“单次 collective 是否足够大”。</li><li>把同一个方法迁移到 TP All-Gather (AG，全收集)/Reduce-Scatter (RS，归约分散)、PP P2P 与 EP All-to-All (A2A，全对全通信)。</li><li>知道 overlap flag 生效不等于吞吐一定上涨，最终必须用 timeline 与 step time 验证。</li></ul></div>
 
       <section class="article-section" id="mental-model">
         <div class="section-no">01 · THE ONE MENTAL MODEL</div>
@@ -65,7 +65,7 @@
       <section class="article-section" id="param">
         <div class="section-no">04 · PARAMETER PREFETCH: WAIT CURRENT, LAUNCH NEXT</div>
         <h2>Distributed Optimizer 的 parameter all-gather 可以做成“下一桶预取”。</h2>
-        <p>当前 DDP 配置的 <code>overlap_param_gather</code> 文档写得很直接：把 parameter all-gather 与 forward compute 重叠。更具体地，bucket-group 路径会让当前 bucket 的 forward pre-hook 等待自己的 gather，同时在计算开始前 dispatch 下一个 bucket 的 gather——于是“当前层 compute”成为“下一桶 AG”的隐藏窗口。</p>
+        <p>当前 Distributed Data Parallel (DDP，分布式数据并行) 配置的 <code>overlap_param_gather</code> 文档写得很直接：把 parameter all-gather 与 forward compute 重叠。更具体地，bucket-group 路径会让当前 bucket 的 forward pre-hook 等待自己的 gather，同时在计算开始前 dispatch 下一个 bucket 的 gather——于是“当前层 compute”成为“下一桶 AG”的隐藏窗口。</p>
         <div class="mini-code-map"><div class="mini-code-row"><code>start_param_sync()</code><span><code>overlap_param_gather=True</code> 时可异步发起当前 bucket 所需 all-gather。</span></div><div class="mini-code-row"><code>finish_param_sync()</code><span>完成当前 bucket；当前实现还能推进 <code>next_param_gather_bucket_group</code> 的预取。</span></div><div class="mini-code-row"><code>forward current bucket</code><span>参数已经可用；与此同时下一 bucket 的 AG 尽量在后台推进。</span></div><div class="mini-code-row"><code>next pre-hook</code><span>下一段 forward 真正需要该参数时再等待未完成尾部。</span></div></div>
         <div class="source-note">当前 <code>DistributedDataParallelConfig.param_sync_via_bucket_group</code> 的源码说明明确描述了：forward pre-hook 等当前 gather，同时 dispatch 下一 bucket 的 gather，从而让下一次通信与当前计算重叠。</div>
       </section>
@@ -74,7 +74,7 @@
         <div class="section-no">05 · TP OVERLAP: DEPENDENCY IS CLOSER TO THE GEMM</div>
         <h2>TP 的 AG/RS 紧贴 Linear 数据流，所以经常需要把 collective 与 GEMM 本身做流水。</h2>
         <p>DP bucket reduce 往往可以利用后续 layers 的 backward；TP 的 activation collective 则更贴近当前 Linear 的输入/输出依赖。当前 <code>ModelParallelConfig</code> 仍提供 <code>tp_comm_overlap</code>，并细分 <code>tp_comm_bulk_wgrad</code>、<code>tp_comm_bulk_dgrad</code>、<code>tp_comm_overlap_ag</code>、<code>tp_comm_overlap_rs</code>、<code>tp_comm_overlap_rs_dgrad</code> 等控制。</p>
-        <div class="bucket-pipeline"><div class="bucket-row"><small>ALL-GATHER</small><span class="comm">chunk 0</span><span class="comm">chunk 1</span><span class="comm">chunk 2</span><span class="comm">chunk 3</span><span class="empty">—</span><span class="empty">—</span><span class="empty">—</span></div><div class="bucket-row"><small>GEMM</small><span class="empty">wait</span><span class="compute">chunk 0</span><span class="compute">chunk 1</span><span class="compute">chunk 2</span><span class="compute">chunk 3</span><span class="empty">—</span><span class="empty">—</span></div></div>
+        <div class="bucket-pipeline"><div class="bucket-row"><small>ALL-GATHER</small><span class="comm">chunk 0</span><span class="comm">chunk 1</span><span class="comm">chunk 2</span><span class="comm">chunk 3</span><span class="empty">—</span><span class="empty">—</span><span class="empty">—</span></div><div class="bucket-row"><small>General Matrix Multiply (GEMM，通用矩阵乘法)</small><span class="empty">wait</span><span class="compute">chunk 0</span><span class="compute">chunk 1</span><span class="compute">chunk 2</span><span class="compute">chunk 3</span><span class="empty">—</span><span class="empty">—</span></div></div>
         <p>这张小图只表示 pipelining 思路，不等价于某个固定 kernel timeline。真正的 chunk size、bulk vs pipelined path、Transformer Engine 版本和硬件都会改变执行细节。</p>
         <div class="source-note">当前源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/model_parallel_config.py">core/model_parallel_config.py</a>，<code>tp_comm_overlap</code> 文档仍明确写着尽可能将 Linear execution 与 TP AllGather/ReduceScatter overlap。</div>
       </section>
@@ -82,15 +82,15 @@
       <section class="article-section" id="pp">
         <div class="section-no">06 · PP OVERLAP: MICROBATCHES CREATE INDEPENDENT WORK</div>
         <h2>P2P 能否藏起来，取决于 schedule 是否给同一 rank 留出另一个可执行 microbatch。</h2>
-        <p>Pipeline Parallel 的 send/recv 有直接 stage dependency，但 1F1B / VPP 会制造“别的 microbatch 可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P communication 可与 compute overlap，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制 warmup/flush 阶段。</p>
+        <p>Pipeline Parallel 的 send/recv 有直接 stage dependency，但 One Forward One Backward (1F1B，一前向一反向) / VPP 会制造“别的 microbatch 可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P communication 可与 compute overlap，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制 warmup/flush 阶段。</p>
         <div class="serial-vs-overlap"><div class="timeline-card"><small>DEPENDENCY</small><b>MB0 activation 未到，MB0 下一 stage 不能凭空开始</b><div class="timeline-track"><span class="compute">F MB0</span><span class="comm">send</span><span class="idle">wait</span><span class="idle">—</span><span class="idle">—</span><span class="idle">—</span></div></div><div class="timeline-card good"><small>SCHEDULE WINDOW</small><b>通信 MB0 时，本 rank 可以推进另一独立 microbatch</b><div class="timeline-track"><span class="comm">send MB0</span><span class="compute">F MB1</span><span class="compute">B MB-1</span><span class="comm">recv</span><span class="compute">F MB2</span><span class="compute">B MB0</span></div></div></div>
-        <div class="precision-note"><strong>不要把 PP overlap 简化成一个 flag。</strong>VPP、microbatch 数、warmup/steady/cooldown、P2P API 与模型各 stage 的 compute balance 一起决定实际窗口。</div>
+        <div class="precision-note"><strong>不要把 PP overlap 简化成一个 flag。</strong>VPP、microbatch 数、warmup/steady/cooldown、P2P Application Programming Interface (API，应用程序编程接口) 与模型各 stage 的 compute balance 一起决定实际窗口。</div>
       </section>
 
       <section class="article-section" id="ep">
         <div class="section-no">07 · EP OVERLAP: A2A NEEDS A BATCH-LEVEL WINDOW</div>
         <h2>Expert All-to-All 很重时，Megatron 会主动重排工作，而不是只把 <code>all_to_all</code> 改成 async。</h2>
-        <p>当前 MoE README 把 batch-level A2A overlap 列为正式优化，并给出 <code>--overlap-moe-expert-parallel-comm --delay-wgrad-compute</code>。当前 <code>TransformerConfig</code> 还对这条路径施加明确约束：需要 EP&gt;1、dispatcher 为 <code>alltoall</code> 或 <code>flex</code>、bf16/fp16，并对 full recompute、shared-expert overlap 等组合有限制。</p>
+        <p>当前 Mixture of Experts (MoE，混合专家模型) README 把 batch-level A2A overlap 列为正式优化，并给出 <code>--overlap-moe-expert-parallel-comm --delay-wgrad-compute</code>。当前 <code>TransformerConfig</code> 还对这条路径施加明确约束：需要 EP&gt;1、dispatcher 为 <code>alltoall</code> 或 <code>flex</code>、bf16/fp16，并对 full recompute、shared-expert overlap 等组合有限制。</p>
         <div class="dependency-graph"><div><small>EP COMM</small><b>A2A assignments</b></div><span>overlap with</span><div><small>INDEPENDENT WORK</small><b>other batch / delayed wgrad</b></div><span>then</span><div><small>WAIT</small><b>expert input required</b></div></div>
         <p><code>delay_wgrad_compute</code> 的意义可以从依赖图理解：把本来马上要执行的一部分 weight-gradient compute 延后，给 A2A 留出一段能并发的计算工作。它不是“延后就一定快”，而是人为调整 critical path。</p>
         <div class="source-note">当前 MoE README 的 Communication Bottleneck 表把 EP All-to-All 对应到 <code>--overlap-moe-expert-parallel-comm --delay-wgrad-compute</code>；当前 <code>TransformerConfig</code> 也直接校验这条 overlap path 的 dispatcher、precision 与 recompute 约束。</div>
@@ -99,7 +99,7 @@
       <section class="article-section" id="resources">
         <div class="section-no">08 · ASYNC DOES NOT GUARANTEE CONCURRENCY SPEEDUP</div>
         <h2>NCCL 与 GEMM 同时出现在 timeline 上，也可能互相拖慢。</h2>
-        <div class="stream-grid"><div class="stream-card"><small>COMPUTE</small><b>GEMM / attention kernels</b><span>主要消耗 SM、Tensor Cores、HBM bandwidth 等资源。</span></div><div class="stream-card"><small>COMMUNICATION</small><b>NCCL collective / P2P</b><span>依赖 NVLink/PCIe/NIC 等互连，同时也可能使用 SM、HBM bandwidth 与 GPU-side communication resources；算法和平台不同，资源画像不同。</span></div></div>
+        <div class="stream-grid"><div class="stream-card"><small>COMPUTE</small><b>GEMM / attention kernels</b><span>主要消耗 Streaming Multiprocessor (SM，流式多处理器)、Tensor Cores、High Bandwidth Memory (HBM，高带宽内存) bandwidth 等资源。</span></div><div class="stream-card"><small>COMMUNICATION</small><b>NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) collective / P2P</b><span>依赖 NVLink/Peripheral Component Interconnect Express (PCIe，高速外设组件互连)/Network Interface Card (NIC，网络接口卡) 等互连，同时也可能使用 SM、HBM bandwidth 与 Graphics Processing Unit (GPU，图形处理器)-side communication resources；算法和平台不同，资源画像不同。</span></div></div>
         <div class="resource-conflict"><div class="conflict-row head"><b>情况</b><span>理论上</span><span>实际风险</span></div><div class="conflict-row"><b>大 GEMM + fast fabric</b><span>有较长独立计算窗口</span><span>往往最容易隐藏通信，但仍需 profile。</span></div><div class="conflict-row"><b>memory-heavy compute</b><span>stream 可以并发</span><span>可能和 NCCL 争 HBM/SM，两个任务一起变慢。</span></div><div class="conflict-row"><b>tiny messages</b><span>很多早启动机会</span><span>latency/launch overhead 太高，难以获得带宽。</span></div></div>
       </section>
 
@@ -108,7 +108,7 @@
         <h2>Nsight timeline 最重要的不是“蓝绿块有没有重叠”，而是关键依赖处还有多少 tail。</h2>
         <div class="profile-lane"><div class="profile-row"><small>COMPUTE</small><span class="gemm">GEMM</span><span class="gemm">GEMM</span><span class="gemm">ATTN</span><span class="gemm">GEMM</span><span class="gap">WAIT</span><span class="gemm">GEMM</span><span class="gemm">GEMM</span><span class="gemm">GEMM</span></div><div class="profile-row"><small>COMM</small><span class="gap">—</span><span class="nccl">RS</span><span class="nccl">RS</span><span class="nccl">RS</span><span class="nccl">tail</span><span class="nccl">AG</span><span class="gap">—</span><span class="gap">—</span></div></div>
         <p>实际分析至少要同时看四件事：collective launch 是否足够早；真正 wait 时还剩多少通信；并发之后 GEMM 本身是否变慢；不同 ranks 的 wait 是否对齐，还是存在 PP/MoE load imbalance。</p>
-        <div class="overlap-checklist"><div><small>DEPENDENCY</small><b>窗口是否真实存在</b><span>如果 consumer 紧跟 producer，async 几乎没有地方可藏。</span></div><div><small>RESOURCE CONTENTION</small><b>重叠后单项是否变慢</b><span>不能只看并发面积，要比较 kernel duration。</span></div><div><small>TAIL</small><b>wait 前剩多少</b><span>exposed tail 才直接延长 critical path。</span></div><div><small>TOPOLOGY</small><b>跨了什么链路</b><span>NVLink / PCIe / IB 的带宽与延迟决定通信能否被盖住。</span></div><div><small>IMBALANCE</small><b>谁最后到 barrier</b><span>慢 stage / 热 expert 会让其它 ranks 即使 overlap 良好也得等。</span></div><div><small>CPU LAUNCH</small><b>GPU 是否无工作可跑</b><span>如果主机 launch 本身有大空洞，先解决它。</span></div></div>
+        <div class="overlap-checklist"><div><small>DEPENDENCY</small><b>窗口是否真实存在</b><span>如果 consumer 紧跟 producer，async 几乎没有地方可藏。</span></div><div><small>RESOURCE CONTENTION</small><b>重叠后单项是否变慢</b><span>不能只看并发面积，要比较 kernel duration。</span></div><div><small>TAIL</small><b>wait 前剩多少</b><span>exposed tail 才直接延长 critical path。</span></div><div><small>TOPOLOGY</small><b>跨了什么链路</b><span>NVLink / PCIe / InfiniBand (IB，InfiniBand 高速互连) 的带宽与延迟决定通信能否被盖住。</span></div><div><small>IMBALANCE</small><b>谁最后到 barrier</b><span>慢 stage / 热 expert 会让其它 ranks 即使 overlap 良好也得等。</span></div><div><small>Central Processing Unit (CPU，中央处理器) LAUNCH</small><b>GPU 是否无工作可跑</b><span>如果主机 launch 本身有大空洞，先解决它。</span></div></div>
       </section>
 
       <section class="article-section" id="source">
@@ -128,7 +128,41 @@ if consumer_needs(bucket):
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.8</span></div><h2>如果能从 wait 点倒推依赖，你已经掌握了这节课最核心的方法。</h2><div class="quiz-item"><div class="quiz-q">1. 10 ms 通信后面有 7 ms 完全独立 compute，理想情况下还有多少 exposed communication？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">忽略资源竞争和调度开销时大约 3 ms。10 ms collective 仍完整执行，只是前 7 ms 被独立 compute 覆盖了。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 <code>start_grad_sync()</code> 调得早，不等于 overlap 已经成功？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为还要有足够长的独立 backward compute，而且 async communication 不能把 compute 本身拖慢太多。最终要看 <code>finish_grad_sync()</code> 处是否仍有明显 wait tail。</div></div><div class="quiz-item"><div class="quiz-q">3. Parameter gather 为什么适合“当前桶 compute，下一桶 prefetch”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当前 bucket 的参数已经可用后，它的 forward layers 不依赖下一 bucket 的参数，因此下一 bucket 的 all-gather 可以提前推进；直到 forward 即将进入下一 bucket 时才必须完成。</div></div><div class="quiz-item"><div class="quiz-q">4. 两个 CUDA streams 上确实同时有 GEMM 和 NCCL，为什么 step time 仍可能不降？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为两类 kernels 可能争用 SM/HBM/互连相关资源，使各自 duration 变长；也可能 wait tail、load imbalance 或 CPU launch 才是实际瓶颈。必须比较完整 critical path。</div></div></section>
 
-      <a class="next-lesson" href="../06-llm-inference/autoregressive-generation.html"><div><small>NEXT · 06.1</small><br /><strong>LLM Inference：训练结束以后，生成一个 token 到底发生什么？</strong></div><span>→</span></a>
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
+        <tr><td><code>AG</code></td><td>All-Gather</td><td>全收集</td><td>把各 rank 的 shard 收集成完整结果并让参与者获得。</td></tr>
+        <tr><td><code>RS</code></td><td>Reduce-Scatter</td><td>归约分散</td><td>先做 reduction，再让每个 rank 只保留一个 reduced shard。</td></tr>
+        <tr><td><code>A2A</code></td><td>All-to-All</td><td>全对全通信</td><td>每个 rank 给不同 peers 发送不同数据；MoE dispatch 中很典型。</td></tr>
+        <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+        <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
+        <tr><td><code>SM</code></td><td>Streaming Multiprocessor</td><td>流式多处理器</td><td>NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元。</td></tr>
+        <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+        <tr><td><code>NIC</code></td><td>Network Interface Card</td><td>网络接口卡</td><td>主机连接网络 fabric 的硬件接口。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>IB</code></td><td>InfiniBand</td><td>InfiniBand 高速互连</td><td>HPC/AI 集群常见的低延迟高带宽网络技术。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>LLM</code></td><td>Large Language Model</td><td>大语言模型</td><td>本课程训练与推理系统的主要模型对象。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <a class="next-lesson" href="../06-llm-inference/autoregressive-generation.html"><div><small>NEXT · 06.1</small><br /><strong>Large Language Model (LLM，大语言模型) Inference：训练结束以后，生成一个 token 到底发生什么？</strong></div><span>→</span></a>
     </main>
 
     <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#mental-model">四事件心智模型</a><a href="#dp-grad">DP gradient overlap</a><a href="#bucket">Bucket trade-off</a><a href="#param">Parameter prefetch</a><a href="#tp">TP overlap</a><a href="#pp">PP P2P</a><a href="#ep">EP A2A</a><a href="#resources">资源竞争</a><a href="#profile">Profiler</a><a href="#source">源码方法</a><a href="#checkpoint">Checkpoint</a></aside>

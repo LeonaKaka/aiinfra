@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>07.3 KV Cache Manager · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./vllm.css" />
   <link rel="stylesheet" href="./kv-manager-architecture.css" />
 </head>
@@ -23,7 +23,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>KV Cache Manager</span></div>
       <div class="lesson-kicker"><span>LESSON 07.3 · VLLM</span><span>约 75 min</span></div>
       <h1>KV Cache Manager：逻辑上连续的 sequence，为什么物理显存可以散着放？</h1>
-      <p class="dek">06.3 已经推导过：每个活跃 request 都有不断增长的 KV Cache。真正困难的是在线服务里请求长度未知、到达时间不同、结束时间不同。如果给每个 request 预留一整段最大连续显存，会浪费大量空间。vLLM 的关键思路是把 KV memory 管成一池固定粒度的 blocks，让逻辑 token 序列和物理地址解耦。</p>
+      <p class="dek">06.3 已经推导过：每个活跃 request 都有不断增长的 Key-Value (KV，键-值) Cache。真正困难的是在线服务里请求长度未知、到达时间不同、结束时间不同。如果给每个 request 预留一整段最大连续显存，会浪费大量空间。vLLM 的关键思路是把 KV memory 管成一池固定粒度的 blocks，让逻辑 token 序列和物理地址解耦。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 logical token positions、logical block chain 与 physical KV block IDs。</li><li>理解固定-size block 为什么比“每请求一大段连续 buffer”更适合动态 serving。</li><li>知道 <code>KVCacheManager</code> 与 <code>BlockPool</code> 的职责差异。</li><li>理解 <code>KVCacheBlock</code> 里 block ID、ref count、hash 等元数据为什么存在。</li><li>解释一个 request append 新 token 时，什么时候需要申请新 block。</li><li>知道当前 V1 已支持更复杂的 KV cache groups / hybrid cache，因此“每层永远同一种 block”只是入门模型。</li></ul></div>
 
@@ -89,7 +89,7 @@
         <div class="section-no">06 · ALLOCATING SLOTS FOR NEW TOKENS</div>
         <h2>Scheduler 想推进 tokens，KV manager 要先把“逻辑增长”翻译成“需要几个新 blocks”。</h2>
         <div class="iteration-flow"><div class="iteration-card"><small>1</small><b>known progress</b><span>request 已 computed N tokens。</span></div><div class="iteration-card"><small>2</small><b>schedule M more</b><span>本轮打算再推进 M tokens。</span></div><div class="iteration-card"><small>3</small><b>reuse tail</b><span>最后一个 block 有空 slot 就先继续写。</span></div><div class="iteration-card"><small>4</small><b>allocate</b><span>不够时从 pool 取新的 physical blocks。</span></div><div class="iteration-card"><small>5</small><b>emit block IDs</b><span>SchedulerOutput 把相关 block state 交给 worker。</span></div></div>
-        <p>这一步是 scheduler 和 GPU execution 的重要契约：ModelRunner 不应该自己猜“这个请求的 KV 放哪”。它拿到已经决定好的 block IDs，再把它们写入设备侧 block table / slot mapping。</p>
+        <p>这一步是 scheduler 和 Graphics Processing Unit (GPU，图形处理器) execution 的重要契约：ModelRunner 不应该自己猜“这个请求的 KV 放哪”。它拿到已经决定好的 block IDs，再把它们写入设备侧 block table / slot mapping。</p>
       </section>
 
       <section class="article-section" id="waste">
@@ -114,6 +114,19 @@
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.3</span></div><h2>把 sequence 和 physical memory 分开想。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么一个 request 的逻辑 KV sequence 可以连续，但 physical blocks 不连续？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为系统维护 block IDs / block table，把逻辑块索引映射到任意 physical KV blocks。Attention backend 按映射读取，所以物理地址不必连续。</div></div><div class="quiz-item"><div class="quiz-q">2. KVCacheManager 和 BlockPool 的职责有什么差别？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">KVCacheManager 更面向 request：计算命中/需要多少 blocks、组织 allocation；BlockPool 更面向物理资源：哪些 block 空闲、谁被引用、hash 对应谁、谁可以被回收。</div></div><div class="quiz-item"><div class="quiz-q">3. Paging 是否完全没有内存浪费？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。它显著减少为最大长度预留和外部碎片，但 request 的最后一个 block 可能未填满，形成内部碎片；block size 本身就是 trade-off。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 07.4</small><br/><strong>ModelRunner 与 Paged Attention：这些 block IDs 最后怎样变成 GPU attention？</strong></div><span>→</span></div>
     </main>

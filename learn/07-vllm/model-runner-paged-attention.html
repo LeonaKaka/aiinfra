@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>07.4 ModelRunner 与 Paged Attention · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./vllm.css" />
   <link rel="stylesheet" href="./paged-attention-architecture.css" />
 </head>
@@ -23,15 +23,15 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>ModelRunner / Paged Attention</span></div>
       <div class="lesson-kicker"><span>LESSON 07.4 · VLLM</span><span>约 80 min</span></div>
       <h1>ModelRunner 与 Paged Attention：scheduler 给出的 block IDs，最后怎样变成 GPU attention？</h1>
-      <p class="dek">上一课停在控制层：Request A 的逻辑 blocks 被映射到 physical IDs，例如 <code>[8, 2, 19, 5]</code>。但 GPU attention kernel 不会自己去问 Python 的 KVCacheManager。执行层必须把这些信息整理成设备侧的 batch tensors、block tables、slot mappings 和 attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
+      <p class="dek">上一课停在控制层：Request A 的逻辑 blocks 被映射到 physical IDs，例如 <code>[8, 2, 19, 5]</code>。但 Graphics Processing Unit (GPU，图形处理器) attention kernel 不会自己去问 Python 的 KVCacheManager。执行层必须把这些信息整理成设备侧的 batch tensors、block tables、slot mappings 和 attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 SchedulerOutput 到 GPU execution 之间还需要一次“元数据压缩/搬运”。</li><li>知道 InputBatch/GPUInputBatch、BlockTable/BlockTables、slot mapping 在执行路径里分别解决什么。</li><li>解释 paged KV attention 如何让 attention 读取不连续 physical KV blocks。</li><li>知道“PagedAttention”是核心思想，但当前 vLLM 会根据平台/模型选择不同 attention backends，不能把系统等同于一个固定 kernel。</li><li>理解新 token 的 K/V 怎样写入分配好的 slot，Q 又怎样按 block table 读取历史 KV。</li><li>知道“所有 cache group 都必须用同一套 token-to-KV-slot API”不是稳定事实；不同 cache/state 类型会有不同寻址语义。</li><li>知道当前上游同时存在 V1/V2 GPU ModelRunner 路径，先从 <code>gpu_worker.py</code> 看本配置实际选择哪一个。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 SchedulerOutput 到 GPU execution 之间还需要一次“元数据压缩/搬运”。</li><li>知道 InputBatch/GPUInputBatch、BlockTable/BlockTables、slot mapping 在执行路径里分别解决什么。</li><li>解释 paged Key-Value (KV，键-值) attention 如何让 attention 读取不连续 physical KV blocks。</li><li>知道“PagedAttention”是核心思想，但当前 vLLM 会根据平台/模型选择不同 attention backends，不能把系统等同于一个固定 kernel。</li><li>理解新 token 的 K/V 怎样写入分配好的 slot，Q 又怎样按 block table 读取历史 KV。</li><li>知道“所有 cache group 都必须用同一套 token-to-KV-slot Application Programming Interface (API，应用程序编程接口)”不是稳定事实；不同 cache/state 类型会有不同寻址语义。</li><li>知道当前上游同时存在 V1/V2 GPU ModelRunner 路径，先从 <code>gpu_worker.py</code> 看本配置实际选择哪一个。</li></ul></div>
 
       <section class="article-section" id="contract">
         <div class="section-no">01 · THE EXECUTION CONTRACT</div>
         <h2>SchedulerOutput 是逻辑计划，ModelRunner 要把它翻译成设备可以直接消费的结构。</h2>
         <div class="runner-contract"><div><b>Scheduler 视角</b><span>req A 本轮 1 token，req B 本轮 1 token，req C 继续 prefill 128 tokens；各自对应哪些 KV blocks。</span></div><div><b>GPU 视角</b><span>一批 token IDs / positions / request indices、连续 input buffers、block-table tensors、slot mappings、attention metadata。</span></div></div>
-        <p>这个转换不能每层都临时用 Python list 做一遍，否则 CPU overhead 和 CPU→GPU metadata copy 会变成新的瓶颈。因此 vLLM 会维护可复用的 input buffers、request/batch state 与 block-table buffers。</p>
+        <p>这个转换不能每层都临时用 Python list 做一遍，否则 Central Processing Unit (CPU，中央处理器) overhead 和 CPU→GPU metadata copy 会变成新的瓶颈。因此 vLLM 会维护可复用的 input buffers、request/batch state 与 block-table buffers。</p>
       </section>
 
       <section class="article-section" id="input-batch">
@@ -103,7 +103,7 @@
       <section class="article-section" id="cuda-graphs">
         <div class="section-no">08 · WHY MODELRUNNER ALSO CARES ABOUT SHAPES</div>
         <h2>Serving batch 很动态，但 GPU 喜欢稳定、足够大的工作。</h2>
-        <p>ModelRunner 不只是“调用 model.forward”。它还要处理 padded batch sizes、CUDA Graph capture/replay、attention backend metadata、TP/PP、spec decode 等执行优化。核心矛盾是：<strong>上层 requests 高度动态，底层 GPU kernel 又希望输入 shape 可预测、开销低。</strong></p>
+        <p>ModelRunner 不只是“调用 model.forward”。它还要处理 padded batch sizes、CUDA Graph capture/replay、attention backend metadata、Tensor Parallel (TP，张量并行)/Pipeline Parallel (PP，流水线并行)、spec decode 等执行优化。核心矛盾是：<strong>上层 requests 高度动态，底层 GPU kernel 又希望输入 shape 可预测、开销低。</strong></p>
         <div class="control-plane"><div class="control-card"><small>DYNAMIC FRONT</small><b>每轮 request 数、token 数都变</b><span>continuous batching 带来利用率，但也让 execution shape 变化。</span></div><div class="control-card"><small>STABLE GPU</small><b>graphs / kernels 喜欢规则 shape</b><span>框架会用 padding、capture sizes、backend-specific metadata 等方式把动态性压到可执行范围。</span></div></div>
       </section>
 
@@ -116,6 +116,24 @@
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.4</span></div><h2>能解释“写哪、读哪”，Paged KV 才真正落地。</h2><div class="quiz-item"><div class="quiz-q">1. 对标准 Attention KV，block table 和 slot mapping 分别解决什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Block table 主要告诉 attention 一个 request 的逻辑历史块对应哪些 physical blocks，用于读取历史 KV；slot mapping / addressing metadata 则把本轮 scheduled tokens 映射到具体 KV 写入位置。</div></div><div class="quiz-item"><div class="quiz-q">2. Paged KV 会改变 Attention 数学吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不会。Attention 仍对逻辑上的历史 K/V 做相同计算；改变的是这些 K/V 在 GPU memory 中的存储与寻址方式。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么现在读源码不能只记住 <code>gpu_input_batch.py</code> 和 <code>worker/block_table.py</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为当前上游同时保留 V1/V2 runner。V2 runner 使用 <code>worker/gpu/input_batch.py</code> 与 <code>worker/gpu/block_table.py</code>；旧 V1 runner 仍使用重构前的路径。先看 <code>gpu_worker.py</code> 的 selector，再沿被选中的 runner imports 读。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 07.5</small><br/><strong>Prefix Cache 与 Preemption：block 不只是存 KV，还会被共享、缓存和淘汰。</strong></div><span>→</span></div>
     </main>

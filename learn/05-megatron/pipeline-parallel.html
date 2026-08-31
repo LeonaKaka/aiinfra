@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>05.4 Pipeline Parallel · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./megatron.css" />
   <link rel="stylesheet" href="./pipeline-parallel.css" />
   <link rel="stylesheet" href="./megatron-diagrams.css" />
@@ -34,9 +34,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Pipeline Parallel</span></div>
       <div class="lesson-kicker"><span>LESSON 05.4 · MEGATRON</span><span>约 70 min</span></div>
       <h1>Pipeline Parallel：把 Transformer layers 按深度分到不同 GPU。</h1>
-      <p class="dek">Tensor Parallel 是“一个 layer 内大家一起算”，Pipeline Parallel 则换了一个维度：前几层放在 stage 0，中间几层放 stage 1，后几层继续往后。这样单张 GPU 不再保存整模型深度，但代价是 activation 必须沿 pipeline 向前传，gradient 又要沿 pipeline 向后传。</p>
+      <p class="dek">Tensor Parallel 是“一个 layer 内大家一起算”，Pipeline Parallel 则换了一个维度：前几层放在 stage 0，中间几层放 stage 1，后几层继续往后。这样单张 Graphics Processing Unit (GPU，图形处理器) 不再保存整模型深度，但代价是 activation 必须沿 pipeline 向前传，gradient 又要沿 pipeline 向后传。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 PP 与 TP 的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个 pipeline stages。</li><li>理解 activation forward send 与 gradient backward send 的 P2P 数据流。</li><li>解释为什么不切 microbatch 会产生严重 pipeline bubble。</li><li>理解 1F1B 的 warmup / steady state / cooldown 三个阶段。</li><li>知道 Megatron 的 non-interleaved / interleaved pipeline schedules 对应哪些源码入口。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 Pipeline Parallel (PP，流水线并行) 与 Tensor Parallel (TP，张量并行) 的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个 pipeline stages。</li><li>理解 activation forward send 与 gradient backward send 的 Peer-to-Peer (P2P，点对点通信) 数据流。</li><li>解释为什么不切 microbatch 会产生严重 pipeline bubble。</li><li>理解 One Forward One Backward (1F1B，一前向一反向) 的 warmup / steady state / cooldown 三个阶段。</li><li>知道 Megatron 的 non-interleaved / interleaved pipeline schedules 对应哪些源码入口。</li></ul></div>
 
       <section class="article-section" id="depth">
         <div class="section-no">01 · SPLIT THE MODEL DEPTH</div>
@@ -52,7 +52,7 @@
         <h2>Pipeline 的接口就是 stage 边界那块 activation tensor。</h2>
         <div class="p2p-pair"><div><small>FORWARD</small><b>Stage 0 → Stage 1</b><span>发送 stage 0 的输出 activation</span></div><span>activation →<br/>← dActivation</span><div><small>BACKWARD</small><b>Stage 1 → Stage 0</b><span>把对边界 activation 的 gradient 传回去</span></div></div>
         <p>因此 PP 的核心通信 primitive 更接近 <code>send / recv</code>，而不是 TP 那种 layer-internal collective。Megatron Core 当前的 <code>P2PCommunicator</code> 就专门管理相邻 pipeline stages 的 tensor exchanges。</p>
-        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.pipeline_parallel.p2p_communication</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive pipeline stages 之间 tensor exchange 的通信器。</div>
+        <div class="source-note">官方 Application Programming Interface (API，应用程序编程接口)：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.pipeline_parallel.p2p_communication</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive pipeline stages 之间 tensor exchange 的通信器。</div>
       </section>
 
       <section class="article-section" id="bubble">
@@ -133,6 +133,23 @@
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.4</span></div><h2>确认你能把 pipeline 当成一条真实的数据生产线。</h2><div class="quiz-item"><div class="quiz-q">1. TP 和 PP 最大的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个 layer 内沿 tensor/feature 维分工；PP 沿模型深度分层，把不同 layer ranges 放在不同 stages。它们因此使用不同通信：TP 更依赖 collectives，PP 更依赖 stage 间 P2P。</div></div><div class="quiz-item"><div class="quiz-q">2. microbatch 为什么能减少 pipeline bubble？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">stage 0 处理完 MB0 并发给 stage 1 后，可以立刻继续 MB1；于是不同 stages 同时处理不同 microbatches，避免只有一个 stage 忙而其他 stages 等待。</div></div><div class="quiz-item"><div class="quiz-q">3. 1F1B 的三个阶段是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Warmup 先灌 pipeline；steady state 让各 stage 在依赖允许时尽量交替执行 forward/backward microbatches；cooldown 在 forward 完成后排空剩余 backward。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 05.5</small><br /><strong>Distributed Optimizer：为什么 Data Parallel 还要把 optimizer states 再切一遍？</strong></div><span>→</span></div>
     </main>

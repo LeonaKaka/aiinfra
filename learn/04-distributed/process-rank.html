@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>04.1 进程、rank 与 process group · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./distributed.css" />
   <link rel="stylesheet" href="./distributed-diagrams.css" />
 </head>
@@ -29,17 +29,17 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>Process &amp; Rank</span></div>
       <div class="lesson-kicker"><span>LESSON 04.1 · DISTRIBUTED</span><span>约 50 min</span></div>
       <h1>进程、rank 与 process group：多张 GPU 先怎么“认识彼此”？</h1>
-      <p class="dek">上一模块已经知道：cuda:0 和 cuda:1 是不同设备，数据不会自动共享。现在第一次真正进入分布式。开始时别急着学 all-reduce；先回答更基础的问题：谁在控制 GPU 0？谁在控制 GPU 1？它们如何获得唯一编号？哪些进程属于同一个通信小组？Megatron 后面所有 TP / PP / DP 通信，都建立在这套身份系统上。</p>
+      <p class="dek">上一模块已经知道：cuda:0 和 cuda:1 是不同设备，数据不会自动共享。现在第一次真正进入分布式。开始时别急着学 all-reduce；先回答更基础的问题：谁在控制 Graphics Processing Unit (GPU，图形处理器) 0？谁在控制 GPU 1？它们如何获得唯一编号？哪些进程属于同一个通信小组？Megatron 后面所有 Tensor Parallel (TP，张量并行) / Pipeline Parallel (PP，流水线并行) / Data Parallel (DP，数据并行) 通信，都建立在这套身份系统上。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 process、global rank、world size、local rank。</li><li>理解“常见的一进程一 GPU”是部署模式，而不是分布式数学定义。</li><li>看懂 <code>torchrun --nproc-per-node=...</code> 大致做了什么。</li><li>理解 <code>init_process_group()</code> 为什么需要 peers 先完成发现和初始化。</li><li>解释 process group 为什么是 Megatron 创建 TP / DP / PP 子通信域的基础。</li><li>知道 collective 调用如果不同 rank 对 group/顺序理解不一致，为什么容易 hang。</li></ul></div>
 
       <section class="article-section" id="process">
         <div class="section-no">01 · FIRST: A PROCESS IS A PROGRAM INSTANCE</div>
         <h2>多 GPU 训练里，一个常见模式是启动多个 Python processes，每个 process 绑定一张 GPU。</h2>
-        <p>假设一台机器有 4 张 GPU。常见 PyTorch/NCCL 训练部署会启动 4 个 Python processes：</p>
+        <p>假设一台机器有 4 张 GPU。常见 PyTorch/NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) 训练部署会启动 4 个 Python processes：</p>
         <div class="rank-grid"><div class="rank-card current"><small>PROCESS</small><b>rank 0</b><code>GPU 0</code></div><div class="rank-card"><small>PROCESS</small><b>rank 1</b><code>GPU 1</code></div><div class="rank-card"><small>PROCESS</small><b>rank 2</b><code>GPU 2</code></div><div class="rank-card"><small>PROCESS</small><b>rank 3</b><code>GPU 3</code></div></div>
         <p>每个 process 有自己的 Python interpreter、程序状态、tensor / model 对象。它们不是通过 Python 变量直接读彼此的 GPU memory；要同步 tensor，必须发生显式 distributed communication。</p>
-        <div class="distributed-truths"><div><b>不是共享一份 Python 对象</b><span>rank 0 的 <code>model</code> 和 rank 1 的 <code>model</code> 是各自进程里的对象。</span></div><div><b>通信是显式系统行为</b><span>变量名相同不代表内容会自动同步；需要 collective / P2P 等通信。</span></div></div>
+        <div class="distributed-truths"><div><b>不是共享一份 Python 对象</b><span>rank 0 的 <code>model</code> 和 rank 1 的 <code>model</code> 是各自进程里的对象。</span></div><div><b>通信是显式系统行为</b><span>变量名相同不代表内容会自动同步；需要 collective / Peer-to-Peer (P2P，点对点通信) 等通信。</span></div></div>
       </section>
 
       <section class="article-section" id="rank">
@@ -100,7 +100,7 @@ dist.destroy_process_group()</code></pre></div>
         <div class="section-no">06 · PROCESS ↔ DEVICE</div>
         <h2>为什么经常一进程一 GPU？因为身份和设备映射会变得非常清楚。</h2>
         <div class="process-device"><div><small>PROCESS</small><b>global rank 5 · local rank 1</b></div><span>bind →</span><div><small>DEVICE ON THIS NODE</small><b>cuda:1</b></div></div>
-        <p>“一进程一 GPU”不是 CUDA 的硬限制。一个 process 可以看到多个 GPU，一个 GPU 也可能被多个 processes 使用。但大规模训练里 one-process-per-GPU 是非常常见、容易组合 NCCL 与 DDP/模型并行的部署方式。</p>
+        <p>“一进程一 GPU”不是 CUDA 的硬限制。一个 process 可以看到多个 GPU，一个 GPU 也可能被多个 processes 使用。但大规模训练里 one-process-per-GPU 是非常常见、容易组合 NCCL 与 Distributed Data Parallel (DDP，分布式数据并行)/模型并行的部署方式。</p>
       </section>
 
       <section class="article-section" id="group">
@@ -130,11 +130,31 @@ dist.destroy_process_group()</code></pre></div>
       <section class="article-section" id="bridge">
         <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
         <h2>rank / group 是训练与推理系统共同的底层语言。</h2>
-        <div class="distributed-truths"><div><b>Megatron</b><span>把 global ranks 组织成 tensor-parallel、pipeline-parallel、data-parallel、context/expert-parallel groups；不同 group 执行不同 collectives。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU TP workers、跨进程执行器、P/D 节点同样需要明确 worker 身份、device 映射和通信域。</span></div></div>
+        <div class="distributed-truths"><div><b>Megatron</b><span>把 global ranks 组织成 tensor-parallel、pipeline-parallel、data-parallel、context/expert-parallel groups；不同 group 执行不同 collectives。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU TP workers、跨进程执行器、Prefill/Decode Disaggregation (P/D，Prefill/Decode 分离) 节点同样需要明确 worker 身份、device 映射和通信域。</span></div></div>
         <p>下一课终于可以学真正的“数据怎么交换”：broadcast、all-reduce、all-gather、reduce-scatter、all-to-all。届时每个 collective 都只问三件事：<strong>哪些 ranks 参加？开始时每人有什么 tensor？结束时每人得到什么？</strong></p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.1</span></div><h2>如果 rank 身份还混乱，先别进 collectives。</h2><div class="quiz-item"><div class="quiz-q">1. 两台机器、每台 4 GPU，global rank 6 的 local rank 可能是多少？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在常见每节点 4 processes、连续 global rank 分配的例子里，rank 6 位于第二台机器，对应 local rank 2。关键不是死记 6→2，而是理解 local rank 会在不同节点重复。</div></div><div class="quiz-item"><div class="quiz-q">2. world size=8 是否意味着每个 process 都必须使用 8 张 GPU？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。world size 描述通信 world 中 processes 的数量。常见 one-process-per-GPU 配置里，每个 process 通常只绑定一张 GPU，总共有 8 个 processes。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 Megatron 需要很多 process groups，而不是所有通信都用 global group？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 parallelism 只需要特定 ranks 互相通信。例如 TP ranks 交换 layer 分片结果，DP ranks 同步同一模型分片对应的训练状态。子 group 把通信限制在正确的 ranks 集合。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
+        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 04.2</small><br /><strong>Collectives：all-reduce / all-gather / reduce-scatter 到底各自做什么？</strong></div><span>→</span></div>
     </main>

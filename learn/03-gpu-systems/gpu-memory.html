@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>03.2 显存到底花在哪 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./gpu.css" />
 </head>
 <body class="lesson-body">
@@ -31,9 +31,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>GPU Memory</span></div>
       <div class="lesson-kicker"><span>LESSON 03.2 · GPU SYSTEMS</span><span>约 50 min</span></div>
       <h1>显存到底花在哪：先学会给 GPU 做一张账本。</h1>
-      <p class="dek">“模型 7B，为什么 24GB 显卡还训练不了？”“推理明明不反向传播，为什么上下文一长还是 OOM？”这类问题都不能只看参数量。训练和推理会同时占用多种不同寿命、不同形状的数据。把这些账分清，后面你才看得懂 Megatron 为什么要 shard optimizer、vLLM 为什么如此在意 KV Cache。</p>
+      <p class="dek">“模型 7B，为什么 24GB 显卡还训练不了？”“推理明明不反向传播，为什么上下文一长还是 Out Of Memory (OOM，内存不足/显存不足)？”这类问题都不能只看参数量。训练和推理会同时占用多种不同寿命、不同形状的数据。把这些账分清，后面你才看得懂 Megatron 为什么要 shard optimizer、vLLM 为什么如此在意 Key-Value (KV，键-值) Cache。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 GPU 显存拆成 Parameters、Gradients、Optimizer States、Activations、Temporary/Workspace、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个 tensor 或一份模型权重占多少内存。</li><li>理解“16 bytes / parameter”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释 activation checkpointing、distributed optimizer、GQA 分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated</code> 与 <code>memory_reserved</code>，不再把 <code>nvidia-smi</code> 的数字直接等同于活着的 tensor。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 Graphics Processing Unit (GPU，图形处理器) 显存拆成 Parameters、Gradients、Optimizer States、Activations、Temporary/Workspace、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个 tensor 或一份模型权重占多少内存。</li><li>理解“16 bytes / parameter”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释 activation checkpointing、distributed optimizer、Grouped-Query Attention (GQA，分组查询注意力) 分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated</code> 与 <code>memory_reserved</code>，不再把 <code>nvidia-smi</code> 的数字直接等同于活着的 tensor。</li></ul></div>
 
       <section class="article-section" id="ledger">
         <div class="section-no">01 · THE MEMORY LEDGER</div>
@@ -47,13 +47,13 @@
           <div class="memory-row"><b>Temporary / workspace</b><span>算子、kernel、通信库、编译器运行时等为了执行某一步暂时申请的空间。</span><code>both</code></div>
           <div class="memory-row infer-heavy"><b>KV Cache</b><span>自回归推理为历史 token 保存的 Key / Value。随活跃请求和缓存 token 数增长。</span><code>infer</code></div>
         </div>
-        <p>真正程序里还会有 CUDA context、allocator 管理的缓存、NCCL 等库自己的分配，以及框架特有的数据结构。所以上面是<strong>理解系统的主要账目</strong>，不是说显存里只有这六种对象。</p>
+        <p>真正程序里还会有 CUDA context、allocator 管理的缓存、NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) 等库自己的分配，以及框架特有的数据结构。所以上面是<strong>理解系统的主要账目</strong>，不是说显存里只有这六种对象。</p>
       </section>
 
       <section class="article-section" id="bytes">
         <div class="section-no">02 · THE ONLY FORMULA YOU NEED FIRST</div>
         <h2>一个 tensor 占多少内存，第一步就是：元素数 × 每个元素多少 bytes。</h2>
-        <div class="bytes-card"><small>BASIC MEMORY MATH</small><b>memory = numel × bytes_per_element</b><p>FP32 通常 4 bytes；FP16 / BF16 通常 2 bytes；FP8 / INT8 常可按 1 byte 粗算。实际模型还可能有量化 scale、metadata、padding/alignment 等额外开销。</p></div>
+        <div class="bytes-card"><small>BASIC MEMORY MATH</small><b>memory = numel × bytes_per_element</b><p>32-bit Floating Point (FP32，32 位浮点) 通常 4 bytes；16-bit Floating Point (FP16，16 位浮点) / Brain Floating Point 16 (BF16，BF16 16 位浮点) 通常 2 bytes；8-bit Floating Point (FP8，8 位浮点) / INT8 常可按 1 byte 粗算。实际模型还可能有量化 scale、metadata、padding/alignment 等额外开销。</p></div>
         <p>比如一个 <code>[8, 4096, 4096]</code> 的 BF16 tensor：</p>
         <div class="code-block"><div class="code-head"><span>mental math</span><span>one activation tensor</span></div><pre><code>numel = 8 × 4096 × 4096
       = 134,217,728 elements
@@ -89,14 +89,14 @@ memory = 268,435,456 bytes
         <h2>Adam 为什么显存贵？因为每个参数背后不只存“这个参数自己”。</h2>
         <p>以常见 Adam/AdamW 心智模型为例，优化器会为参数维护一阶动量 <code>m</code> 和二阶动量 <code>v</code>。很多混合精度训练配置会用 FP32 保存这些状态；某些实现还会保留 FP32 master weight。</p>
         <div class="state-stack"><div><small>MODEL WEIGHT</small><b>parameter</b><code>e.g. BF16 · 2B</code></div><div><small>GRADIENT</small><b>grad</b><code>e.g. BF16 · 2B</code></div><div><small>ADAM</small><b>m + v</b><code>often 4B + 4B</code></div><div class="optional"><small>SOME SETUPS</small><b>master weight</b><code>possibly FP32 · 4B</code></div></div>
-        <p>于是你会经常听到“混合精度 Adam 训练大约 16 bytes/parameter”这种说法：2B weight + 2B grad + 8B Adam states + 4B master weight = 16B。<strong>这个数字只适用于某些实现假设。</strong>现代优化器、precision 策略、FSDP/ZeRO/Megatron 分片方式都可能让实际账单不同。</p>
+        <p>于是你会经常听到“混合精度 Adam 训练大约 16 bytes/parameter”这种说法：2B weight + 2B grad + 8B Adam states + 4B master weight = 16B。<strong>这个数字只适用于某些实现假设。</strong>现代优化器、precision 策略、Fully Sharded Data Parallel (FSDP，全分片数据并行)/ZeRO/Megatron 分片方式都可能让实际账单不同。</p>
         <div class="concept-note"><p><strong>真正应该记住的不是 16。</strong>应该记住：optimizer states 很大，而且它们天然适合在 data-parallel ranks 之间分片——这正是后面 Distributed Optimizer / ZeRO 的动机。</p></div>
       </section>
 
       <section class="article-section" id="activations">
         <div class="section-no">06 · ACTIVATIONS</div>
         <h2>Activation 的麻烦在于：它不只和模型大小有关，还和“这次喂多少 token”有关。</h2>
-        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用；推理同样会产生 layer output、attention / MLP 中间结果等 activation，但通常只需短暂存活，不必为 backward 跨阶段保留。batch 越大、sequence 越长、hidden 越宽、layer 越多，训练时需要保存的 activation 总量通常越大。</p>
+        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用；推理同样会产生 layer output、attention / Multi-Layer Perceptron (MLP，多层感知机) 中间结果等 activation，但通常只需短暂存活，不必为 backward 跨阶段保留。batch 越大、sequence 越长、hidden 越宽、layer 越多，训练时需要保存的 activation 总量通常越大。</p>
         <div class="activation-lifetime"><div><small>FORWARD</small><b>produce activations</b></div><span>→ keep some →</span><div><small>BACKWARD</small><b>reuse to compute gradients</b></div><span>→</span><div><small>AFTER USE</small><b>eligible to free/reuse</b></div></div>
         <p>这也解释了 <strong>activation checkpointing</strong> 的基本交易：forward 时少保存一些中间结果，backward 真需要时再重算。你用更多计算，换更低 activation 显存。</p>
         <div class="compare-limits"><div><small>NO CHECKPOINTING</small><b>save more</b><span>显存更高，backward 少重算</span></div><div><small>CHECKPOINTING</small><b>save less, recompute</b><span>显存更低，计算时间通常增加</span></div></div>
@@ -120,8 +120,8 @@ print(torch.cuda.memory_summary())</code></pre></div>
       <section class="article-section" id="inference">
         <div class="section-no">08 · INFERENCE HAS A DIFFERENT BILL</div>
         <h2>推理省掉 gradients 和 optimizer，却多了一个会越聊越大的 KV Cache。</h2>
-        <p>标准 MHA/GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条序列</strong>：</p>
-        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有 block、alignment、metadata 等开销；MLA 等架构的缓存形式也不同。</p></div>
+        <p>标准 Multi-Head Attention (MHA，多头注意力)/GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条序列</strong>：</p>
+        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有 block、alignment、metadata 等开销；Multi-head Latent Attention (MLA，多头潜在注意力) 等架构的缓存形式也不同。</p></div>
         <p>做一个纯教学例子：32 层、4096 个 cached tokens、head_dim=128、BF16。</p>
         <div class="kv-compare"><div><small>MHA · 32 KV HEADS</small><b>≈ 2.0 GiB</b><span>2 × 32 × 4096 × 32 × 128 × 2 bytes</span></div><div><small>GQA · 8 KV HEADS</small><b>≈ 0.5 GiB</b><span>其它条件不变，只把 KV heads 从 32 降到 8。</span></div></div>
         <p>这就是上一模块讲 GQA 时那个“KV heads 少了，推理会更省”的具体显存账。服务系统同时跑很多 request 时，每个 request 都在占一段 KV，KV Cache 很容易从“附属开销”变成<strong>决定并发量的主资源</strong>。</p>
@@ -137,11 +137,39 @@ print(torch.cuda.memory_summary())</code></pre></div>
       <section class="article-section" id="bridge">
         <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
         <h2>现在你已经能看懂两条路线为什么会选择完全不同的省显存技术。</h2>
-        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard model states</b><span>TP 切参数/GEMM；Sequence/Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer states / gradients / parameters 的不同阶段。</span></div><div><small>vLLM · INFERENCE</small><b>manage KV as a first-class resource</b><span>Paged KV blocks、continuous batching、prefix reuse、KV transfer 都围绕“有限 HBM 怎样服务更多 token / request”。</span></div></div>
+        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard model states</b><span>Tensor Parallel (TP，张量并行) 切参数/General Matrix Multiply (GEMM，通用矩阵乘法)；Sequence/Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer states / gradients / parameters 的不同阶段。</span></div><div><small>vLLM · INFERENCE</small><b>manage KV as a first-class resource</b><span>Paged KV blocks、continuous batching、prefix reuse、KV transfer 都围绕“有限 High Bandwidth Memory (HBM，高带宽内存) 怎样服务更多 token / request”。</span></div></div>
         <div class="concept-note"><p><strong>后面读源码时始终问：</strong>这个优化到底是在减少 Parameters、Gradients、Optimizer States、Activations、KV Cache，还是只是在改变它们“放在哪里”？</p></div>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.2</span></div><h2>能把显存账算明白，再进性能瓶颈。</h2><div class="quiz-item"><div class="quiz-q">1. 7B BF16 模型权重大约 14GB，为什么不能因此断言“24GB 显卡一定能训练 7B”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">14GB 只是权重粗估。训练还要支付 gradients、optimizer states、activations、workspace/allocator 等显存；峰值通常远高于纯权重。</div></div><div class="quiz-item"><div class="quiz-q">2. activation checkpointing 和 distributed optimizer 分别主要在省哪类账？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">activation checkpointing 主要减少保存的 activations，用重计算换显存；distributed optimizer/ZeRO 类方法主要通过跨 data-parallel ranks 分片 optimizer states，并可进一步分片 gradients/parameters，减少每张卡重复保存的 model states。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 GQA 会直接影响 vLLM 的并发能力？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">标准 KV Cache 的大小与 n_kv_heads 近似成正比。KV heads 更少，每个 request 的 KV 占用更低，同样 HBM 往往能容纳更多缓存 token / 活跃请求。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>OOM</code></td><td>Out Of Memory</td><td>内存不足/显存不足</td><td>所需内存超过可用容量时的失败状态。</td></tr>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>FP32</code></td><td>32-bit Floating Point</td><td>32 位浮点</td><td>常见高精度浮点格式，元素通常占 4 bytes。</td></tr>
+        <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
+        <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>FP8</code></td><td>8-bit Floating Point</td><td>8 位浮点</td><td>更低精度的浮点表示，需要硬件与数值策略共同支持。</td></tr>
+        <tr><td><code>FSDP</code></td><td>Fully Sharded Data Parallel</td><td>全分片数据并行</td><td>在数据并行域进一步分片参数、梯度或优化器状态的训练方式。</td></tr>
+        <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
+        <tr><td><code>MHA</code></td><td>Multi-Head Attention</td><td>多头注意力</td><td>让多个 attention head 在不同子空间并行计算。</td></tr>
+        <tr><td><code>MLA</code></td><td>Multi-head Latent Attention</td><td>多头潜在注意力</td><td>通过潜在表示压缩注意力状态的模型结构；会影响 KV 表示与兼容性。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <a class="next-lesson" href="./gpu-bottlenecks.html"><div><small>NEXT · 03.3</small><br /><strong>Compute-bound、Memory-bound、Communication-bound：GPU 到底在等什么？</strong></div><span>→</span></a>
     </main>

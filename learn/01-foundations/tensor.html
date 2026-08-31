@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>01.1 Tensor 到底是什么？ · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -56,7 +56,7 @@
 
       <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约 25 min</span></div>
       <h1>Tensor 到底是什么？</h1>
-      <p class="dek">先别急着记 PyTorch API。AI Infra 里最先要学会的，其实是一种“看形状”的能力：数据现在是什么 shape、下一步会变成什么 shape、它占多少内存、如果把它切到多张 GPU 上该怎么切。</p>
+      <p class="dek">先别急着记 PyTorch Application Programming Interface (API，应用程序编程接口)。Artificial Intelligence (AI，人工智能) Infra 里最先要学会的，其实是一种“看形状”的能力：数据现在是什么 shape、下一步会变成什么 shape、它占多少内存、如果把它切到多张 Graphics Processing Unit (GPU，图形处理器) 上该怎么切。</p>
 
       <div class="learning-goals">
         <strong>这节课结束时，你应该能做到：</strong>
@@ -135,8 +135,8 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
         <p>现在你第一次看到了我们刚才说的三个系统属性：</p>
         <div class="why-grid">
           <div class="why-card"><b>shape</b><p>有多少个元素、每个维度多长。它决定了后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
-          <div class="why-card"><b>dtype</b><p>每个数字用 FP32、FP16、BF16 还是别的格式存。它直接影响显存和计算性能。</p></div>
-          <div class="why-card"><b>device</b><p>这块数据现在在 CPU、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
+          <div class="why-card"><b>dtype</b><p>每个数字用 32-bit Floating Point (FP32，32 位浮点)、16-bit Floating Point (FP16，16 位浮点)、Brain Floating Point 16 (BF16，BF16 16 位浮点) 还是别的格式存。它直接影响显存和计算性能。</p></div>
+          <div class="why-card"><b>device</b><p>这块数据现在在 Central Processing Unit (CPU，中央处理器)、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
         </div>
       </section>
 
@@ -192,6 +192,24 @@ Y = X @ W
           <button class="quiz-toggle" type="button">看答案</button>
           <div class="quiz-a">因为跨 GPU 使用数据往往意味着通信或拷贝。AI Infra 的大量性能问题，就是在研究哪些数据必须移动、移动多少、什么时候移动。</div>
         </div>
+      </section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>FP32</code></td><td>32-bit Floating Point</td><td>32 位浮点</td><td>常见高精度浮点格式，元素通常占 4 bytes。</td></tr>
+        <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
+        <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+          </tbody>
+        </table></div>
       </section>
 
       <a class="next-lesson" href="./linear.html">

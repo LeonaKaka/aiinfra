@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>01.4 autograd 与 optimizer · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -62,11 +62,24 @@ optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一
 
       <section class="article-section" id="memory"><div class="section-no">06 · MEMORY LEDGER</div><h2>从这一刻开始，学会给训练显存记账。</h2><p>一个非常粗略但重要的心智模型：</p><div class="cost-panel"><div><small>MODEL STATES</small><b>parameters：模型权重本身</b></div><div><small>BACKWARD STATES</small><b>gradients：参数对应的梯度</b></div><div><small>OPTIMIZER STATES</small><b>例如 Adam 的 m / v，以及某些混合精度方案里的额外高精度副本</b></div><div><small>ACTIVATIONS</small><b>forward 为 backward 保留的中间结果，大小强烈依赖 batch / sequence / model shape</b></div></div><p>这四类东西后面会反复被各种 Infra 技术“拆、丢、重算、分片”：activation checkpointing 在处理 activation；Data Parallel 会涉及 gradient sync；ZeRO / Distributed Optimizer 会处理 model/optimizer states 的重复存储。</p></section>
 
-      <section class="article-section" id="shard"><div class="section-no">07 · WHY SHARD OPTIMIZER STATES</div><h2>如果每张 GPU 都存一整份 Adam 状态，重复会非常贵。</h2><p>先做最朴素的 Data Parallel 思想实验：4 张 GPU 都拥有完整模型副本。</p><div class="split-preview"><div class="split-original"><small>EACH GPU · NAIVE DP</small><code>full params + full optimizer states</code></div><span>lots of replicas</span><div class="split-gpus"><div><small>GPU 0 / 1</small><code>same state copies</code></div><div><small>GPU 2 / 3</small><code>same state copies</code></div></div></div><p>如果 optimizer state 很大，这种复制非常浪费显存。于是很自然会问：</p><div class="shape-rule"><code>Can we shard</code><span>→</span><code>optimizer states</code><span>across</span><code>DP ranks?</code></div><p>答案就是后面会遇到的 ZeRO 思想与 Megatron Distributed Optimizer 的核心方向之一。现在不用学实现，只要知道它解决的根本矛盾：<strong>多卡训练需要协作，但不代表每张卡都应该重复保存全部训练状态。</strong></p></section>
+      <section class="article-section" id="shard"><div class="section-no">07 · WHY SHARD OPTIMIZER STATES</div><h2>如果每张 GPU 都存一整份 Adam 状态，重复会非常贵。</h2><p>先做最朴素的 Data Parallel 思想实验：4 张 Graphics Processing Unit (GPU，图形处理器) 都拥有完整模型副本。</p><div class="split-preview"><div class="split-original"><small>EACH GPU · NAIVE Data Parallel (DP，数据并行)</small><code>full params + full optimizer states</code></div><span>lots of replicas</span><div class="split-gpus"><div><small>GPU 0 / 1</small><code>same state copies</code></div><div><small>GPU 2 / 3</small><code>same state copies</code></div></div></div><p>如果 optimizer state 很大，这种复制非常浪费显存。于是很自然会问：</p><div class="shape-rule"><code>Can we shard</code><span>→</span><code>optimizer states</code><span>across</span><code>DP ranks?</code></div><p>答案就是后面会遇到的 ZeRO 思想与 Megatron Distributed Optimizer 的核心方向之一。现在不用学实现，只要知道它解决的根本矛盾：<strong>多卡训练需要协作，但不代表每张卡都应该重复保存全部训练状态。</strong></p></section>
 
       <section class="article-section" id="bridge"><div class="section-no">08 · FOUNDATION COMPLETE</div><h2>到这里，第一层地基已经接上 AI Infra。</h2><p>四节 Foundations 串起来是这样的：</p><div class="shape-flow"><div><small>01.1</small><code>Tensor / shape</code></div><span>→</span><div><small>01.2</small><code>Linear / GEMM</code></div><span>→</span><div><small>01.3–01.4</small><code>training states</code></div></div><p>下一模块进入 Transformer。到那里我们不会把 Attention 当成一张公式图，而是继续沿着现在的视角追踪：Q/K/V 是哪些 Linear 产生的？每一步 shape 怎么变？训练和推理分别要保存什么？这些东西以后又为什么需要被切到多张 GPU。</p></section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>FOUNDATIONS</span></div><h2>过这一关，再进入 Transformer。</h2><div class="quiz-item"><div class="quiz-q">1. <code>loss.backward()</code> 之后，gradient 通常存在哪里？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">对需要梯度的 leaf parameters 来说，梯度会累积在参数的 <code>.grad</code> tensor 中。它通常与对应参数具有相同 shape。</div></div><div class="quiz-item"><div class="quiz-q">2. Adam 为什么会比只保存模型参数多占很多状态内存？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为它通常为每个参数维护额外的一阶、二阶统计状态（常称 m、v）；实际混合精度实现还可能存在额外高精度参数副本，因此精确占用依实现而异。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 Distributed Optimizer / ZeRO 类思路对大模型重要？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为普通 Data Parallel 如果让每张 GPU 都重复保存完整的参数/梯度/optimizer states，会浪费大量显存。把其中一些状态按 DP ranks 分片，可以显著减少每卡重复存储。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 02.1</small><br /><strong>Attention 数据流：Q、K、V 到底从哪里来？</strong></div><span>→</span></div>
     </main>

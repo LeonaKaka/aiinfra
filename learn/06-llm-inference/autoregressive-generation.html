@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>06.1 自回归生成 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./inference.css" />
 </head>
 <body class="lesson-body">
@@ -31,14 +31,14 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">LLM Inference</a><span>/</span><span>Autoregressive Generation</span></div>
       <div class="lesson-kicker"><span>LESSON 06.1 · INFERENCE</span><span>约 50 min</span></div>
       <h1>自回归生成：为什么“下一个 token”会把整个 serving 系统变成状态机？</h1>
-      <p class="dek">训练时我们常把很多已知 tokens 一次送进模型；在线生成则有一个新的硬约束：未来 token 还不存在。模型只能根据已经确认的前缀产生下一个 token 的分数，解码策略选出一个 token，把它加入前缀，然后下一步才有了新的条件。后面的 Prefill / Decode、KV Cache、Scheduler，本质上都在围绕这条状态演化链做系统优化。</p>
+      <p class="dek">训练时我们常把很多已知 tokens 一次送进模型；在线生成则有一个新的硬约束：未来 token 还不存在。模型只能根据已经确认的前缀产生下一个 token 的分数，解码策略选出一个 token，把它加入前缀，然后下一步才有了新的条件。后面的 Prefill / Decode、Key-Value (KV，键-值) Cache、Scheduler，本质上都在围绕这条状态演化链做系统优化。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 baseline decoder-only autoregressive generation 的条件依赖。</li><li>知道 target model 输出 logits；greedy / temperature / top-p 等是 logits 之后的 decoding policy。</li><li>理解为什么普通 target-model decode step 之间存在串行依赖。</li><li>知道 speculative / multi-token 技术能减少昂贵 target-model iterations，但没有删除 target autoregressive distribution。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分 TTFT、ITL、TPOT 与吞吐，并知道 benchmark 定义必须看清。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 baseline decoder-only autoregressive generation 的条件依赖。</li><li>知道 target model 输出 logits；greedy / temperature / top-p 等是 logits 之后的 decoding policy。</li><li>理解为什么普通 target-model decode step 之间存在串行依赖。</li><li>知道 speculative / multi-token 技术能减少昂贵 target-model iterations，但没有删除 target autoregressive distribution。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分 Time To First Token (TTFT，首 Token 延迟)、Inter-Token Latency (ITL，Token 间延迟)、Time Per Output Token (TPOT，每输出 Token 时间) 与吞吐，并知道 benchmark 定义必须看清。</li></ul></div>
 
       <section class="article-section" id="tokens">
         <div class="section-no">01 · TEXT BECOMES TOKENS</div>
         <h2>推理引擎真正调度的不是“句子”，而是一串 token IDs 和它们对应的运行时状态。</h2>
-        <p>假设输入是“AI infra 很重要”。Tokenizer 会先把文本编码成模型词表中的 token IDs。具体 tokenizer 怎么切不是这节重点；系统层先抓住对象：</p>
+        <p>假设输入是“Artificial Intelligence (AI，人工智能) infra 很重要”。Tokenizer 会先把文本编码成模型词表中的 token IDs。具体 tokenizer 怎么切不是这节重点；系统层先抓住对象：</p>
         <div class="token-stream"><span>AI</span><span>infra</span><span>很</span><span>重要</span><i>→</i><span>[id₀]</span><span>[id₁]</span><span>[id₂]</span><span>[id₃]</span></div>
         <p>IDs 经过 embedding 变成 hidden states，再穿过 Transformer。对生成任务而言，真正关键的是：这些 prompt tokens 和之后已经接受的 generated tokens，一起构成当前 <strong>confirmed prefix</strong>。</p>
       </section>
@@ -56,14 +56,14 @@
         <h2>一个 token 被选中以后，它才成为下一步可以依赖的真实状态。</h2>
         <p>用概率语言写，就是第 <code>t</code> 个输出来自 <code>p(y_t | x, y_1, …, y_{t-1})</code>。未来的 <code>y_{t+1}</code> 要以已经确认的 <code>y_t</code> 为条件，所以 baseline target-model steps 之间有数据依赖。</p>
         <div class="inference-core-wrap"><div class="inference-core-meta"><span>AUTOREGRESSIVE GENERATION · DATAFLOW</span><span>confirmed prefix → logits → select → append → repeat</span></div><img class="inference-core-svg" src="./autoregressive-loop.svg" alt="自回归生成架构图：当前已确认前缀进入 decoder-only Transformer，最后位置 hidden state 经过 LM head 得到 vocabulary logits，解码策略选择一个 token，把 token 追加回前缀后才能进入下一普通 target-model step；下方显示 y1 到 y2 到 y3 的串行条件依赖，并注明 speculative decoding 只是减少昂贵 target-model iteration。" /></div>
-        <div class="inference-core-takeaway"><strong>这里的“串行”指逻辑依赖，不等于 GPU 一次只能算一个 request。</strong>单个 request 的下一 token 要等自己的前一个 token 确认；serving engine 可以同时把许多 requests 的当前 step 组成 batch，这正是后面 Continuous Batching 的入口。</div>
+        <div class="inference-core-takeaway"><strong>这里的“串行”指逻辑依赖，不等于 Graphics Processing Unit (GPU，图形处理器) 一次只能算一个 request。</strong>单个 request 的下一 token 要等自己的前一个 token 确认；serving engine 可以同时把许多 requests 的当前 step 组成 batch，这正是后面 Continuous Batching 的入口。</div>
         <div class="precision-note"><strong>Speculative decoding 的精确 caveat：</strong>draft model 可以先猜多个候选，target model 一次验证多个位置，从而减少昂贵 target-model iterations；但最终被接受的 tokens 仍要保持 target model 所定义的 autoregressive distribution。不要把“逻辑依赖”误写成“生成 N 个 token 永远必须有 N 次完整大模型 forward”。</div>
       </section>
 
       <section class="article-section" id="training">
         <div class="section-no">04 · TRAINING AND SERVING EXPOSE DIFFERENT BOTTLENECKS</div>
         <h2>同一个 Transformer，训练时的数据组织和在线生成时的运行时状态完全不同。</h2>
-        <div class="train-infer"><div><small>TRAINING</small><b>已知 token batch → forward + backward</b><span>更关注训练吞吐 / MFU；需要 activation、gradients、optimizer state；通过大 batch / sequence 构造大 GEMM。</span></div><div><small>SERVING</small><b>动态 requests → 状态持续增长</b><span>普通生成没有 training backward/optimizer；更关注 latency、吞吐、KV Cache 容量、排队、scheduler 与请求生命周期。</span></div></div>
+        <div class="train-infer"><div><small>TRAINING</small><b>已知 token batch → forward + backward</b><span>更关注训练吞吐 / MFU；需要 activation、gradients、optimizer state；通过大 batch / sequence 构造大 General Matrix Multiply (GEMM，通用矩阵乘法)。</span></div><div><small>SERVING</small><b>动态 requests → 状态持续增长</b><span>普通生成没有 training backward/optimizer；更关注 latency、吞吐、KV Cache 容量、排队、scheduler 与请求生命周期。</span></div></div>
         <p>所以“训练 kernel 很快”并不能自动推出 serving 很快。serving 还必须解决一个训练里弱很多的问题：<strong>请求在时间上不断到达、不断结束，而且每个请求当前可计算的 token 数不同。</strong></p>
       </section>
 
@@ -92,6 +92,24 @@
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>06.1</span></div><h2>先确认你已经把“模型计算”和“request 状态演化”分开。</h2><div class="quiz-item"><div class="quiz-q">1. Target model 每一步真正输出的是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">输出的是 vocabulary logits（经过 decoding policy 处理后用于选择 token），不是直接输出整句文字。选中的 token ID 才会被追加进 confirmed prefix。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么单个普通 request 的 y₂ 不能在 y₁ 尚未确认时按 baseline 精确计算？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 y₂ 的 target conditional distribution 是 p(y₂ | x, y₁)。y₁ 尚未确认，就缺少它所依赖的条件状态。Speculative decoding 可以猜并批量验证，但不会改变最终 target distribution 的这层条件关系。</div></div><div class="quiz-item"><div class="quiz-q">3. 单 request 有串行依赖，为什么 GPU 仍然可以一次处理很多 decode tokens？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为不同 requests 彼此独立。每个 request 当前只推进自己的下一 step，但 serving scheduler 可以把许多 requests 的“当前 token”合到同一个 GPU batch，这就是 Continuous Batching 的基础。</div></div><div class="quiz-item"><div class="quiz-q">4. ITL 和 TPOT 为什么不能当成同一个名字？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">ITL 是逐相邻 token 的实际时间间隔，天然是一组 samples；TPOT 是生成阶段聚合后的每输出 token 时间指标。它们相关，但统计对象和使用方式不同。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
+        <tr><td><code>ITL</code></td><td>Inter-Token Latency</td><td>Token 间延迟</td><td>流式生成时相邻可见输出 token 之间的时间间隔。</td></tr>
+        <tr><td><code>TPOT</code></td><td>Time Per Output Token</td><td>每输出 Token 时间</td><td>生成阶段按输出 token 聚合后的平均耗时指标。</td></tr>
+        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 06.2</small><br /><strong>Prefill 与 Decode：为什么同一个请求前半段像大 GEMM，后半段却像另一种 workload？</strong></div><span>→</span></div>
     </main>

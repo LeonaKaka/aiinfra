@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>03.3 GPU 到底在等什么 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
-  <link rel="stylesheet" href="../../lesson.css" />
+  <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./gpu.css" />
   <link rel="stylesheet" href="./gpu-performance.css" />
 </head>
@@ -32,15 +32,15 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>Bottlenecks</span></div>
       <div class="lesson-kicker"><span>LESSON 03.3 · GPU SYSTEMS</span><span>约 55 min</span></div>
       <h1>GPU 到底在等什么：Compute、Memory、Communication。</h1>
-      <p class="dek">“GPU 利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做 Infra 时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 launch / CPU 调度开销。优化方向必须跟瓶颈对上。</p>
+      <p class="dek">“Graphics Processing Unit (GPU，图形处理器) 利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做 Infra 时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 launch / Central Processing Unit (CPU，中央处理器) 调度开销。优化方向必须跟瓶颈对上。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释 compute-bound、memory-bound、communication-bound。</li><li>理解 arithmetic intensity 为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信的 bandwidth 与 latency 是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解 communication overlap 的收益上限，并把它连接到 Megatron。</li><li>解释为什么 LLM prefill 和 decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释 compute-bound、memory-bound、communication-bound。</li><li>理解 arithmetic intensity 为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信的 bandwidth 与 latency 是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解 communication overlap 的收益上限，并把它连接到 Megatron。</li><li>解释为什么 Large Language Model (LLM，大语言模型) prefill 和 decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
 
       <section class="article-section" id="triad">
         <div class="section-no">01 · THREE DIFFERENT CEILINGS</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
-        <div class="bottleneck-triad"><div><small>COMPUTE-BOUND</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU 能做多少计算。</span></div><div><small>MEMORY-BOUND</small><b>数据喂不够快</b><span>计算单元有空，但 HBM / cache 的数据搬运速度先到上限。</span></div><div><small>COMMUNICATION-BOUND</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective、P2P 或网络传输。</span></div></div>
-        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：compute-bound 更关注更快的 GEMM、precision 和 kernel；memory-bound 更关注少搬数据、fusion、复用；communication-bound 更关注通信量、拓扑、collective 算法和 overlap。</p>
+        <div class="bottleneck-triad"><div><small>COMPUTE-BOUND</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / Arithmetic Logic Unit (ALU，算术逻辑单元) 能做多少计算。</span></div><div><small>MEMORY-BOUND</small><b>数据喂不够快</b><span>计算单元有空，但 High Bandwidth Memory (HBM，高带宽内存) / cache 的数据搬运速度先到上限。</span></div><div><small>COMMUNICATION-BOUND</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective、Peer-to-Peer (P2P，点对点通信) 或网络传输。</span></div></div>
+        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：compute-bound 更关注更快的 General Matrix Multiply (GEMM，通用矩阵乘法)、precision 和 kernel；memory-bound 更关注少搬数据、fusion、复用；communication-bound 更关注通信量、拓扑、collective 算法和 overlap。</p>
         <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
       </section>
 
@@ -66,8 +66,8 @@
         <div class="section-no">04 · COMPUTE-BOUND</div>
         <h2>Compute-bound 时，你真的在“吃计算单元”。</h2>
         <p>想象一个足够大的 Linear：<code>[M,K] @ [K,N]</code>。如果矩阵尺寸合适、数据复用高、底层库能充分使用 Tensor Cores，kernel 可能更接近 compute-bound。</p>
-        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / SM 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯 compute efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine 等实现质量很重要</span></div></div>
-        <p>这也是为什么 Megatron 会如此关心 TP 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
+        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / Streaming Multiprocessor (SM，流式多处理器) 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯 compute efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine 等实现质量很重要</span></div></div>
+        <p>这也是为什么 Megatron 会如此关心 Tensor Parallel (TP，张量并行) 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
       </section>
 
       <section class="article-section" id="memory">
@@ -91,7 +91,7 @@
         <h2>一旦跨 GPU，就多了一份“必须把数据送到别人那里”的时间。</h2>
         <p>单 GPU 里主要盯 compute 和 memory hierarchy；多 GPU 还要把 GPU↔GPU、node↔node 的通信加进账本。最简单的传输时间直觉：</p>
         <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency + bytes / bandwidth</b><p>小消息时固定启动 latency 更显眼；大消息时有效 bandwidth 更关键。collective 通信还会包含多轮传输、拓扑和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐。</p></div>
-        <div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>Latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>Bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
+        <div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>Latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>Bandwidth matters</b><span>数据量大时，NVLink / Peripheral Component Interconnect Express (PCIe，高速外设组件互连) / InfiniBand / RDMA over Converged Ethernet (RoCE，基于融合以太网的 RDMA) 的有效吞吐决定搬完要多久。</span></div></div>
         <p>后面学 all-reduce / all-gather / reduce-scatter 时，我们会把“需要搬多少 bytes、走几轮、哪些 rank 互相交换”算得更具体。</p>
       </section>
 
@@ -107,7 +107,7 @@
       <section class="article-section" id="prefill-decode">
         <div class="section-no">09 · WHY VLLM CARES ABOUT BATCHING</div>
         <h2>LLM 推理里，Prefill 和 Decode 常常不是同一种性能问题。</h2>
-        <div class="prefill-decode-pressure"><div><small>PREFILL</small><b>很多 token 一起算</b><span>Prompt 一次送进大量 token，大矩阵乘更容易形成高效 GEMM，通常更有机会把 compute 吃起来。</span></div><div><small>DECODE</small><b>每个 request 每步只新增少量 token</b><span>单 request 很难形成足够大的矩阵；模型权重需要反复被读取，常更容易受到 memory bandwidth、batch size、KV 访问等因素限制。</span></div></div>
+        <div class="prefill-decode-pressure"><div><small>PREFILL</small><b>很多 token 一起算</b><span>Prompt 一次送进大量 token，大矩阵乘更容易形成高效 GEMM，通常更有机会把 compute 吃起来。</span></div><div><small>DECODE</small><b>每个 request 每步只新增少量 token</b><span>单 request 很难形成足够大的矩阵；模型权重需要反复被读取，常更容易受到 memory bandwidth、batch size、Key-Value (KV，键-值) 访问等因素限制。</span></div></div>
         <p>这不是“prefill 永远 compute-bound、decode 永远 memory-bound”的绝对定律。batch 大小、模型结构、quantization、hardware、kernel 都会改变瓶颈。但它给了我们一个极其重要的 vLLM 直觉：</p>
         <div class="concept-note"><p><strong>Continuous batching 的价值之一：</strong>把多个 request 的 decode token 聚起来，让一次权重读取服务更多 token，提高 GPU 的有效工作量与数据复用。</p></div>
       </section>
@@ -115,18 +115,46 @@
       <section class="article-section" id="profile">
         <div class="section-no">10 · HOW TO LOOK AT A REAL SYSTEM</div>
         <h2>不要靠猜，用不同 profiler 回答不同层级的问题。</h2>
-        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems</b><span>看 CPU、CUDA kernels、NCCL、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight Compute</b><span>看某个 kernel 的 compute / memory throughput、occupancy、roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler</b><span>把 Python/PyTorch op 和 CUDA activities 对起来，定位模型级热点。</span></div></div>
+        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems</b><span>看 CPU、CUDA kernels、NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库)、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight Compute</b><span>看某个 kernel 的 compute / memory throughput、occupancy、roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler</b><span>把 Python/PyTorch op 和 CUDA activities 对起来，定位模型级热点。</span></div></div>
         <p>真正的性能工作通常是从宏观 timeline 找热点，再下钻到关键 kernel，而不是打开源码随机找“看起来可以优化”的 for-loop。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">11 · THE ROAD AHEAD</div>
         <h2>GPU Systems 到这里结束，下一模块开始研究“通信到底怎么发生”。</h2>
-        <div class="bridge-grid"><div><small>TRAINING · MEGATRON</small><b>compute + communication</b><span>TP/PP/DP 把工作拆开；NCCL collectives 搬数据；overlap 尽量把通信藏起来；parallel size 还会改变 local GEMM efficiency。</span></div><div><small>INFERENCE · vLLM</small><b>memory + scheduling + communication</b><span>continuous batching 提高利用率；Paged KV 管 HBM；P/D disaggregation 与 KV Connector 再引入跨设备/节点数据传输。</span></div></div>
+        <div class="bridge-grid"><div><small>TRAINING · MEGATRON</small><b>compute + communication</b><span>TP/Pipeline Parallel (PP，流水线并行)/Data Parallel (DP，数据并行) 把工作拆开；NCCL collectives 搬数据；overlap 尽量把通信藏起来；parallel size 还会改变 local GEMM efficiency。</span></div><div><small>INFERENCE · vLLM</small><b>memory + scheduling + communication</b><span>continuous batching 提高利用率；Paged KV 管 HBM；Prefill/Decode Disaggregation (P/D，Prefill/Decode 分离) disaggregation 与 KV Connector 再引入跨设备/节点数据传输。</span></div></div>
         <p>因此 04 Distributed 不会从抽象“分布式系统理论”起步，而会直接从你已经遇到的问题开始：<strong>两张 GPU 到底如何知道自己是谁、如何建立通信组、all-reduce 又到底搬了什么？</strong></p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.3</span></div><h2>优化之前，先说出你认为瓶颈在哪。</h2><div class="quiz-item"><div class="quiz-q">1. 一个 kernel 的 Tensor Core 很空闲，但 HBM throughput 已经很高，更应该先怀疑 compute 还是 memory？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更应该先怀疑 memory-bound。计算单元没有吃满，而 memory throughput 接近上限，说明继续增加理论 FLOPs 往往帮助不大，应该优先考虑少搬数据、提高复用或 fusion。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么“60ms compute + 40ms communication”不一定必须等于 100ms？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果依赖关系和资源允许，一部分 communication 可以与仍在进行的 compute 并发。理想 overlap 会把一部分通信时间隐藏在计算时间内，但实际收益会受依赖和资源竞争限制。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 vLLM 会极其在意 continuous batching？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">自回归 decode 对单个 request 每步工作量很小。把多个 request 的 token 聚在一起，可以形成更大的有效 batch，让权重读取服务更多 token、提高 GPU 利用率和吞吐；同时 scheduler 还能及时补入新请求。</div></div></section>
+
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+        <tr><td><code>LLM</code></td><td>Large Language Model</td><td>大语言模型</td><td>本课程训练与推理系统的主要模型对象。</td></tr>
+        <tr><td><code>ALU</code></td><td>Arithmetic Logic Unit</td><td>算术逻辑单元</td><td>执行通用算术与逻辑运算的硬件单元。</td></tr>
+        <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>SM</code></td><td>Streaming Multiprocessor</td><td>流式多处理器</td><td>NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
+        <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+        <tr><td><code>RoCE</code></td><td>RDMA over Converged Ethernet</td><td>基于融合以太网的 RDMA</td><td>在以太网上承载 RDMA 语义的网络技术。</td></tr>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
       <div class="next-lesson muted-next"><div><small>NEXT · 04.1</small><br /><strong>进程、rank 与 process group：多张 GPU 先怎么“认识彼此”？</strong></div><span>→</span></div>
     </main>
