@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Report high-confidence acronym-like terms missing from the lesson registry.
 
-This audit intentionally scans *natural-language teaching prose*, not code/API
-identifiers or diagram labels. It is a discovery guard: findings are reviewed
-before becoming registry entries, because product names and implementation
-symbols should not be given invented expansions.
+Only paragraph/list teaching prose is scanned. Code, headings, diagrams and UI
+labels are deliberately excluded: their identifiers are useful locally but
+should not force glossary entries or invented acronym expansions.
 """
 from __future__ import annotations
 
@@ -18,28 +17,19 @@ from lesson_terms import MAIN_RE, TERM_SECTION_RE, TERMS
 ROOT = Path(__file__).resolve().parents[1]
 LESSONS = ROOT / "learn"
 
-# Names/words that can legitimately appear in prose but are not glossary
-# abbreviations that should be mechanically expanded.
 ALLOW = {
     # Product / project / library names.
     "CUDA", "NVIDIA", "PyTorch", "Megatron", "MCore", "vLLM", "NIXL",
     "NVLink", "NVSwitch", "GPUDirect", "InfiniBand", "Ethernet", "CUTLASS",
     "DeepEP", "HybridEP", "LMCache", "EAGLE", "Adam", "AdamW",
-    # Common method / architecture names whose capitalization is a name, not
-    # necessarily an acronym expansion requirement. These remain reviewable
-    # separately if a lesson needs a local explanation.
+    # Method/architecture names whose capitalization is a name rather than a
+    # reason to invent a mechanical expansion.
     "RMSNorm", "SwiGLU",
-    # Mathematical shape symbols and prose shorthand.
-    "Q", "K", "V", "X", "Y", "H", "N", "S", "B", "W",
-    # Common English/UI words that can be capitalized for emphasis.
-    "AI",  # already in registry; kept for clarity
-    "API", # already in registry; kept for clarity
-    "ID", "IDs", "OK", "VS",
+    # Mathematical symbols / harmless prose shorthand.
+    "Q", "K", "V", "X", "Y", "H", "N", "S", "B", "W", "ID", "IDs", "OK", "VS",
 }
 ALLOW.update(TERMS)
 
-# Common English words that are occasionally written in caps in explanatory
-# prose. Keeping this small is deliberate; the scanner should stay sensitive.
 STOP_WORDS = {
     "AND", "ARE", "AS", "AT", "BE", "BY", "CAN", "DO", "DOES", "FOR",
     "FROM", "HAS", "HAVE", "HOW", "IN", "IS", "IT", "NOT", "OF", "ON",
@@ -47,11 +37,6 @@ STOP_WORDS = {
     "WHILE", "WHO", "WHY", "WITH", "WITHOUT", "YOU",
 }
 
-# High-confidence shapes:
-#   ABI / MPI / MTU / INT8 / MFU / VPP
-#   RoCE / LoRA / GiB / MiB / ZeRO
-#   1F1B
-# Avoid arbitrary long ALL-CAPS labels by capping plain initialisms at 8 chars.
 CANDIDATE_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"[A-Z]{2,8}[0-9]{0,2}"
@@ -60,15 +45,11 @@ CANDIDATE_RE = re.compile(
     r")(?![A-Za-z0-9_])"
 )
 
-# Markup that is useful to learners but should not drive glossary discovery.
-# Code/class/env identifiers and display labels are handled by their local
-# explanation rather than forced into the global abbreviation registry.
+PROSE_RE = re.compile(r"<(?:p|li)\b[^>]*>(.*?)</(?:p|li)>", re.S | re.I)
 NON_PROSE_RE = re.compile(
-    r"<(?:script|style|svg|pre|code|h1|h2|h3|small)\b.*?</(?:script|style|svg|pre|code|h1|h2|h3|small)>",
+    r"<(?:script|style|svg|pre|code)\b.*?</(?:script|style|svg|pre|code)>",
     re.S | re.I,
 )
-
-# Quantities / rank labels / tensor-shape shorthand are not abbreviations.
 QUANTITY_RE = re.compile(r"^(?:\d+(?:GB|MB|KB|B|K|H|D)|GPU\d+|TP\d+|MB\d+)$", re.I)
 
 
@@ -78,9 +59,12 @@ def article_prose(path: Path) -> str:
     if not m:
         return ""
     body = TERM_SECTION_RE.sub(" ", m.group("body"))
-    body = NON_PROSE_RE.sub(" ", body)
-    body = re.sub(r"<[^>]+>", " ", body)
-    return html.unescape(body)
+    chunks = []
+    for match in PROSE_RE.finditer(body):
+        chunk = NON_PROSE_RE.sub(" ", match.group(1))
+        chunk = re.sub(r"<[^>]+>", " ", chunk)
+        chunks.append(html.unescape(chunk))
+    return "\n".join(chunks)
 
 
 def main() -> int:
