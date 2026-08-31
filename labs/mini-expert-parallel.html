@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mini Expert Parallel：确定性 router 把 tokens 通过 all-to-all 发往 expert owners，本地执行 experts，再 reverse all-to-all 恢复原 token 顺序并对齐 reference。" />
+  <title>Lab A11 · Mini Expert Parallel</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../lesson.css" />
+  <link rel="stylesheet" href="./lab.css" />
+</head>
+<body class="lab-body">
+  <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A11</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+
+  <main class="lab-article">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Expert Parallel</span></div>
+    <div class="lab-kicker">LAB A11 · EXPERT PARALLEL</div>
+    <h1>EP 的核心不是“有很多 experts”。<br />而是 token 被 router 分流以后，必须去 expert 真正所在的 rank。</h1>
+    <p class="dek">这个实验用 2 个 EP ranks、4 个 experts。每个原始 rank 都产生自己的 tokens；确定性 router 为每个 token 指定 expert owner。随后 all-to-all 把 token features 发到远端 expert，expert 本地计算，再 reverse all-to-all 把结果送回原来的 token owner。最终输出必须与“不分布式、直接按 expert_id 计算”的 reference 一致。</p>
+
+    <section class="lab-section" id="dispatch"><div class="lab-kicker">01 · ROUTE THEN DISPATCH</div><h2>router 决定“该去哪个 expert”，EP communication 负责“真的把 token 搬过去”。</h2>
+      <div class="command"><div class="command-head"><span>EXPERT OWNERSHIP</span><span>EP=2 · 4 experts</span></div><pre>Rank 0 owns Expert 0, Expert 1
+Rank 1 owns Expert 2, Expert 3
+
+source tokens
+   │
+   ├─ router: token -> expert_id -> owner rank
+   │
+   └─ all-to-all dispatch -> local expert compute
+                          -> reverse all-to-all -> source token order</pre></div>
+      <p>这就是为什么 “Expert Parallel = All-to-All” 仍然是不完整的说法：EP 是 expert ownership / routing 的并行策略；all-to-all 是一种常见 dispatcher communication mechanism。</p>
+    </section>
+
+    <section class="lab-section" id="balanced"><div class="lab-kicker">02 · TEACHING SIMPLIFICATION</div><h2>为了只看通信生命周期，这里故意把 routing 做成完全均衡。</h2>
+      <div class="stage-flow"><div class="stage-card train"><small>ROUTER</small><b>expert_id = token_id mod 4</b><span>每个 source rank 恰好有一半 tokens 去 rank 0 experts、一半去 rank 1 experts。</span></div><div class="stage-card comm"><small>ALL-TO-ALL</small><b>fixed equal splits</b><span>不引入 variable split size，先让 dispatch / combine 的数据对应关系清楚。</span></div><div class="stage-card train"><small>EXPERT COMPUTE</small><b>different deterministic function per expert</b><span>不同 expert 得到不同结果，所以错误路由无法悄悄通过 reference check。</span></div></div>
+      <p>真实 MoE 还要面对 routing weights、top-k、capacity、token dropping / padding、load balancing、permutation、TP 与 expert-TP 等问题。这个 Lab 明确不模拟这些复杂度。</p>
+    </section>
+
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>验收同时检查数值和 token identity：算对但还错 token，也算失败。</h2>
+      <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
+  labs/code/mini_expert_parallel.py</pre></div>
+      <p>reverse all-to-all 后会根据 token id 恢复原始顺序，再与本地 reference 对齐。这对应真实 dispatcher 中很关键的 unpermute/combine 语义。</p>
+      <a class="code-link" href="./code/mini_expert_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_expert_parallel.py</b></div><span>→</span></a>
+    </section>
+
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>回到 05.7 时，把 dispatcher 生命周期按四段读。</h2>
+      <div class="source-bridge"><div><small>OUR LAB</small><b>route → dispatch → expert → combine</b><code>pack · all-to-all · expert_fn · reverse all-to-all · restore order</code></div><span>maps to →</span><div><small>MEGATRON</small><b>transformer/moe/token_dispatcher.py</b><code>dispatch preprocess / communication / postprocess → expert compute → combine</code></div></div>
+      <p>当前 Megatron 支持的不止 all-to-all dispatcher；课程里应该记住 lifecycle 和 ownership，而不是把某一个 backend 当作 EP 的定义。</p>
+    </section>
+
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>这三问能答清，MoE dispatcher 就不再像黑盒。</h2><div class="check-list"><div>① router 已经给出 expert_id 后，为什么还需要 token dispatch？</div><div>② 为什么 reverse all-to-all 后还要恢复 token 原顺序？</div><div>③ 如果 routing 严重不均衡，这个 Lab 里哪个“方便条件”会首先失效？</div></div></section>
+
+    <nav class="lab-footer-nav"><a href="./mini-context-parallel.html">← Lab A10 · Context Parallel</a><a href="./index.html">返回 Labs 总览 →</a></nav>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
