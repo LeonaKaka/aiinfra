@@ -41,7 +41,7 @@ def async_reduce_scatter_avg(full_grad: torch.Tensor, world_size: int):
     if flat.numel() % world_size != 0:
         raise ValueError("bucket size must be divisible by WORLD_SIZE")
     out = torch.empty(flat.numel() // world_size, device=flat.device, dtype=flat.dtype)
-    work = dist.reduce_scatter_tensor(
+    work = dist.reduce_scatter_single(
         out, flat, op=dist.ReduceOp.SUM, async_op=True
     )
     return out, work
