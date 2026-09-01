@@ -117,8 +117,8 @@
         <div class="source-row">
           <span class="order">01</span>
           <div><em class="phase-label">CONTROL · REQUEST</em><b>Engine core</b><code>vllm/v1/engine/core.py</code></div>
-          <p>先看一个 engine step 怎样变成 schedule → execute model → update output。它给你 request 生命周期的主干，后面的 KV Connector 都是挂在这条主干上的。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">源码 ↗</a><a href="../learn/07-vllm/architecture.html">07.1 →</a></div>
+          <p>先看一个 engine step 怎样变成 schedule → execute model → update output。它给你 request 生命周期的主干，后面的 KV Connector 都是挂在这条主干上的。若已经跑过 B8，就把 toy engine 里的 request state / token budget / remote KV / completion 逐项在这里找真实落点。</p>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">源码 ↗</a><a href="../learn/07-vllm/architecture.html">07.1 →</a><a href="../labs/mini-inference-engine.html">B8 end-to-end →</a></div>
         </div>
         <div class="source-row">
           <span class="order">02</span>

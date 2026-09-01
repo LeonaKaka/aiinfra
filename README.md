@@ -73,10 +73,10 @@ vLLM / NIXL 主线：
 
 最近一次系统复查（2026-09-01）对照：
 
-- vLLM `main`: `f9c7c6e0909eadc23f1aa2510a233f91692ed437`
+- vLLM `main`: `ce2e343be1f757a92b3c990023f87bdd87a579ac`
 - NVIDIA/Megatron-LM `main`: `1cb3264479f28b8526db3d335faa9c5ef2183989`
 
-这轮继续复核了 vLLM GPU runner selector / V1-V2 runner 分流、Scheduler、KV Connector / NIXL lifecycle，以及 Megatron 的顶层 GPT pretraining execution spine、Expert Parallel dispatcher、Distributed Optimizer、Context Parallel 与 communication-overlap 生命周期。相对上一快照，vLLM 又前进了 5 个提交：大部分集中在测试与 ROCm MLA，但其中 KV cache coordinator / prefix-cache tests 已明确覆盖 hybrid full-attention + Mamba `align` 的 fine-grained partial prefix-cache hits，因此 07.5 已补上“完整 hash block 是基础心智模型、不是所有当前路径的全局不变量”这一例外；这些提交未改变本课程的 continuous-batching / KV budget 主契约。Megatron `main` 已前进到 `1cb3264479f28b8526db3d335faa9c5ef2183989`；最新提交把 sequence-packing scheduler 接入 training loop，并把 variable-length dataset 路径接进 GPT pretraining。这个变化直接触及“入口 → batch/data schedule → train step”的阅读主线，因此 Source Map 新增了 `pretrain_gpt.py → megatron/training/training.py → get_forward_backward_func()` 的 execution spine，而不是把训练系统只拆成 TP/PP/CP/EP 零件。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
+这轮继续复核了 vLLM GPU runner selector / V1-V2 runner 分流、Scheduler、KV Connector / NIXL lifecycle，以及 Megatron 的顶层 GPT pretraining execution spine、Expert Parallel dispatcher、Distributed Optimizer、Context Parallel 与 communication-overlap 生命周期。相对上一记录快照 `f9c7c6e`，vLLM `main` 又前进了 29 个提交到 `ce2e343`：改动主要落在 ROCm / kernels / runner internals / tests；V1 与 V2 model runner 文件本身有演化，但本课程 Source Map 使用的 Engine core、Scheduler、KV cache manager、KV Connector 与 NIXL 主路径在这 29 个提交中没有发生文件级变更。因此现有 request lifecycle / KV budget / Connector 契约仍成立，只更新审计快照并继续把具体 runner 文件名视作版本敏感入口。Megatron `main` 已前进到 `1cb3264479f28b8526db3d335faa9c5ef2183989`；最新提交把 sequence-packing scheduler 接入 training loop，并把 variable-length dataset 路径接进 GPT pretraining。这个变化直接触及“入口 → batch/data schedule → train step”的阅读主线，因此 Source Map 新增了 `pretrain_gpt.py → megatron/training/training.py → get_forward_backward_func()` 的 execution spine，而不是把训练系统只拆成 TP/PP/CP/EP 零件。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
 
 ## Reading tools
 
