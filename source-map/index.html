@@ -42,9 +42,15 @@
     <section class="track" id="megatron">
       <div class="track-head">
         <div><small>TRACK A · TRAINING INFRA</small><h2>Megatron Core：从矩阵切分读到并行系统。</h2></div>
-        <p>推荐顺序是 TP 的“切分与通信语义” → rank/group 拓扑 → PP 时序 → optimizer sharding → bucket/overlap。不要先从庞大的配置类或 feature flag 开始。</p>
+        <p>先用 5 分钟扫一遍 <strong>entry → training loop → schedule → optimizer step</strong> 的执行骨架，知道“谁调用谁”；再下钻 TP 的切分与通信语义 → rank/group 拓扑 → PP/CP/EP → optimizer sharding → bucket/overlap。这样读到任何局部 class 时，都知道它在一次 training step 的什么位置。</p>
       </div>
       <div class="source-list train-source">
+        <div class="source-row">
+          <span class="order">00</span>
+          <div><em class="phase-label">CONTROL · EXECUTION SPINE</em><b>GPT entry → training step → schedule</b><code>pretrain_gpt.py → megatron/training/training.py → core/pipeline_parallel/schedules.py</code></div>
+          <p>先别追 tensor。第一遍只追调用关系：<code>pretrain_gpt.py</code> 组装 config、dataset provider 与 <code>forward_step</code> 后进入 <code>pretrain()</code>；训练循环的 <code>train_step()</code> 再把当前 model / iterator 交给 <code>get_forward_backward_func()</code> 选出的 schedule，完成 forward/backward 后才进入 optimizer 更新。当前 <code>main</code> 还把 sequence-packing scheduler 接进了这条顶层路径，因此这里比只看某个并行层更适合作为源码第一站。</p>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/pretrain_gpt.py">entry ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/training/training.py">training loop ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py">schedule selector ↗</a><a href="../labs/mini-training-system.html">A12 →</a></div>
+        </div>
         <div class="source-row">
           <span class="order">01</span>
           <div><em class="phase-label">DATA · TP</em><b>Tensor Parallel layers</b><code>megatron/core/tensor_parallel/layers.py</code></div>
