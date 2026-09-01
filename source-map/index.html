@@ -83,9 +83,9 @@
         </div>
         <div class="source-row">
           <span class="order">CP</span>
-          <div><em class="phase-label">DATA · CONTEXT</em><b>Context Parallel attention</b><code>megatron/core/transformer/attention.py · parallel_state.py</code></div>
-          <p>带着“local Q 留在哪里、remote context/KV 为什么要来、global position 如何保持”去读。先掌握 05.6 的语义，再看当前具体 partition / communication strategy。</p>
-          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py">attention ↗</a><a href="../learn/05-megatron/context-parallel.html">05.6 →</a><a href="../labs/mini-context-parallel.html">A10 →</a></div>
+          <div><em class="phase-label">DATA · CONTEXT</em><b>Context Parallel attention</b><code>megatron/core/transformer/attention.py → core/extensions/transformer_engine.py</code></div>
+          <p>先在 <code>attention.py</code> 看 <code>cp_comm_type</code> 与 CP process group 怎样传给 core attention；再到 Transformer Engine 的 <code>TEDotProductAttention</code> 看 CP group / communication mode 怎样交给后端执行。A10 的 ring P2P 只对应当前 <code>cp_comm_type="p2p"</code> 这一种模式；当前还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，因此不要把 ring 当成 CP 定义本身。</p>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py">attention ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/extensions/transformer_engine.py">TE backend ↗</a><a href="../learn/05-megatron/context-parallel.html">05.6 →</a><a href="../labs/mini-context-parallel.html">A10 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">EP</span>
