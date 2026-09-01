@@ -30,8 +30,6 @@ jobs:
 
           replace_once('scripts/run_lab_smoke.py', '    ("A11 Mini Expert Parallel", 2, "labs/code/mini_expert_parallel.py", ()),\n    ("B1 Mini KV Handoff", 2, "labs/code/mini_kv_handoff.py", ()),', '    ("A11 Mini Expert Parallel", 2, "labs/code/mini_expert_parallel.py", ()),\n    ("A12 Mini Training System", 4, "labs/code/mini_training_system.py", ()),\n    ("B1 Mini KV Handoff", 2, "labs/code/mini_kv_handoff.py", ()),')
           replace_once('scripts/run_lab_smoke.py', '    ("B7 KV Lease / Expiry", 2, "labs/code/mini_kv_lease_expiry.py", ()),\n)', '    ("B7 KV Lease / Expiry", 2, "labs/code/mini_kv_lease_expiry.py", ()),\n    ("B8 Mini Inference Engine", 2, "labs/code/mini_inference_engine.py", ()),\n)')
-          replace_once('.github/workflows/lab-smoke.yml', 'All 18 runnable reference labs', 'All 20 runnable reference labs')
-          replace_once('.github/workflows/lab-smoke.yml', 'Run all 18 CPU/Gloo labs', 'Run all 20 CPU/Gloo labs')
 
           replace_once('labs/index.html', 'Training 线从 TP forward/backward 走到 DP、Distributed Optimizer、bucketed overlap、TP×DP、SP、PP、CP、EP 与 profiler 证据层；Inference 线从 KV handoff 走到 block table、nonblocking transfer、layer-wise streaming、handshake/lifetime 与 registered-region descriptor。每一步都先做 correctness reference，再谈性能。', 'Training 线从 TP forward/backward 走到 DP、Distributed Optimizer、bucketed overlap、TP×DP、SP、PP、CP、EP，最后用 A12 把它们串成一个 training step；Inference 线从 KV handoff 走到 block table、nonblocking transfer、layer-wise streaming、handshake/lifetime 与 registered-region descriptor，最后用 B8 把 request scheduling、block state、remote KV 与 completion 串成一个最小 inference engine。每一步都先做 correctness reference，再谈性能。')
           replace_once('labs/index.html', '<b>Runnable labs</b><span>18 experiments</span>', '<b>Runnable labs</b><span>20 experiments</span>')
@@ -66,7 +64,6 @@ jobs:
         run: |
           git config user.name 'LeonaKaka QA Bot'
           git config user.email '124779759+LeonaKaka@users.noreply.github.com'
-          git rm .github/workflows/integrate-capstones-once.yml
-          git add README.md index.html labs .github/workflows/lab-smoke.yml scripts/run_lab_smoke.py
+          git add README.md index.html labs scripts/run_lab_smoke.py
           git commit -m 'Integrate training and inference capstone labs'
           git push origin HEAD:main
