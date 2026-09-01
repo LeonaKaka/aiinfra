@@ -26,6 +26,7 @@ LABS: tuple[tuple[str, int, str, tuple[str, ...]], ...] = (
     ("A9 Mini Pipeline Parallel", 2, "labs/code/mini_pipeline_parallel.py", ()),
     ("A10 Mini Context Parallel", 2, "labs/code/mini_context_parallel.py", ()),
     ("A11 Mini Expert Parallel", 2, "labs/code/mini_expert_parallel.py", ()),
+    ("A12 Mini Training System", 4, "labs/code/mini_training_system.py", ()),
     ("B1 Mini KV Handoff", 2, "labs/code/mini_kv_handoff.py", ()),
     ("B2 Mini Block KV Handoff", 2, "labs/code/mini_block_kv_handoff.py", ()),
     ("B3 Mini Async KV Transfer", 2, "labs/code/mini_async_kv_transfer.py", ()),
@@ -38,6 +39,7 @@ LABS: tuple[tuple[str, int, str, tuple[str, ...]], ...] = (
         (),
     ),
     ("B7 KV Lease / Expiry", 2, "labs/code/mini_kv_lease_expiry.py", ()),
+    ("B8 Mini Inference Engine", 2, "labs/code/mini_inference_engine.py", ()),
 )
 
 

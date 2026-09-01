@@ -70,6 +70,12 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_expert_parallel.py
 ```
 确定性 balanced router 把 token 通过 `all_to_all_single` 发给 expert owners，本地 expert compute 后 reverse all-to-all，再恢复原 token 顺序并与 reference 对齐。该实验只教学 ownership / dispatch / combine 生命周期，不模拟 capacity、dropping 或 load balancing。
 
+### Lab A12 — Mini Training System
+```bash
+torchrun --standalone --nproc-per-node=4 labs/code/mini_training_system.py
+```
+4 ranks 组成 TP=2 × DP=2：TP shards 完成两层 MLP forward；W2 gradient ready 后立刻启动 DP async `reduce_scatter_single`，同时继续计算 W1；每个 DP rank 只更新自己负责的 parameter chunk，再 `all_gather_single` 恢复下一次 forward 所需的 TP parameter shard。最终与同一 global batch 的 dense SGD step 对齐。CPU/Gloo 只验证 correctness 与依赖顺序，不证明真实硬件 overlap。
+
 ## Inference Infra
 
 ### Lab B1 — Mini KV Handoff
@@ -114,6 +120,12 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_lease_expiry.py
 ```
 用 deterministic virtual clock 跑两条资源生命周期：一个 request 通过 heartbeat 延长 lease 后正常 completion；另一个 request 完全失联，最终靠 expiry 回收。另用 toy generation ID 演示 stale heartbeat 不能续约已复用资源。该状态机教学 lifetime invariant，不宣称复刻当前 vLLM 的全部 lease 实现。
 
+### Lab B8 — Mini Inference Engine
+```bash
+torchrun --standalone --nproc-per-node=2 labs/code/mini_inference_engine.py
+```
+把三类 request 放进同一个最小 scheduler：local KV hit 直接 decode；cold miss 消耗 token budget 做本地 prefill；remote KV request 先验证 descriptor、分配 logical→physical block table，并在异步传输期间等待真正的 KV dependency。最后 remote decode 与本地重算 prompt KV 的 correctness reference 对齐，并通过 completion acknowledgement 才释放 producer-side lifetime。request state、descriptor 字段和 block ID 都是教学模型，不宣称是当前 vLLM 的逐字段复刻。
+
 ## Environment
 
 需要 Python 3.10+ 与带 `torch.distributed` 的 PyTorch。
@@ -128,4 +140,4 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_lease_expiry.py
 2. **再 system semantics**：明确每个 rank 持有什么、哪个 collective/transfer 必须发生、什么时候必须等待。
 3. **最后 performance**：只有在 workload、backend、GPU topology 与 profiler 都明确时才解释 timing。
 
-软件实验现在覆盖 Training A1–A11 与 Inference B1–B7。下一阶段优先做跨机制 capstone 与有证据的硬件验证：真实 GPU/NCCL profiler overlap，以及具备对应 NIC/driver/software stack 时的 NIXL/UCX/RDMA/GPUDirect 数据面。
+软件实验现在覆盖 Training A1–A12 与 Inference B1–B8，共 20 个 runnable correctness labs。A12 与 B8 已分别把训练和推理主线装成 end-to-end teaching capstone。下一阶段重点转向真实源码阅读闭环与有证据的硬件验证：GPU/NCCL profiler overlap，以及具备对应 NIC/driver/software stack 时的 NIXL/UCX/RDMA/GPUDirect 数据面。
