@@ -53,6 +53,8 @@
 
 默认支持 CPU/Gloo；检测到足够 CUDA GPU 时自动切到 NCCL。实验首先验证 correctness 与依赖结构，不把小 tensor / CPU timing 当成真实 GPU、NIXL 或 RDMA benchmark。
 
+Megatron 05 模块与 KV Connector 08 模块的核心课程现在会在 checkpoint 之后直接给出对应的 **HANDS-ON · 对应实验**：A1–A12 与 B1–B8 都能从概念课直接落到最小可运行实验，再回到 Source Map / 上游源码，而不需要读者先离开课程去 Labs 首页猜下一步。
+
 ## Source-reading workflow
 
 **Source Map** 不再按仓库目录罗列文件，而是按 `Control → State → Data → Sync` 的阅读镜头组织，并把每个关键源码入口直接映射到对应课程或 Lab。
