@@ -16,6 +16,7 @@ SECTION_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 LAB_MAIN_OPEN = '<main class="lab-article">'
+LAB_MAIN_WITH_NAV = '<main class="lab-article" style="width:auto;margin:0;padding:0">'
 LAB_SHELL_OPEN = '<div class="lesson-shell lab-lesson-shell">'
 APP_SCRIPT_RE = re.compile(r'</main>\s*(<script src="\.\./app\.js"></script>)')
 
@@ -168,7 +169,7 @@ def normalize_lab(path: Path, text: str, tracks: dict[str, list[tuple[int, str, 
     toc = lab_toc(text)
     text = text.replace(
         LAB_MAIN_OPEN,
-        f'{LAB_SHELL_OPEN}\n  {sidebar}\n  {LAB_MAIN_OPEN}',
+        f'{LAB_SHELL_OPEN}\n  {sidebar}\n  {LAB_MAIN_WITH_NAV}',
         1,
     )
     match = APP_SCRIPT_RE.search(text)
