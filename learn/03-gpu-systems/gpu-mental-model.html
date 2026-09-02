@@ -48,7 +48,7 @@
 x = x.to(<span class="comment">'cuda:0'</span>)              <span class="comment"># move/copy to GPU 0</span>
 print(x.device)                    <span class="comment"># cuda:0</span></code></pre></div>
         <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>Video Random Access Memory (VRAM，显存) 常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
-        <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器/Program Counter (PC，程序计数器) 常通过 PCIe 连接 CPU 与 GPU；NVLink/NVSwitch 更常用于高带宽 GPU↔GPU 互连，也存在带更紧密 CPU-GPU 互连的特定平台。后面会按具体拓扑再讲。</p></div>
+        <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器/Program Counter (Personal Computer (PC，个人电脑)，程序计数器) 常通过 PCIe 连接 CPU 与 GPU；NVLink/NVSwitch 更常用于高带宽 GPU↔GPU 互连，也存在带更紧密 CPU-GPU 互连的特定平台。后面会按具体拓扑再讲。</p></div>
       </section>
 
       <section class="article-section" id="inside">
@@ -145,7 +145,7 @@ elapsed = time.perf_counter() - start</code></pre></div>
         <tr><td><code>RAM</code></td><td>Random Access Memory</td><td>随机存取存储器</td><td>这里通常指主机侧系统内存。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>
-        <tr><td><code>PC</code></td><td>Program Counter</td><td>程序计数器</td><td>执行单元用于跟踪下一条指令位置的控制状态；GPU SIMT 控制流讨论中会遇到。</td></tr>
+        <tr><td><code>PC</code></td><td>Personal Computer</td><td>个人电脑</td><td>这里指普通个人电脑/工作站语境；与硬件控制流里的 program counter 不是同一个缩写含义。</td></tr>
         <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
         <tr><td><code>FP8</code></td><td>8-bit Floating Point</td><td>8 位浮点</td><td>更低精度的浮点表示，需要硬件与数值策略共同支持。</td></tr>

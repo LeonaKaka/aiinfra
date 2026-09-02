@@ -60,7 +60,7 @@ TERMS = {
     "INT8": ("8-bit Integer", "8 位整数", "常见低精度整数表示，量化推理中用于降低存储与计算成本。", True),
     "FP8": ("8-bit Floating Point", "8 位浮点", "更低精度的浮点表示，需要硬件与数值策略共同支持。", True),
     "TF32": ("TensorFloat-32", "TensorFloat-32 浮点格式", "NVIDIA Tensor Core 上用于部分 FP32 工作负载的计算格式。", True),
-    "PC": ("Program Counter", "程序计数器", "执行单元用于跟踪下一条指令位置的控制状态；GPU SIMT 控制流讨论中会遇到。", True),
+    "PC": ("Personal Computer", "个人电脑", "这里指普通个人电脑/工作站语境；与硬件控制流里的 program counter 不是同一个缩写含义。", True),
     "IOMMU": ("Input-Output Memory Management Unit", "输入输出内存管理单元", "为设备 DMA 提供地址转换和访问隔离的硬件单元，影响设备内存映射与直通路径。", True),
     "PCIe": ("Peripheral Component Interconnect Express", "高速外设组件互连", "CPU、GPU、NIC 等设备之间常见的主机互连总线。", True),
     "DMA": ("Direct Memory Access", "直接内存访问", "设备在较少 CPU 搬运参与下直接读写内存的数据移动机制。", True),
