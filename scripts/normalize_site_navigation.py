@@ -10,7 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LAB_DIR = ROOT / "labs"
 NAV_RE = re.compile(r'<nav\b[^>]*class=["\']site-nav["\'][^>]*>.*?</nav>', re.DOTALL)
-TITLE_RE = re.compile(r'<title>\s*Lab\s+([AB])(\d+)\s*·\s*([^<]+?)\s*</title>', re.IGNORECASE)
+LAB_CARD_RE = re.compile(
+    r'<a\b[^>]*class=["\'][^"\']*\blab-card\b[^"\']*["\'][^>]*href=["\']\./([^"\']+\.html)["\'][^>]*>'
+    r'.*?<small>\s*LAB\s+([AB])(\d+)\s*·.*?</small>\s*<h2>(.*?)</h2>',
+    re.DOTALL | re.IGNORECASE,
+)
 SECTION_RE = re.compile(
     r'<section\b[^>]*class=["\'][^"\']*\blab-section\b[^"\']*["\'][^>]*\bid=["\']([^"\']+)["\'][^>]*>.*?<h2>(.*?)</h2>',
     re.DOTALL | re.IGNORECASE,
@@ -78,23 +82,22 @@ def normalize_header(path: Path, text: str) -> str:
 
 
 def lab_catalog() -> dict[str, list[tuple[int, str, str, str]]]:
+    """Read the canonical Lab order/names from the published Labs index."""
+    index_text = (LAB_DIR / "index.html").read_text(encoding="utf-8")
     tracks: dict[str, list[tuple[int, str, str, str]]] = {"A": [], "B": []}
-    for path in sorted(LAB_DIR.glob("*.html")):
-        if path.name == "index.html":
-            continue
-        text = path.read_text(encoding="utf-8")
-        match = TITLE_RE.search(text)
-        if not match:
-            raise RuntimeError(f"{path.relative_to(ROOT)}: cannot parse Lab title")
-        track, number, title = match.groups()
+    for filename, track, number, heading in LAB_CARD_RE.findall(index_text):
         code = f"{track}{int(number)}"
-        tracks[track].append((int(number), code, html.unescape(title.strip()), path.name))
+        title = plain_text(heading)
+        target = LAB_DIR / filename
+        if not target.exists():
+            raise RuntimeError(f"labs/index.html: {code} points to missing {filename}")
+        tracks[track].append((int(number), code, title, filename))
     for values in tracks.values():
         values.sort(key=lambda item: item[0])
-    if len(tracks["A"]) != 12 or len(tracks["B"]) != 8:
-        raise RuntimeError(
-            f"expected A1-A12 + B1-B8, found {len(tracks['A'])} training and {len(tracks['B'])} inference labs"
-        )
+    if [item[0] for item in tracks["A"]] != list(range(1, 13)):
+        raise RuntimeError("labs/index.html: expected complete Training sequence A1-A12")
+    if [item[0] for item in tracks["B"]] != list(range(1, 9)):
+        raise RuntimeError("labs/index.html: expected complete Inference sequence B1-B8")
     return tracks
 
 
