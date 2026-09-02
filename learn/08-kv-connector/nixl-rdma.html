@@ -51,6 +51,8 @@
 
 <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>08.4</span></div><h2>别再把 RDMA、NIXL、UCX、Connector 当成同一层。</h2><div class="quiz-item"><div class="quiz-q">1. NIXL 和 vLLM KV Connector 的职责有什么不同？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">Connector 理解 serving 语义：request、tokens、blocks、scheduler/worker lifecycle；NIXL 是更底层的数据移动抽象，负责把描述好的 memory regions 通过某个 backend 高效传输。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 push connector 不能直接对接 pull connector？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">两种模式的数据所有权和操作方向不同：pull 由 consumer 发起 READ，push 由 producer 发起 WRITE。当前 compatibility handshake 明确把 transfer mode 作为必须一致的条件。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 NixlConnector 还关心 LBHNC / LBNHC，而不只是“网络带宽”？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为 KV 的内存排列影响可连续传输区域、TP head mapping 和接收端如何解释 bytes。当前非 MLA NixlConnector 默认要求 LBHNC 以优化 transfer；其它 layout 有不同限制。</div></div></section>
 
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NCCL / NIXL 环境为准。</p><div class="concept-note"><p><strong>Lab B6 · Registered Region Descriptor</strong><br />用共享 storage + region/stride descriptor 建立 memory registration 前的地址几何。 <a href="../../labs/mini-registered-region-descriptor.html">打开实验 →</a></p></div></section>
+
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
         <h2>本课出现的缩写与术语</h2>

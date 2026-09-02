@@ -126,6 +126,8 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.5</span></div><h2>确认你能从 DP 冗余自己推导这套设计。</h2><div class="quiz-item"><div class="quiz-q">1. Distributed Optimizer 为什么更自然地用 reduce-scatter gradient，而不是 all-reduce？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每个 DP rank 只负责一个 optimizer/parameter shard。它只需要拿到自己那段“已经跨 DP ranks 归约”的 gradient；reduce-scatter 正好同时完成 reduction 和 shard distribution。</div></div><div class="quiz-item"><div class="quiz-q">2. optimizer step 完以后为什么还需要 parameter all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 ranks 分别更新了不同参数 shards，但下一轮 data-parallel forward 需要各 replica 使用一致的模型参数。因此必须把 updated shards 同步/gather 到需要它们的 ranks。</div></div><div class="quiz-item"><div class="quiz-q">3. <code>--overlap-grad-reduce</code> 真正想隐藏什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当某些 gradient buckets 已经 ready 时，提前启动它们的 DP all-reduce/reduce-scatter，同时 Graphics Processing Unit (GPU，图形处理器) 继续计算其它 layers 的 backward，尽量把通信时间藏在 backward compute 后面。</div></div></section>
 
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NCCL / NVIDIA Inference Xfer Library (NIXL，NVIDIA 推理传输库) 环境为准。</p><div class="concept-note"><p><strong>Lab A4 · Mini Distributed Optimizer</strong><br />验证 reduce-scatter → local optimizer shard update → parameter all-gather 的 ownership 转移。 <a href="../../labs/mini-distributed-optimizer.html">打开实验 →</a></p></div></section>
+
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
         <h2>本课出现的缩写与术语</h2>
@@ -146,6 +148,7 @@
         <tr><td><code>AG</code></td><td>All-Gather</td><td>全收集</td><td>把各 rank 的 shard 收集成完整结果并让参与者获得。</td></tr>
         <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
           </tbody>
         </table></div>
       </section>

@@ -51,6 +51,8 @@
 
 <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>08.3</span></div><h2>能画出状态机和 ownership，才算真的懂“异步 KV transfer”。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 remote hit 不能只看一个历史索引？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为 scheduler 会据此跳过本地计算。Connector 必须保证声称命中的 KV 当前真实可加载；否则会把未到/已失效的数据当作已计算状态。</div></div><div class="quiz-item"><div class="quiz-q">2. 当前 remote KV load 失败默认会自动 recompute 吗？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">不会。当前 KVTransferConfig 的 kv_load_failure_policy 默认是 fail；只有显式选择 recompute 时，scheduler 才按重算路径恢复失败 blocks。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么多个 in-flight batches 时可能要延后 free KV blocks？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为 request 逻辑上结束或被移出 running，不代表旧 batch 的 GPU 写入已经停止。若 block 立刻重用并同时被 remote load 填充，就可能和旧写入发生数据竞争，所以需要延迟 ownership 转移。</div></div></section>
 
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) / NIXL 环境为准。</p><div class="concept-note"><p><strong>Lab B3 · Mini Async KV Transfer</strong><br />练习 launch → independent work → wait 的 request-level 异步依赖。 <a href="../../labs/mini-async-kv-transfer.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab B4 · Layer-wise KV Streaming</strong><br />把 readiness 细化到 layer：进入 layer L 前只等待 KV[L]。 <a href="../../labs/mini-layerwise-kv-stream.html">打开实验 →</a></p></div></section>
+
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
         <h2>本课出现的缩写与术语</h2>
@@ -65,6 +67,7 @@
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>NIC</code></td><td>Network Interface Card</td><td>网络接口卡</td><td>主机连接网络 fabric 的硬件接口。</td></tr>
           </tbody>
         </table></div>
