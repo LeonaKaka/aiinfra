@@ -122,6 +122,12 @@ TERM_ALIASES = {
     "MSE": ("MSE", "MSELoss"),
 }
 
+# Old generated phrases that must collapse before first-use normalization.
+# Keep this deliberately tiny: it is a migration aid, not a second terminology registry.
+LEGACY_NORMALIZED_FORMS = {
+    "Program Counter (PC，程序计数器)": "Personal Computer (PC，个人电脑)",
+}
+
 SKIP_TAGS = {"code", "pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
 SKIP_CLASSES = {"lesson-kicker", "section-no", "breadcrumb", "mobile-course-bar", "lesson-terms", "toc"}
 TERM_SECTION_RE = re.compile(r'<section class="lesson-terms".*?</section>', re.S)
@@ -327,6 +333,8 @@ def normalize_html(source: str) -> str:
     if not m:
         raise ValueError('missing <main class="article">')
     body = TERM_SECTION_RE.sub("", m.group("body"))
+    for legacy, current in LEGACY_NORMALIZED_FORMS.items():
+        body = body.replace(legacy, current)
     abbreviations = found_terms(body)
     body = expand_first_uses(body, abbreviations)
     abbreviations = found_terms(body)
