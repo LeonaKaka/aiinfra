@@ -71,12 +71,12 @@ vLLM / NIXL 主线：
 
 课程中的版本敏感表述会优先按当前上游源码复查，而不是把旧教程中的类名、默认值或实现细节当成永久定义。
 
-最近一次系统复查（2026-09-01）对照：
+最近一次系统复查（2026-09-02）对照：
 
-- vLLM `main`: `ce2e343be1f757a92b3c990023f87bdd87a579ac`
-- NVIDIA/Megatron-LM `main`: `1cb3264479f28b8526db3d335faa9c5ef2183989`
+- vLLM `main`: `f4e61361462882f82d91f60dfc4133807ef00822`
+- NVIDIA/Megatron-LM `main`: `37a7554c7d536519722d551b3c6afb13e807e1fa`
 
-这轮继续复核了 vLLM GPU runner selector / V1-V2 runner 分流、Scheduler、KV Connector / NIXL lifecycle，以及 Megatron 的顶层 GPT pretraining execution spine、Expert Parallel dispatcher、Distributed Optimizer、Context Parallel 与 communication-overlap 生命周期。相对上一记录快照 `f9c7c6e`，vLLM `main` 又前进了 29 个提交到 `ce2e343`：改动主要落在 ROCm / kernels / runner internals / tests；V1 与 V2 model runner 文件本身有演化，但本课程 Source Map 使用的 Engine core、Scheduler、KV cache manager、KV Connector 与 NIXL 主路径在这 29 个提交中没有发生文件级变更。因此现有 request lifecycle / KV budget / Connector 契约仍成立，只更新审计快照并继续把具体 runner 文件名视作版本敏感入口。Megatron `main` 已前进到 `1cb3264479f28b8526db3d335faa9c5ef2183989`；最新提交把 sequence-packing scheduler 接入 training loop，并把 variable-length dataset 路径接进 GPT pretraining。这个变化直接触及“入口 → batch/data schedule → train step”的阅读主线，因此 Source Map 新增了 `pretrain_gpt.py → megatron/training/training.py → get_forward_backward_func()` 的 execution spine，而不是把训练系统只拆成 TP/PP/CP/EP 零件。网页中的源码链接仍指向上游 `main`，方便继续阅读最新代码；上面的 SHA 只是说明这轮课程语义核对时使用的具体快照。上游继续演化后，应重新复查版本敏感内容。
+本轮按课程真正依赖的版本敏感边界做了定点核验，而不是机械追逐每个上游提交。vLLM 侧重新检查了 V1 `Scheduler` 的 token-budget / running-request 约束、`gpu_worker.py` 的 V1/V2 ModelRunner selector、chunked prefill 当前默认策略、KV load failure policy，以及 NixlConnector 的 UCX 默认 backend 与非 MLA 场景的 LBHNC 默认 KV layout；这些检查支持课程当前关于 request lifecycle、continuous batching、KV ownership 与 Connector 数据面的表述。Megatron 侧重新核对了 `DistributedDataParallelConfig` 的 bucket 默认逻辑与 overlap / distributed-optimizer 开关，以及 MoE router / dispatcher 的当前类型、默认值和 flex backend；课程继续把这些具体默认值标记为“当前实现”，把 TP / PP / SP / CP / EP 与 overlap 的数据依赖和 ownership 作为更稳定的主心智模型。网页中的源码链接仍指向上游 `main`；上述 SHA 只表示这轮语义复查使用的具体快照，上游继续演化后应重新核验版本敏感内容。
 
 ## Reading tools
 
