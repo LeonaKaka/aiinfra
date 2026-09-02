@@ -51,7 +51,7 @@
 
 <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>08.2</span></div><h2>现在你应该能把 Connector 画成控制面 + 数据面 + 生命周期。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 remote match 要在 scheduler-side 查询？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为 remote match 会改变 scheduler 对“哪些 tokens 已经计算”的判断，从而决定本轮需要计算多少 token、需要申请多少本地 KV blocks。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 <code>request_finished()</code> 不是一个可有可无的清理回调？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">异步 handoff 时，request 的模型计算结束并不代表 source KV blocks 已经可以覆盖。Connector 可以在这里接管 blocks 的异步释放责任，直到 transfer completion 真正确认安全。</div></div><div class="quiz-item"><div class="quiz-q">3. <code>wait_for_layer_load</code> 暗示了什么性能优化？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">它允许逐层传输/计算流水：不是等全部层 KV 传完才 forward，而是某层使用前只等待该层所需 KV，从而有机会把后续层传输和当前层计算重叠。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) / NIXL 环境为准。</p><div class="concept-note"><p><strong>Lab B5 · KV Handshake + Lifetime</strong><br />把 compatibility descriptor、accept、transfer、completion 跑成一条最小控制面。 <a href="../../labs/mini-kv-handshake-lifetime.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab B5 · KV Handshake + Lifetime</strong><br />把 compatibility descriptor、accept、transfer、completion 跑成一条最小控制面。 <a href="../../labs/mini-kv-handshake-lifetime.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -66,7 +66,6 @@
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
         <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
         <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
-        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
           </tbody>
         </table></div>
       </section>

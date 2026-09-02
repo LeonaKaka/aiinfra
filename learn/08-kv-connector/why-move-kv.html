@@ -61,7 +61,7 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>08.1</span></div><h2>先确认你知道为什么 Connector 必须存在。</h2><div class="quiz-item"><div class="quiz-q">1. Prefill GPU 把最后一个 token ID 发给 Decode GPU，够不够？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">不够。Decode 的 Attention 需要整个历史 prefix 的每层 K/V。只有 token IDs 时，Decode 仍必须重新 Prefill 才能重建这些状态。</div></div><div class="quiz-item"><div class="quiz-q">2. P/D 分离为什么不等于吞吐自动提升？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">因为它主要换来资源隔离和 latency 独立调优，同时新增 KV transfer、路由和同步成本。官方文档也明确说 disaggregated prefill 本身不提高 throughput。</div></div><div class="quiz-item"><div class="quiz-q">3. Producer/consumer 与 scheduler/worker role 有什么区别？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">前者描述 KV 数据角色（谁生产、谁消费）；后者描述同一 instance 内 Connector 代码运行在哪类进程（scheduler 控制还是 worker 数据执行）。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) / NIXL 环境为准。</p><div class="concept-note"><p><strong>Lab B1 · Mini KV Handoff</strong><br />先验证“远端 KV 能否等价接管模型状态”。 <a href="../../labs/mini-kv-handoff.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab B2 · Mini Block KV Handoff</strong><br />再加入 logical→physical block table，避免把 KV handoff 只理解成连续 tensor copy。 <a href="../../labs/mini-block-kv-handoff.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab B1 · Mini KV Handoff</strong><br />先验证“远端 KV 能否等价接管模型状态”。 <a href="../../labs/mini-kv-handoff.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab B2 · Mini Block KV Handoff</strong><br />再加入 logical→physical block table，避免把 KV handoff 只理解成连续 tensor copy。 <a href="../../labs/mini-block-kv-handoff.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -86,7 +86,6 @@
         <tr><td><code>GiB</code></td><td>Gibibyte</td><td>GiB 二进制容量单位</td><td>二进制容量单位，1 GiB = 2^30 bytes。</td></tr>
         <tr><td><code>GQA</code></td><td>Grouped-Query Attention</td><td>分组查询注意力</td><td>多个 Query heads 共享较少的 KV heads，以减少 KV 成本。</td></tr>
         <tr><td><code>MLA</code></td><td>Multi-head Latent Attention</td><td>多头潜在注意力</td><td>通过潜在表示压缩注意力状态的模型结构；会影响 KV 表示与兼容性。</td></tr>
-        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
           </tbody>
         </table></div>
       </section>

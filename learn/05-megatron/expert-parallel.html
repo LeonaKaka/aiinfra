@@ -120,7 +120,7 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.7</span></div><h2>把 EP 的 ownership、dispatcher 和 topology 三层分开。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 router 会自然产生 many-to-many traffic？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">每个 source rank 的不同 token–expert assignments 可以指向不同 destination experts，而这些 experts 分布在不同 ranks；因此不是对同一个 tensor 做统一 reduction，而是 destination-dependent exchange。</div></div><div class="quiz-item"><div class="quiz-q">2. top-k=2 时，为什么网络里搬运的基本对象更应该想成 assignment，而不是原始 token？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">一个逻辑 token 会产生两个 token–expert assignments，可能去两个不同 experts。combine 后还要用 routing weights 合并两个 expert outputs，再恢复这个 token 的逻辑位置。</div></div><div class="quiz-item"><div class="quiz-q">3. “EP = All-to-All”为什么不够准确？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">All-to-All 是最直观的 dispatcher，但当前 Megatron 训练配置还支持 allgather 和 flex。EP 定义 expert placement / routing 的并行语义，不定义唯一 transport implementation。</div></div><div class="quiz-item"><div class="quiz-q">4. 为什么不能写 world_size = TP×PP×CP×EP×DP 当成统一源码公式？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当前 Megatron 分别构造 dense grid 与 expert grid。dense grid 和 expert grid 使用不同 TP/EP/CP/DP 关系；expert generator 当前把 CP 轴设为 1，所以必须看具体 process-group construction。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NCCL / NVIDIA Inference Xfer Library (NIXL，NVIDIA 推理传输库) 环境为准。</p><div class="concept-note"><p><strong>Lab A11 · Mini Expert Parallel</strong><br />跑通 router → dispatch → local experts → reverse combine，并检查 token identity。 <a href="../../labs/mini-expert-parallel.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A11 · Mini Expert Parallel</strong><br />跑通 router → dispatch → local experts → reverse combine，并检查 token identity。 <a href="../../labs/mini-expert-parallel.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -145,7 +145,6 @@
         <tr><td><code>RS</code></td><td>Reduce-Scatter</td><td>归约分散</td><td>先做 reduction，再让每个 rank 只保留一个 reduced shard。</td></tr>
         <tr><td><code>GTP</code></td><td>Generalized Tensor Parallelism</td><td>广义张量并行</td><td>Megatron 当前的新型张量并行路径；源码中的 GTP remat/replica 语义不能和经典 TP 简单混为一谈。</td></tr>
         <tr><td><code>CLI</code></td><td>Command-Line Interface</td><td>命令行界面</td><td>通过终端参数和命令配置、启动或调试程序的接口。</td></tr>
-        <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
           </tbody>
         </table></div>
       </section>

@@ -105,7 +105,7 @@
 
 <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>FINAL CHECKPOINT</span><span>08.5</span></div><h2>到这里，目标不是“记住 NIXL”，而是能自己推系统。</h2><div class="quiz-item"><div class="quiz-q">1. TTFT 在 P/D 架构里至少应该拆成哪些主要部分？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">Prefill queue + Prefill compute + KV handoff + Decode queue/admission + first decode step。不同系统还可以进一步拆 router/tokenization/metadata 等。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 P 的 source KV 不能只设置一个固定 30 秒 TTL 就结束？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">D 可能只是排队很久而不是失联；固定短 TTL 会过早释放，固定长 TTL 又会在 D 崩溃时占住大量显存。当前 NIXL 用短初始 lease + D heartbeat 续租，在健康排队与故障回收之间兼顾。</div></div><div class="quiz-item"><div class="quiz-q">3. 如果 NIXL bandwidth 很快，但端到端 TTFT 仍慢，下一步应该看什么？</div><button class="quiz-toggle">看答案</button><div class="quiz-a">分解 Prefill/Decode queue、Prefill compute、handshake/compatibility、实际 KV wait、Decode admission；再检查 lease/remote-wait 与 block pressure。网络带宽只是一段，不代表整个 serving pipeline 没有瓶颈。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) / NIXL 环境为准。</p><div class="concept-note"><p><strong>Lab B7 · KV Lease / Expiry</strong><br />用 heartbeat、completion、expiry 同时防止提前释放和永久泄漏。 <a href="../../labs/mini-kv-lease-expiry.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab B8 · Mini Inference Engine</strong><br />把 local hit、remote KV、cold prefill、scheduler budget 与 completion lifetime 合成一个最小 serving loop。 <a href="../../labs/mini-inference-engine.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab B7 · KV Lease / Expiry</strong><br />用 heartbeat、completion、expiry 同时防止提前释放和永久泄漏。 <a href="../../labs/mini-kv-lease-expiry.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab B8 · Mini Inference Engine</strong><br />把 local hit、remote KV、cold prefill、scheduler budget 与 completion lifetime 合成一个最小 serving loop。 <a href="../../labs/mini-inference-engine.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -133,7 +133,6 @@
         <tr><td><code>UCX</code></td><td>Unified Communication X</td><td>统一通信 X</td><td>为 HPC/AI 提供多种传输后端抽象的通信框架。</td></tr>
         <tr><td><code>NIC</code></td><td>Network Interface Card</td><td>网络接口卡</td><td>主机连接网络 fabric 的硬件接口。</td></tr>
         <tr><td><code>TTL</code></td><td>Time To Live</td><td>生存时间/有效期</td><td>资源或元数据在过期前允许继续有效的时间窗口。</td></tr>
-        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
           </tbody>
         </table></div>
       </section>

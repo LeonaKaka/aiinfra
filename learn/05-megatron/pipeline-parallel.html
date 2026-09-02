@@ -134,7 +134,7 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.4</span></div><h2>确认你能把 pipeline 当成一条真实的数据生产线。</h2><div class="quiz-item"><div class="quiz-q">1. TP 和 PP 最大的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个 layer 内沿 tensor/feature 维分工；PP 沿模型深度分层，把不同 layer ranges 放在不同 stages。它们因此使用不同通信：TP 更依赖 collectives，PP 更依赖 stage 间 P2P。</div></div><div class="quiz-item"><div class="quiz-q">2. microbatch 为什么能减少 pipeline bubble？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">stage 0 处理完 MB0 并发给 stage 1 后，可以立刻继续 MB1；于是不同 stages 同时处理不同 microbatches，避免只有一个 stage 忙而其他 stages 等待。</div></div><div class="quiz-item"><div class="quiz-q">3. 1F1B 的三个阶段是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Warmup 先灌 pipeline；steady state 让各 stage 在依赖允许时尽量交替执行 forward/backward microbatches；cooldown 在 forward 完成后排空剩余 backward。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；性能结论仍以真实 GPU / NVIDIA Collective Communications Library (NCCL，NVIDIA 集体通信库) / NVIDIA Inference Xfer Library (NIXL，NVIDIA 推理传输库) 环境为准。</p><div class="concept-note"><p><strong>Lab A9 · Mini Pipeline Parallel</strong><br />跑通 stage boundary 的 activation send 与 backward dActivation 回传。 <a href="../../labs/mini-pipeline-parallel.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A9 · Mini Pipeline Parallel</strong><br />跑通 stage boundary 的 activation send 与 backward dActivation 回传。 <a href="../../labs/mini-pipeline-parallel.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -149,8 +149,6 @@
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
         <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
-        <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
-        <tr><td><code>NIXL</code></td><td>NVIDIA Inference Xfer Library</td><td>NVIDIA 推理传输库</td><td>为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。</td></tr>
           </tbody>
         </table></div>
       </section>
