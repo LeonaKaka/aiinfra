@@ -15,34 +15,13 @@ function updateReadingProgress() {
   }
 }
 
-function addNavLink(nav, label, path) {
-  const exists = [...nav.querySelectorAll('a')].some(
-    (link) => link.textContent.trim().toLowerCase() === label.toLowerCase()
-  );
-  if (exists) return;
-  const link = document.createElement('a');
-  link.href = siteUrl(path);
-  link.textContent = label;
-  const cta = nav.querySelector('.nav-cta');
-  nav.insertBefore(link, cta || null);
-}
-
 window.addEventListener('scroll', updateReadingProgress, { passive: true });
 window.addEventListener('resize', updateReadingProgress);
 updateReadingProgress();
 
-// The homepage exposes the complete reference path. Lesson headers stay compact
-// and only receive the Labs shortcut so mobile navigation does not overflow.
-if (siteNav) {
-  addNavLink(siteNav, 'Source Map', 'source-map/index.html');
-  addNavLink(siteNav, 'Glossary', 'glossary/index.html');
-  addNavLink(siteNav, 'Labs', 'labs/index.html');
-} else {
-  document.querySelectorAll('.site-nav').forEach((nav) => {
-    addNavLink(nav, 'Labs', 'labs/index.html');
-  });
-}
-
+// Site navigation is rendered statically in every HTML page so it remains
+// complete and usable even when JavaScript is unavailable. JS only controls the
+// mobile dropdown on pages that expose a nav-toggle button.
 navToggle?.addEventListener('click', () => {
   const open = siteNav.classList.toggle('open');
   navToggle.setAttribute('aria-expanded', String(open));
