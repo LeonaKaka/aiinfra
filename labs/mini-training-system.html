@@ -11,9 +11,38 @@
 </head>
 <body class="lab-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
-  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A12</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A12</small></span></a><nav class="site-nav" id="siteNav"><a href="../index.html#roadmap">课程地图</a><a href="../labs/index.html">Labs</a><a href="../source-map/index.html">Source Map</a><a href="../glossary/index.html">Glossary</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav></header>
 
-  <main class="lab-article">
+  <div class="lesson-shell lab-lesson-shell">
+  <aside class="course-sidebar lab-sidebar" aria-label="Labs 目录">
+  <div class="side-label">LAB MAP</div>
+  <a class="side-home" href="./index.html">← Hands-on Labs</a>
+  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
+    <a class="lesson-link lab-side-link" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
+    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link current train-current" href="./mini-training-system.html">A12 · Mini Training System</a>
+  </div>
+  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+  </div>
+</aside>
+  <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Training System</span></div>
     <div class="lab-kicker">LAB A12 · TRAINING CAPSTONE</div>
     <h1>前 11 个 Training Labs 是零件。<br />这一节把它们第一次装成“一个 training step”。</h1>
@@ -61,6 +90,8 @@ DP groups: [0,2] [1,3]
 
     <nav class="lab-footer-nav"><a href="./mini-expert-parallel.html">← Lab A11 · Expert Parallel</a><a href="./index.html">返回 Labs 总览 →</a></nav>
   </main>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#step">不要再把 TP、DP、optimizer sharding 和 overlap 当四个独立功能。</a><a href="#overlap">通信能否隐藏，首先取决于你有没有在正确时机启动它。</a><a href="#ownership">同一个 rank 的“邻居”会随着当前问题改变。</a><a href="#run">最终验收不是“collective 全跑完”，而是更新后的每个 TP parameter shard 都等于 dense global-batch SGD。</a><a href="#source">现在再看 Megatron，应该从“一个 class”升级为“一个 training step 的生命周期”。</a><a href="#checkpoint">能画出依赖图，比背配置项更重要。</a></aside>
+</div>
   <script src="../app.js"></script>
 </body>
 </html>

@@ -11,9 +11,38 @@
 </head>
 <body class="lab-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
-  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A11</small></span></a><nav class="site-nav"><a href="./index.html">Labs</a><a href="../source-map/index.html">Source Map</a></nav></header>
+  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A11</small></span></a><nav class="site-nav" id="siteNav"><a href="../index.html#roadmap">课程地图</a><a href="../labs/index.html">Labs</a><a href="../source-map/index.html">Source Map</a><a href="../glossary/index.html">Glossary</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav></header>
 
-  <main class="lab-article">
+  <div class="lesson-shell lab-lesson-shell">
+  <aside class="course-sidebar lab-sidebar" aria-label="Labs 目录">
+  <div class="side-label">LAB MAP</div>
+  <a class="side-home" href="./index.html">← Hands-on Labs</a>
+  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
+    <a class="lesson-link lab-side-link" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
+    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
+    <a class="lesson-link lab-side-link current train-current" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
+  </div>
+  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+  </div>
+</aside>
+  <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Expert Parallel</span></div>
     <div class="lab-kicker">LAB A11 · EXPERT PARALLEL</div>
     <h1>EP 的核心不是“有很多 experts”。<br />而是 token 被 router 分流以后，必须去 expert 真正所在的 rank。</h1>
@@ -53,6 +82,8 @@ source tokens
 
     <nav class="lab-footer-nav"><a href="./mini-context-parallel.html">← Lab A10 · Context Parallel</a><a href="./mini-training-system.html">Lab A12 · Training System →</a></nav>
   </main>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#dispatch">router 决定“该去哪个 expert”，EP communication 负责“真的把 token 搬过去”。</a><a href="#balanced">为了只看通信生命周期，这里故意把 routing 做成完全均衡。</a><a href="#run">验收同时检查数值和 token identity：算对但还错 token，也算失败。</a><a href="#source">回到 05.7 时，把 dispatcher 生命周期按四段读。</a><a href="#checkpoint">这三问能答清，MoE dispatcher 就不再像黑盒。</a></aside>
+</div>
   <script src="../app.js"></script>
 </body>
 </html>

@@ -13,10 +13,39 @@
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
   <header class="site-header">
     <a class="brand" href="../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lab A</small></span></a>
-    <nav class="site-nav"><a href="./index.html">Labs</a><a href="../index.html#roadmap">课程地图</a></nav>
+    <nav class="site-nav" id="siteNav"><a href="../index.html#roadmap">课程地图</a><a href="../labs/index.html">Labs</a><a href="../source-map/index.html">Source Map</a><a href="../glossary/index.html">Glossary</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
   </header>
 
-  <main class="lab-article">
+  <div class="lesson-shell lab-lesson-shell">
+  <aside class="course-sidebar lab-sidebar" aria-label="Labs 目录">
+  <div class="side-label">LAB MAP</div>
+  <a class="side-home" href="./index.html">← Hands-on Labs</a>
+  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
+    <a class="lesson-link lab-side-link current train-current" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
+    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
+  </div>
+  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+  </div>
+</aside>
+  <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Megatron TP</span></div>
     <div class="lab-kicker">LAB A · TENSOR PARALLEL</div>
     <h1>先别读几千行 Megatron。<br />亲手把一个 MLP 切成两半。</h1>
@@ -84,6 +113,8 @@ PASS</pre></div>
 
     <nav class="lab-footer-nav"><a href="./index.html">← Labs 首页</a><a href="./mini-kv-handoff.html">Lab B · Mini KV Handoff →</a></nav>
   </main>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#goal">一张图先定清楚：每个 rank 到底拥有什么。</a><a href="#run">先用 CPU 跑。命令和 2 GPU 完全一样。</a><a href="#correctness">不要因为程序“能跑”就算成功。</a><a href="#source">现在再回源码，类名背后已经有具体图像。</a><a href="#upgrade">把这个 80 行实验逐步推向真正的训练 Infra。</a></aside>
+</div>
   <script src="../app.js"></script>
 </body>
 </html>
