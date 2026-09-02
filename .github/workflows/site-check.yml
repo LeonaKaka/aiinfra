@@ -20,6 +20,8 @@ jobs:
           python-version: '3.12'
       - name: Check static site
         run: python scripts/check_site.py
+      - name: Check canonical site navigation
+        run: python scripts/normalize_site_navigation.py
       - name: Check static navigation
         run: python scripts/normalize_navigation.py
       - name: Check lesson terminology
