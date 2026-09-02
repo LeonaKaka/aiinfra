@@ -15,12 +15,9 @@ SECTION_RE = re.compile(
     r'<section\b[^>]*class=["\'][^"\']*\blab-section\b[^"\']*["\'][^>]*\bid=["\']([^"\']+)["\'][^>]*>.*?<h2>(.*?)</h2>',
     re.DOTALL | re.IGNORECASE,
 )
-TAG_RE = re.compile(r'<[^>]+>')
 LAB_MAIN_OPEN = '<main class="lab-article">'
-LAB_SHELL_OPEN = '<div class="lab-lesson-shell">'
+LAB_SHELL_OPEN = '<div class="lesson-shell lab-lesson-shell">'
 APP_SCRIPT_RE = re.compile(r'</main>\s*(<script src="\.\./app\.js"></script>)')
-
-NAV_LABELS = ("课程地图", "Labs", "Source Map", "Glossary", "GitHub")
 
 
 class TextExtractor(HTMLParser):
@@ -59,12 +56,19 @@ def canonical_nav(path: Path) -> str:
     ) + '</nav>'
 
 
+def wants_mobile_toggle(path: Path) -> bool:
+    rel = path.relative_to(ROOT).as_posix()
+    # Lesson/Lab CSS deliberately uses a horizontally scrollable compact nav on
+    # mobile. Standalone reference pages use the shared dropdown button.
+    return not (rel.startswith("learn/") or rel.startswith("labs/"))
+
+
 def normalize_header(path: Path, text: str) -> str:
     match = NAV_RE.search(text)
     if not match:
         return text
     replacement = canonical_nav(path)
-    if 'class="nav-toggle"' not in text:
+    if wants_mobile_toggle(path) and 'class="nav-toggle"' not in text:
         replacement = (
             '<button class="nav-toggle" id="navToggle" aria-expanded="false" '
             'aria-controls="siteNav">菜单</button>\n    ' + replacement
@@ -100,12 +104,11 @@ def lab_sidebar(current: Path, tracks: dict[str, list[tuple[int, str, str, str]]
         '  <a class="side-home" href="./index.html">← Hands-on Labs</a>',
     ]
     for track, name in (("A", "Training"), ("B", "Inference")):
-        chunks.append(f'  <div class="lab-side-group"><div class="lab-side-name"><b>{track}</b> {name}</div>')
+        chunks.append(f'  <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>{track}</b> {name}</div>')
         for _, code, title, filename in tracks[track]:
             classes = ["lesson-link", "lab-side-link"]
             if filename == current.name:
-                classes.append("current")
-                classes.append("infer-current" if track == "B" else "train-current")
+                classes.extend(("current", "infer-current" if track == "B" else "train-current"))
             chunks.append(
                 f'    <a class="{" ".join(classes)}" href="./{filename}">{code} · {html.escape(title)}</a>'
             )
@@ -114,7 +117,7 @@ def lab_sidebar(current: Path, tracks: dict[str, list[tuple[int, str, str, str]]
     return "\n".join(chunks)
 
 
-def lab_toc(text: str) -> str:
+def lab_toc_entries(text: str) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
     for section_id, heading in SECTION_RE.findall(text):
         label = plain_text(heading)
@@ -122,17 +125,41 @@ def lab_toc(text: str) -> str:
             entries.append((section_id, label))
     if not entries:
         raise RuntimeError("lab page has no .lab-section[id] headings for ON THIS PAGE")
-    links = "".join(f'<a href="#{section_id}">{html.escape(label)}</a>' for section_id, label in entries)
+    return entries
+
+
+def lab_toc(text: str) -> str:
+    links = "".join(
+        f'<a href="#{section_id}">{html.escape(label)}</a>'
+        for section_id, label in lab_toc_entries(text)
+    )
     return f'<aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong>{links}</aside>'
+
+
+def validate_existing_lab_shell(
+    path: Path,
+    text: str,
+    tracks: dict[str, list[tuple[int, str, str, str]]],
+) -> None:
+    if 'class="course-sidebar lab-sidebar"' not in text or 'class="toc lab-toc"' not in text:
+        raise RuntimeError(f"{path.relative_to(ROOT)}: incomplete Lab side navigation shell")
+    for values in tracks.values():
+        for _, _, _, filename in values:
+            if f'href="./{filename}"' not in text:
+                raise RuntimeError(f"{path.relative_to(ROOT)}: Lab sidebar missing {filename}")
+    for section_id, _ in lab_toc_entries(text):
+        if f'href="#{section_id}"' not in text:
+            raise RuntimeError(f"{path.relative_to(ROOT)}: Lab TOC missing #{section_id}")
+    if text.count(" lab-side-link current") != 1:
+        raise RuntimeError(f"{path.relative_to(ROOT)}: expected exactly one current Lab sidebar entry")
 
 
 def normalize_lab(path: Path, text: str, tracks: dict[str, list[tuple[int, str, str, str]]]) -> str:
     if path.parent != LAB_DIR or path.name == "index.html":
         return text
 
-    # Rebuild only from the original single-column Lab structure. Once the shell
-    # exists, the normalizer is intentionally idempotent.
     if LAB_SHELL_OPEN in text:
+        validate_existing_lab_shell(path, text, tracks)
         return text
     if LAB_MAIN_OPEN not in text:
         raise RuntimeError(f"{path.relative_to(ROOT)}: missing {LAB_MAIN_OPEN}")
@@ -167,7 +194,11 @@ def main() -> int:
     changed: list[Path] = []
     html_files = sorted(ROOT.rglob("*.html"))
     for path in html_files:
-        expected = normalize(path, tracks)
+        try:
+            expected = normalize(path, tracks)
+        except RuntimeError as exc:
+            print(exc)
+            return 1
         current = path.read_text(encoding="utf-8")
         if expected == current:
             continue
