@@ -45,3 +45,5 @@ jobs:
           git add scripts/lesson_terms.py learn/
           git commit -m 'Correct PC terminology in GPU foundations'
           git push
+
+# trigger
