@@ -39,3 +39,5 @@ jobs:
           git add -- '*.html'
           git commit -m 'Unify site and Lab navigation'
           git push
+
+# one-time migration trigger
