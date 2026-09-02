@@ -17,41 +17,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Apply audited content fixes
+      - name: Clean legacy terminology artifact
         run: |
           python - <<'PY'
           from pathlib import Path
-
-          # Make terminology migrations safe when a canonical expansion changes.
-          p = Path('scripts/lesson_terms.py')
+          p = Path('learn/03-gpu-systems/gpu-mental-model.html')
           text = p.read_text(encoding='utf-8')
-          if 'LEGACY_NORMALIZED_FORMS = {' not in text:
-              anchor = 'TERM_ALIASES = {\n    "MSE": ("MSE", "MSELoss"),\n}\n'
-              addition = anchor + '\n# Old generated phrases that must collapse before first-use normalization.\n# Keep this deliberately tiny: it is a migration aid, not a second terminology registry.\nLEGACY_NORMALIZED_FORMS = {\n    "Program Counter (PC，程序计数器)": "Personal Computer (PC，个人电脑)",\n}\n'
-              if anchor not in text:
-                  raise SystemExit('TERM_ALIASES anchor not found')
-              text = text.replace(anchor, addition, 1)
-          old = '    body = TERM_SECTION_RE.sub("", m.group("body"))\n    abbreviations = found_terms(body)'
-          new = '    body = TERM_SECTION_RE.sub("", m.group("body"))\n    for legacy, current in LEGACY_NORMALIZED_FORMS.items():\n        body = body.replace(legacy, current)\n    abbreviations = found_terms(body)'
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif 'for legacy, current in LEGACY_NORMALIZED_FORMS.items()' not in text:
-              raise SystemExit('normalize_html anchor not found')
-          p.write_text(text, encoding='utf-8')
-
-          # Narrow the replicated-DP claim; FSDP/ZeRO are explicitly sharded alternatives.
-          p = Path('learn/05-megatron/why-model-parallel.html')
-          text = p.read_text(encoding='utf-8')
-          replacements = {
-              '解释为什么 Data Parallel 不能解决“单份模型本身就放不下”的问题。': '解释为什么复制式 Data Parallel 不能解决“每个 rank 都要常驻的单份模型本身就放不下”的问题。',
-              '<h2>Data Parallel 擅长“多吃数据”，但默认会复制完整模型。</h2>': '<h2>复制式 Data Parallel 擅长“多吃数据”，但每个 rank 都要持有完整模型。</h2>',
-              '传统 Data Parallel 仍然要求每个 DP rank 持有一份模型副本——所以第一张卡就已经放不下。': '传统复制式 Data Parallel 仍然要求每个 DP rank 持有一份模型副本——所以第一张卡就已经放不下。',
-              'DP 对第一个问题非常有效；模型并行首先解决第二个问题。': '复制式 DP 对吞吐扩展非常有效；模型并行是解决单份模型或单层计算无法留在一张 GPU 上的一类核心路线。FSDP / ZeRO 这类 sharded data parallel 则通过分片 model states，走另一条降低每 rank 常驻内存的路线。',
-          }
-          for old_text, new_text in replacements.items():
-              if old_text in text:
-                  text = text.replace(old_text, new_text, 1)
-          p.write_text(text, encoding='utf-8')
+          bad = 'Program Counter (Personal Computer (PC，个人电脑)，程序计数器)'
+          good = 'Personal Computer (PC，个人电脑)'
+          if bad not in text:
+              raise SystemExit('legacy nested PC phrase not found')
+          p.write_text(text.replace(bad, good, 1), encoding='utf-8')
           PY
           python scripts/lesson_terms.py --write
       - name: Verify terminology and site
@@ -66,8 +42,8 @@ jobs:
           if git diff --quiet; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/lesson_terms.py learn/
-          git commit -m 'Fix final audit teaching regressions'
+          git add learn/03-gpu-systems/gpu-mental-model.html
+          git commit -m 'Clean legacy PC terminology expansion'
           git push
 
-# audit-fix-v2
+# audit-fix-v3
