@@ -18,6 +18,7 @@ SOURCE_TERMS = {
     # 01 · Foundations
     "PyTorch": ("深度学习框架", "本课程用它演示 tensor、自动求导和训练代码"),
     "tensor": ("张量", "多维数组，也是模型计算中最基本的数据对象"),
+    "memory": ("内存", "保存数据、参数和中间状态的存储空间"),
     "shape": ("形状", "表示 tensor 各维度的长度"),
     "dtype": ("数据类型", "表示 tensor 元素用什么数值格式存储"),
     "device": ("设备位置", "表示数据位于 CPU 还是哪张 GPU"),
@@ -27,7 +28,9 @@ SOURCE_TERMS = {
     "contiguous": ("连续存储", "表示数据是否按当前逻辑维度顺序紧密排列"),
     "view": ("视图", "在不复制数据时用另一种逻辑形状解释同一块 storage"),
     "reshape": ("重塑形状", "改变 tensor 的逻辑 shape，必要时可能发生数据重排"),
+    "transpose": ("转置维度", "交换 tensor 的维度顺序而通常不立即复制数据"),
     "permute": ("维度重排", "改变 tensor 各维度的顺序"),
+    "copy": ("复制", "真正生成或写入一份新的数据副本"),
     "Linear": ("线性层", "对输入做矩阵乘法，并可再加 bias"),
     "bias": ("偏置", "Linear 中加在矩阵乘法结果上的可学习参数"),
     "loss": ("损失", "衡量模型预测与目标之间的误差"),
@@ -45,6 +48,8 @@ SOURCE_TERMS = {
     "Transformer": ("Transformer 模型", "现代大语言模型常用的基础网络结构"),
     "Attention": ("注意力机制", "让当前 token 按相关性读取上下文信息"),
     "token": ("词元", "模型处理文本时使用的离散序列单位"),
+    "sequence": ("序列", "按顺序排列的一串 token"),
+    "hidden dimension": ("隐藏维度", "每个 token 隐藏表示的向量宽度"),
     "projection": ("投影", "用线性变换把表示映射到新的特征空间"),
     "attention score": ("注意力分数", "衡量 Query 与 Key 相关性的数值"),
     "causal mask": ("因果掩码", "阻止当前位置读取未来 token"),
@@ -70,6 +75,7 @@ SOURCE_TERMS = {
 
     # 04 · Distributed
     "process": ("进程", "独立运行程序并拥有自己状态的执行实例"),
+    "rank": ("进程编号", "分布式作业中标识一个 process 的编号"),
     "global rank": ("全局进程编号", "在整个分布式作业中唯一标识一个 process"),
     "local rank": ("本地进程编号", "标识 process 在当前机器上的本地序号"),
     "world size": ("总进程数", "表示当前 distributed world 中有多少个 processes"),
@@ -92,11 +98,15 @@ SOURCE_TERMS = {
     "microbatch": ("微批次", "把一个 batch 再切小以形成 Pipeline Parallel"),
     "bucket": ("通信桶", "把多块小数据合并后统一通信的分组单位"),
     "overlap": ("重叠执行", "让计算与通信并行以隐藏部分等待时间"),
+    "expert": ("专家子网络", "MoE 中由 router 选择执行的稀疏前馈子网络"),
     "router": ("路由器", "根据规则决定 token 或 request 应被送往哪里"),
     "dispatcher": ("分发器", "按 routing 结果把 token 送到对应 expert 或目标"),
     "assignment": ("分配关系", "一次 token 到某个 expert 的 routing 记录"),
 
     # 06 · Inference
+    "Prefill": ("预填充阶段", "一次处理 prompt 并建立历史 KV state 的阶段"),
+    "Decode": ("解码阶段", "利用已有 KV state 一步步生成新 token 的阶段"),
+    "prompt": ("输入提示", "送给模型作为生成上下文的输入 token 序列"),
     "request": ("请求", "一次进入推理服务并持续推进的生成任务"),
     "scheduler": ("调度器", "决定每轮哪些 requests 推进以及推进多少 token"),
     "iteration": ("执行轮次", "scheduler 规划并执行一次模型工作的循环"),
