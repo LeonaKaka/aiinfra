@@ -17,6 +17,13 @@ from lesson_terms import MAIN_RE, TERM_SECTION_RE
 
 ROOT = Path(__file__).resolve().parents[1]
 LESSONS = ROOT / "learn"
+LABS = ROOT / "labs"
+GLOBAL_PAGES = (
+    ROOT / "index.html",
+    ROOT / "source-map" / "index.html",
+    ROOT / "glossary" / "index.html",
+)
+BODY_RE = re.compile(r"<body\\b[^>]*>(?P<body>.*?)</body>", re.S | re.I)
 
 # These are concepts whose English spelling is useful in source code, but whose
 # bare use in Chinese teaching prose usually makes a sentence harder to read.
@@ -52,6 +59,19 @@ CHINESE_DEFAULT = {
     "heartbeat": "心跳",
     "layout": "布局",
     "storage": "存储",
+    "compute": "计算",
+    "transfer": "传输",
+    "memory": "内存/显存",
+    "queue": "队列",
+    "failure": "失败",
+    "recovery": "恢复",
+    "preemption": "抢占",
+    "routing": "路由",
+    "router": "路由器",
+    "dispatcher": "分发器",
+    "iteration": "执行轮次",
+    "iterations": "执行轮次",
+    "batch": "批次",
 }
 
 # Code/source identifiers are removed before scanning. Product names and core
@@ -62,7 +82,7 @@ SKIP_BLOCK_RE = re.compile(
     re.S | re.I,
 )
 TEXT_TAG_RE = re.compile(
-    r"<(?:p|li|h1|h2|h3|span|b|strong|small)\b[^>]*>(.*?)</(?:p|li|h1|h2|h3|span|b|strong|small)>",
+    r"<(?:p|li|h1|h2|h3|span|b|strong|small|a)\b[^>]*>(.*?)</(?:p|li|h1|h2|h3|span|b|strong|small|a)>",
     re.S | re.I,
 )
 
@@ -70,10 +90,16 @@ TEXT_TAG_RE = re.compile(
 def visible_prose(path: Path) -> str:
     source = path.read_text(encoding="utf-8")
     match = MAIN_RE.search(source)
-    if not match:
-        return ""
-    body = TERM_SECTION_RE.sub(" ", match.group("body"))
+    if match:
+        body = match.group("body")
+    else:
+        body_match = BODY_RE.search(source)
+        body = body_match.group("body") if body_match else source
+    body = TERM_SECTION_RE.sub(" ", body)
     body = SKIP_BLOCK_RE.sub(" ", body)
+    # Glossary/source tables intentionally keep English lookup anchors; prose/UI
+    # around them is the readability target.
+    body = re.sub(r"<table\\b.*?</table>", " ", body, flags=re.S | re.I)
     chunks = []
     for item in TEXT_TAG_RE.finditer(body):
         text = re.sub(r"<[^>]+>", " ", item.group(1))
@@ -83,7 +109,10 @@ def visible_prose(path: Path) -> str:
 
 def main() -> int:
     hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for path in sorted(LESSONS.glob("**/*.html")):
+    paths = list(LESSONS.glob("**/*.html"))
+    paths += list(LABS.glob("*.html"))
+    paths += [path for path in GLOBAL_PAGES if path.exists()]
+    for path in sorted(set(paths)):
         prose = visible_prose(path)
         rel = str(path.relative_to(ROOT))
         for english in CHINESE_DEFAULT:
@@ -96,7 +125,7 @@ def main() -> int:
         return 0
 
     total = sum(sum(terms.values()) for terms in hits.values())
-    print(f"Language-mix audit: {total} occurrence(s) across {len(hits)} lesson(s) (warning only during migration).")
+    print(f"Language-mix audit: {total} occurrence(s) across {len(hits)} page(s) (warning only during migration).")
     for rel, terms in hits.items():
         summary = ", ".join(
             f"{term}×{count}→{CHINESE_DEFAULT[term]}"
