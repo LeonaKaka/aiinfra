@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 790" role="img" aria-labelledby="title desc">
   <title id="title">Autoregressive generation dataflow</title>
-  <desc id="desc">The confirmed prefix enters a decoder-only transformer, last-position logits are processed by a decoding policy, one token is selected and 追加ed, and only then can the next ordinary target-model step proceed.</desc>
+  <desc id="desc">The confirmed prefix enters a decoder-only transformer, last-position logits are processed by a decoding policy, one token is selected and appended, and only then can the next ordinary target-model step proceed.</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#737b74"/></marker>
     <style>
