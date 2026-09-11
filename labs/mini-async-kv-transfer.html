@@ -52,7 +52,7 @@
       <div class="stage-flow">
         <div class="stage-card infer"><small>POST</small><b>isend / irecv</b><span>描述 source / destination tensor 与 peer，立即拿到一个 Work 句柄。</span></div>
         <div class="stage-card train"><small>INDEPENDENT WORK</small><b>do something else</b><span>只要这段工作不依赖刚才的 KV，就不必立刻阻塞等待传输结束。</span></div>
-        <div class="stage-card comm"><small>DEPENDENCY</small><b>work.等待()</b><span>真正要用 KV 前建立依赖：此时数据必须已经到位。</span></div>
+        <div class="stage-card comm"><small>DEPENDENCY</small><b>work.wait()</b><span>真正要用 KV 前建立依赖：此时数据必须已经到位。</span></div>
       </div>
       <p>这就是重叠的最小前提，但不是“调用异步 API 就自动加速”。真实重叠还取决于后端是否异步 progress、CUDA stream/event、NIC/GPU DMA、message size、拓扑，以及你中间是否真的有可并行的计算。</p>
     </section>
