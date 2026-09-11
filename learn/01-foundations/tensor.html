@@ -172,13 +172,13 @@ print(z.stride())           <span class="comment"># materialize a contiguous lay
           <div class="why-card"><b><code>contiguous</code></b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel（GPU 内核）可以直接处理任意 stride；kernel 是提交到 GPU 上执行的一段并行计算。某些 transfer（传输） path 会要求或更偏好 contiguous buffer（缓冲区）；transfer 负责搬数据，buffer 是暂存 tensor 或传输数据的一块内存。</p></div>
         </div>
         <p><code>transpose</code> 常常只改变 view 的 shape/stride，而不立即复制 storage；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 <code>permute</code>（维度重排）和 <code>copy</code>（复制）时，要开始问：permute 只是重新排列 tensor 的维度顺序，还是触发了真正的数据移动？copy 则明确意味着生成或写入一份新的数据副本。</p>
-        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的 <code>block table</code> 和 08.4 的 transfer region（内存区域）都会把“逻辑 tensor”继续落到更具体的 address、offset、stride 与 lifetime。region 是传输层注册或操作的一段内存范围。现在先建立一个底线：<strong>logical shape ≠ physical layout</strong>。</p></div>
+        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的块表和 08.4 的 transfer region（内存区域）都会把“逻辑 tensor”继续落到更具体的地址、偏移、stride 与生命周期。region 是传输层注册或操作的一段内存范围。现在先建立一个底线：<strong>logical shape ≠ physical layout</strong>。</p></div>
       </section>
 
       <section class="article-section" id="megatron">
         <div class="section-no">06 · 这些概念后面会用到哪里</div>
         <h2>这就是它和模型并行源码的第一条连接线。</h2>
-        <p>这里先认识 Megatron（大模型训练框架）。它是后面学习多维并行和分布式训练的重要源码实现。现在你还不用学正式的张量并行，只先偷看一个 Linear（线性层）：Linear 会对输入做矩阵乘法，并可再加 bias。</p>
+        <p>这里先认识 Megatron（大模型训练框架）。它是后面学习多维并行和分布式训练的重要源码实现。现在你还不用学正式的张量并行，只先偷看一个 Linear（线性层）：Linear 会对输入做矩阵乘法，并可再加一个偏置项。</p>
         <div class="code-block">
           <div class="code-head"><span>next concept</span><span>linear algebra</span></div>
           <pre><code>X: [B, S, H]
