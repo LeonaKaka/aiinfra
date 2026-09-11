@@ -177,11 +177,19 @@ def terminology_equivalent(source: str) -> str:
         '第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；'
         '这里集中复习，避免学习时来回跳总站 Glossary。'
     )
-    new_intro = (
+    prior_chinese_intro = (
         '正文优先使用 <strong>中文名（缩写）</strong> 建立概念；'
         '完整英文名集中放在这里，便于继续阅读英文文档与源码。'
     )
-    neutral = neutral.replace(old_intro, '__TERM_INTRO__').replace(new_intro, '__TERM_INTRO__')
+    new_intro = (
+        '正文以自然中文为主，必要的源码缩写与专名可以保留；'
+        '完整英文名集中放在这里，便于继续阅读英文文档与源码。'
+    )
+    neutral = (
+        neutral.replace(old_intro, '__TERM_INTRO__')
+        .replace(prior_chinese_intro, '__TERM_INTRO__')
+        .replace(new_intro, '__TERM_INTRO__')
+    )
     for abbr, (_, _, _, expand) in TERMS.items():
         if not expand:
             continue
