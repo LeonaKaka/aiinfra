@@ -36,7 +36,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释最基本的 decoder-only 自回归生成为什么存在严格的条件依赖。</li><li>知道目标模型先输出 logits，再由贪心、temperature、top-p 等解码策略选择 token。</li><li>理解为什么普通目标模型的 Decode 步骤之间存在串行依赖。</li><li>知道投机解码 / multi-token 技术能减少昂贵的目标模型执行轮次，但没有删除目标模型定义的自回归分布。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分首 Token 延迟（TTFT）、Token 间延迟（ITL）、每输出 Token 时间（TPOT）和吞吐量，并知道比较指标前必须先看清基准测试口径。</li></ul></div>
 
       <section class="article-section" id="tokens">
-        <div class="section-no">01 · TEXT BECOMES TOKENS</div>
+        <div class="section-no">01 · 文本如何变成 Token</div>
         <h2>推理引擎真正调度的不是“句子”，而是一串 token IDs 和它们对应的运行时状态。</h2>
         <p>假设输入是“人工智能（AI） infra 很重要”。Tokenizer 会先把文本编码成模型词表中的 token IDs。具体 tokenizer 怎么切不是这节重点；系统层先抓住对象：</p>
         <div class="token-stream"><span>AI</span><span>infra</span><span>很</span><span>重要</span><i>→</i><span>[id₀]</span><span>[id₁]</span><span>[id₂]</span><span>[id₃]</span></div>
@@ -44,7 +44,7 @@
       </section>
 
       <section class="article-section" id="logits">
-        <div class="section-no">02 · THE TARGET MODEL PRODUCES LOGITS</div>
+        <div class="section-no">02 · 目标模型如何产生 Logits</div>
         <h2>模型不会直接“决定一句话”，而是对下一个 vocabulary token 给出一组 raw scores。</h2>
         <p>最后位置的 hidden state 经过语言模型（LM） head，得到 <code>V</code> 维 logits。为了建立第一层直觉，可以把 softmax 后的值看成候选 token 概率；真实 sampling path 还可能先应用 logit processors、temperature、top-k/top-p 等变换。</p>
         <div class="logits-demo"><div class="logit-card"><small>LAST POSITION</small><b>logits ∈ R^V</b><p>词表有 V 个 token，就有 V 个 raw scores；系统只需要从这些候选里决定下一 token。</p></div><div class="logit-card"><small>TOY NORMALIZED VIEW</small><div class="logit-bars"><div class="logit-row"><code>GPU</code><div class="logit-track"><div class="logit-fill" style="--w:68%"></div></div><strong>.68</strong></div><div class="logit-row"><code>模型</code><div class="logit-track"><div class="logit-fill" style="--w:18%"></div></div><strong>.18</strong></div><div class="logit-row"><code>系统</code><div class="logit-track"><div class="logit-fill" style="--w:9%"></div></div><strong>.09</strong></div></div></div></div>
@@ -52,7 +52,7 @@
       </section>
 
       <section class="article-section" id="loop">
-        <div class="section-no">03 · THE AUTOREGRESSIVE STATE MACHINE</div>
+        <div class="section-no">03 · 自回归状态机</div>
         <h2>一个 token 被选中以后，它才成为下一步可以依赖的真实状态。</h2>
         <p>用概率语言写，就是第 <code>t</code> 个输出来自 <code>p(y_t | x, y_1, …, y_{t-1})</code>。未来的 <code>y_{t+1}</code> 要以已经确认的 <code>y_t</code> 为条件，所以基础版本目标模型 steps 之间有数据依赖。</p>
         <div class="inference-core-wrap"><div class="inference-core-meta"><span>AUTOREGRESSIVE GENERATION · DATAFLOW</span><span>confirmed prefix → logits → select → append → repeat</span></div><img class="inference-core-svg" src="./autoregressive-loop.svg" alt="自回归生成架构图：当前已确认前缀进入 decoder-only Transformer，最后位置 hidden state 经过 LM head 得到 vocabulary logits，解码策略选择一个 token，把 token 追加回前缀后才能进入下一普通 target-model step；下方显示 y1 到 y2 到 y3 的串行条件依赖，并注明 speculative decoding 只是减少昂贵 target-model iteration。" /></div>
@@ -61,14 +61,14 @@
       </section>
 
       <section class="article-section" id="training">
-        <div class="section-no">04 · TRAINING AND SERVING EXPOSE DIFFERENT BOTTLENECKS</div>
+        <div class="section-no">04 · 训练与在线推理暴露不同瓶颈</div>
         <h2>同一个 Transformer，训练时的数据组织和在线生成时的运行时状态完全不同。</h2>
         <div class="train-infer"><div><small>TRAINING</small><b>已知 token 批次 → forward + backward</b><span>更关注训练吞吐 / MFU；需要 activation、gradients、optimizer state；通过大批次 / sequence 构造大通用矩阵乘法（GEMM）。</span></div><div><small>SERVING</small><b>动态请求 → 状态持续增长</b><span>普通生成没有 training backward/optimizer；更关注延迟、吞吐、KV Cache 容量、排队、调度器与请求生命周期。</span></div></div>
         <p>所以“训练 kernel 很快”并不能自动推出在线推理很快。在线推理还必须解决一个训练里弱很多的问题：<strong>请求在时间上不断到达、不断结束，而且每个请求当前可计算的 token 数不同。</strong></p>
       </section>
 
       <section class="article-section" id="naive">
-        <div class="section-no">05 · NAIVE GENERATION RECOMPUTES HISTORY</div>
+        <div class="section-no">05 · 朴素生成会重复计算历史</div>
         <h2>如果每生成一个 token 都从头重新算整个前缀，绝大多数历史 attention 投影都会重复。</h2>
         <p>假设 prompt 长 1000 token。第一步处理 prompt；得到 <code>y₁</code> 后，如果第二步又把这 1001 个 token 全部从头走一遍 Transformer，旧 token 对应的每层 Key / Value 会被再次计算。第三步又重复一次。</p>
         <div class="time-sequence"><div class="time-row"><small>step 1</small><span class="prefill">x₀</span><span class="prefill">x₁</span><span class="prefill">…</span><span class="prefill">x₉₉₉</span><span class="decode">→ y₁</span><span class="wait">—</span><span class="wait">—</span><span class="wait">—</span></div><div class="time-row"><small>step 2 naive</small><span class="prefill">x₀</span><span class="prefill">x₁</span><span class="prefill">…</span><span class="prefill">x₉₉₉</span><span class="prefill">y₁</span><span class="decode">→ y₂</span><span class="wait">—</span><span class="wait">—</span></div></div>
@@ -77,7 +77,7 @@
       </section>
 
       <section class="article-section" id="latency">
-        <div class="section-no">06 · USER EXPERIENCE HAS MULTIPLE CLOCKS</div>
+        <div class="section-no">06 · 用户体验有多套时钟</div>
         <h2>端到端 2 秒不能告诉你：用户是在等第一字，还是后面输出一卡一卡。</h2>
         <div class="metric-grid"><div><small>TTFT</small><b>Time To First Token</b><span>请求发出/进入测量范围到第一个输出 token 的时间。排队、Prefill、路由等都可能贡献；具体起点看基准测试。</span></div><div><small>ITL</small><b>Inter-Token 延迟</b><span>相邻输出 token 到达之间的时间间隔，可以形成 p50 / p95 / p99 等分布，直接描述流式输出节奏。</span></div><div><small>TPOT</small><b>Time Per Output Token</b><span>生成阶段平均每个输出 token 的时间。常见基准测试会单独报告 mean / median / percentiles；具体计算方式仍应看工具定义。</span></div></div>
         <p>当前 vLLM 在线推理基准测试也把 <code>TTFT</code>、<code>TPOT</code>、<code>ITL</code> 分成三组统计，同时另外报告请求吞吐量、output-token 吞吐量和 end-to-end 延迟。这个区分很重要：<strong>延迟是用户侧体验，吞吐量是系统整体产能，它们常常存在 trade-off。</strong></p>
@@ -85,7 +85,7 @@
       </section>
 
       <section class="article-section" id="bridge">
-        <div class="section-no">07 · THE NEW OBJECT IS 请求 STATE</div>
+        <div class="section-no">07 · 新增的系统对象：请求状态</div>
         <h2>从这里开始，推理 Infra 不只优化模型，还要管理“活着的请求”。</h2>
         <div class="cost-panel"><div><small>STATIC-ish</small><b>model weights</b><span>模型权重加载后通常长期驻留。</span></div><div><small>PER 请求</small><b>confirmed prefix + generated state</b><span>每个请求的长度和完成时间不同。</span></div><div><small>DYNAMIC 内存</small><b>KV Cache</b><span>随请求 token 数持续增长，完成后释放。</span></div><div><small>调度器</small><b>which token run next?</b><span>每轮要在线选择哪些请求 / token 占 GPU。</span></div></div>
         <p>所以后面的路线会自然变成：<strong>Autoregressive state → Prefill/Decode → KV Cache → 调度器 → Continuous Batching → Paged KV → KV Connector。</strong></p>
