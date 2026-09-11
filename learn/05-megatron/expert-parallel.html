@@ -38,7 +38,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE 层 = 路由器 + 专家 + 稀疏的 token→专家分配关系。</li><li>区分三种不同语义：逻辑 token 归属、专家参数归属、临时计算归属。</li><li>从路由推导多对多数据移动为什么适合 All-to-All。</li><li>看懂分发 → 本地专家 GEMM → 合并 → 恢复 token 顺序的完整生命周期。</li><li>知道当前 Megatron 训练分发器支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，且 <code>flex</code> 后端当前包括 DeepEP / HybridEP / NVIDIA 集体通信库（NCCL）-EP。</li><li>理解稠密并行网格与专家并行网格是两套 rank 生成视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道负载均衡解决路由分布不均，分组 GEMM 则优化本地专家计算；两者不是同一个问题。</li></ul></div>
 
       <section class="article-section" id="moe">
-        <div class="section-no">01 · DENSE MLP → MIXTURE OF EXPERTS</div>
+        <div class="section-no">01 · 从稠密 MLP 到 MoE</div>
         <h2>MoE 不是很多完整模型，而是把部分 FFN/MLP 层换成一组专家。</h2>
         <div class="moe-ffn"><div><small>TOKENS</small><b>hidden states</b><span>[num_token, H]</span></div><i>→</i><div><small>路由器</small><b>score 专家 + top-k</b><span>每个 token 选择少数专家，例如 top-2。</span></div><i>→</i><div><small>EXPERT FFNs</small><b>E₀, E₁, …, E₇</b><span>只执行被路由到的专家。</span></div></div>
         <p>比如有 8 个 routed 专家，每个 token 只走 top-2。专家参数量可以大幅增加，但单 token 只激活其中少数专家，因此激活计算量不会简单乘以总专家数。</p>
@@ -46,7 +46,7 @@
       </section>
 
       <section class="article-section" id="ep">
-        <div class="section-no">02 · 分片 EXPERTS ACROSS RANKS</div>
+        <div class="section-no">02 · 把专家分片到不同 Rank</div>
         <h2>教学例：EP=4、8 个专家，每个 EP rank 持有 2 个 local 专家。</h2>
         <div class="experts-grid"><div class="expert-card"><small>EP RANK 0</small><b>Expert 0 · 1</b><span>local 专家参数</span></div><div class="expert-card"><small>EP RANK 1</small><b>Expert 2 · 3</b><span>local 专家参数</span></div><div class="expert-card"><small>EP RANK 2</small><b>Expert 4 · 5</b><span>local 专家参数</span></div><div class="expert-card"><small>EP RANK 3</small><b>Expert 6 · 7</b><span>local 专家参数</span></div></div>
         <p>路由器的选择不会尊重“token 原来在哪张图形处理器（GPU）”。rank 0 上的 token 可以被分到 rank 3 的 Expert 6，因此 hidden state 必须到达拥有目标专家的执行位置；<strong>专家权重本身并不会跟着每个 token 搬过去</strong>。</p>
@@ -54,7 +54,7 @@
       </section>
 
       <section class="article-section" id="routing">
-        <div class="section-no">03 · 路由 CHANGES EXECUTION 归属关系</div>
+        <div class="section-no">03 · 路由如何改变执行归属</div>
         <h2>真正要分清三件事：逻辑 token 归属关系保持在 source rank；hidden state 会移动；专家计算在专家 owner 上临时执行。</h2>
         <p>下面故意把例子简化成 <code>EP=4</code>、<code>expert-TP=1</code>、top-1 路由，目的是先把归属关系看清。每个 source rank 都有自己的原始 token；路由器只产生 destination 专家与路由元数据；分发器把 token hidden states 发到专家 owner；本地专家 GEMM 完成后，再把输出送回原始 token 所属的 rank 与位置。</p>
         <div class="ep-core-wrap"><div class="ep-core-meta"><span>EXPERT PARALLEL · 归属关系生命周期</span><span>logical source stays fixed · data moves to 专家计算</span></div><img class="ep-core-svg" src="./expert-parallel-flow.svg" alt="Expert Parallel 数据流：逻辑 token ownership 保持在四个 source ranks；router 产生 destination expert，All-to-All dispatch 把 token hidden states 送到 expert owner ranks，本地 分组 GEMM 执行 experts，随后 reverse All-to-All combine 并恢复每个 source rank 的原始 token 顺序。" /></div>
@@ -63,7 +63,7 @@
       </section>
 
       <section class="article-section" id="dispatch">
-        <div class="section-no">04 · WHAT THE CURRENT ALL-TO-ALL 分发器 ACTUALLY DOES</div>
+        <div class="section-no">04 · 当前 All-to-All 分发器实际做什么</div>
         <h2>EP-only 心智图很重要，但当前 Megatron 的 All-to-All 分发器还明确区分 EP 通信与专家-TP 通信。</h2>
         <p>当前 <code>MoEAlltoAllTokenDispatcher</code> 的源码注释把 workflow 写得很清楚：preprocess / permute → <code>A2A(EP)</code> → 如果专家-张量并行（TP）大于 1，再做 <code>AG(TP)</code> 并整理 local 专家 chunks → 专家计算 → 合并前做 <code>RS(TP)</code> → <code>A2A(EP)</code> → unpermute。</p>
         <div class="mini-code-map"><div class="mini-code-row"><code>dispatch_preprocess</code><span>本地计算 destination counts、permutation 等元数据；尽量不要在这里偷偷混入额外通信，以便后续重叠执行。</span></div><div class="mini-code-row"><code>token_dispatch</code><span>主跨设备 transport。All-to-All 路径先在 EP 进程组做 destination-specific 交换。</span></div><div class="mini-code-row"><code>dispatch_postprocess</code><span>必要时处理专家-TP 的 gather / chunk sorting，并整理成 local 专家可以消费的连续 token 进程组s。</span></div><div class="mini-code-row"><code>token_combine</code><span>专家 outputs 反向跨设备交换；All-to-All 分发器把结果送回原 source rank，随后合并 postprocess / unpermute 恢复原逻辑位置。</span></div></div>
@@ -72,7 +72,7 @@
       </section>
 
       <section class="article-section" id="load">
-        <div class="section-no">05 · THE LOAD-BALANCE PROBLEM</div>
+        <div class="section-no">05 · 负载均衡问题</div>
         <h2>路由器分布一旦很偏，最慢专家/rank 会拖住整层。</h2>
         <p>理想情况是 token 在专家之间比较均衡。现实里路由器学到的分布可能很偏：</p>
         <div class="load-bars"><div class="load-bar"><small>Expert 0</small><div class="load-track"><div class="load-fill" style="--w:92%"></div></div><b>92</b></div><div class="load-bar"><small>Expert 1</small><div class="load-track"><div class="load-fill" style="--w:28%"></div></div><b>28</b></div><div class="load-bar"><small>Expert 2</small><div class="load-track"><div class="load-fill" style="--w:41%"></div></div><b>41</b></div><div class="load-bar"><small>Expert 3</small><div class="load-track"><div class="load-fill" style="--w:19%"></div></div><b>19</b></div></div>
@@ -82,14 +82,14 @@
       </section>
 
       <section class="article-section" id="gemm">
-        <div class="section-no">06 · MANY EXPERTS CREATE MANY SMALL GEMMS</div>
+        <div class="section-no">06 · 很多专家意味着很多小 GEMM</div>
         <h2>通信结束以后还有第二个效率问题：每个专家收到的 token 数可能不大。</h2>
         <div class="grouped-gemm"><div><small>NAIVE</small><b>E0 GEMM · E1 GEMM · E2 GEMM · …</b><span>很多大小不同的小矩阵运算，launch/occupancy 问题更明显。</span></div><i>→</i><div><small>GROUPED GEMM</small><b>进程组专家 GEMMs</b><span>把多个专家 matrix multiplies 以进程组ed 方式执行，提高本地硬件利用率。</span></div></div>
         <p><code>--moe-grouped-gemm</code> 解决的是 local 专家计算 efficiency，不是 token 分发网络本身。不要把“Grouped GEMM”和“通信融合”混成一件事。</p>
       </section>
 
       <section class="article-section" id="dispatchers">
-        <div class="section-no">07 · EP DOES NOT FIX ONE 分发器</div>
+        <div class="section-no">07 · EP 不绑定某一种分发器</div>
         <h2>当前训练配置明确支持 <code>allgather</code>、<code>alltoall</code>、<code>flex</code>。</h2>
         <div class="dispatcher-grid"><div><small>ALLGATHER</small><b>allgather 分发器</b><span>当前默认值仍是 <code>allgather</code>；实现会跨 TP×EP domain gather token/路由 data，本地挑选属于 local 专家的分配关系s，合并使用 reduce-scatter。</span></div><div><small>ALLTOALL</small><b>All-to-All 分发器</b><span>直接表达 destination-specific 交换；当前 workflow 是 A2A(EP)，并在专家-TP&gt;1 时配合 AG/RS(TP)。</span></div><div><small>FLEX</small><b>pluggable EP backends</b><span>当前 <code>moe_flex_dispatcher_backend</code> 支持 <code>deepep</code>、<code>hybridep</code>、<code>ncclep</code>，默认是 DeepEP。</span></div></div>
         <p>因此更准确的话是：<strong>EP 产生 destination-dependent token traffic；分发器 contract 决定怎样搬这些分配关系s。</strong>All-to-All 是最直观的实现，但不是定义本身。</p>
@@ -97,7 +97,7 @@
       </section>
 
       <section class="article-section" id="tp">
-        <div class="section-no">08 · EXPERT GRID IS NOT DENSE GRID × EP</div>
+        <div class="section-no">08 · 专家并行网格不能简单理解成稠密网格 × EP</div>
         <h2>TP、CP、EP 不能靠一个“把所有缩写乘起来”的公式理解。</h2>
         <div class="ep-vs-tp"><div><small>DENSE GRID</small><b>dense TP × 流水线并行（PP） × 上下文并行（CP） → dense DP</b><span>Attention/dense Transformer 部分按 dense rank 生成器组织。</span></div><div><small>EXPERT GRID</small><b>专家-TP × EP × PP → 专家-DP</b><span>MoE 专家部分由另一套专家 rank 生成器组织；当前专家 generator 里 <code>cp=1</code>。</span></div></div>
         <p>当前 <code>parallel_state.py</code> 会单独计算 <code>expert_tensor_parallel_size × expert_model_parallel_size × pipeline_model_parallel_size</code>（再考虑实验性专家广义张量并行（GTP） remat 轴），然后用 world size 除它得到专家-DP。随后 <code>expert_decoder_rank_generator</code> 以 <code>tp=expert_tensor_parallel_size</code>、<code>ep=expert_model_parallel_size</code>、<code>dp=expert_data_parallel_size</code>、<code>pp=...</code>、<code>cp=1</code> 构造专家进程组s。</p>
@@ -106,21 +106,21 @@
       </section>
 
       <section class="article-section" id="overlap">
-        <div class="section-no">09 · EP MAKES OVERLAP MORE IMPORTANT</div>
+        <div class="section-no">09 · EP 为什么更依赖通信重叠</div>
         <h2>Token 交换很重，工程优化会尽量把它藏进其它可并行计算窗口。</h2>
         <div class="mini-code-map"><div class="mini-code-row"><code>overlap_moe_expert_parallel_comm</code><span>启用专家通信与其它计算的重叠执行路径。</span></div><div class="mini-code-row"><code>delay_wgrad_compute</code><span>延后部分 weight-梯度工作，为通信暴露可利用的计算窗口。</span></div><div class="mini-code-row"><code>moe_shared_expert_overlap</code><span>让 shared-专家计算与支持的 alltoall/flex 分发器通信并发。</span></div></div>
         <p>这些选项高度版本相关，不能只背命令行界面（CLI）名称。05.8 的核心方法仍然是：先画 dependency，再看 async launch / 流 / 等待，最后用 profiler 证明时间区间是否真的重叠。</p>
       </section>
 
       <section class="article-section" id="source">
-        <div class="section-no">10 · SOURCE MAP</div>
+        <div class="section-no">10 · 源码地图</div>
         <h2>沿“路由器 → 分发器 → 专家 grid → 专家”读。</h2>
         <div class="source-map"><div class="source-map-card"><small>路由器</small><b>路由器.py</b><code>routing scores / top-k</code><span>决定 token→专家分配关系s 与 load-balance objective。</span></div><div class="source-map-card"><small>DISPATCH</small><b>token_分发器.py</b><code>allgather / alltoall / flex</code><span>负责 permutation、跨各个 rank transport、专家-TP 配合与合并。</span></div><div class="source-map-card"><small>TOPOLOGY</small><b>parallel_state.py</b><code>expert rank generator</code><span>回答专家-TP / EP / 专家-DP 这些各个 rank 怎样组合。</span></div><div class="source-map-card"><small>EXPERT 计算</small><b>专家.py</b><code>local expert MLPs / 分组 GEMM</code><span>收到分配关系s 后真正执行专家计算。</span></div></div>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.7</span></div><h2>把 EP 的归属关系、分发器和 topology 三层分开。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么路由器会自然产生 many-to-many traffic？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">每个 source rank 的不同 token–专家分配关系s 可以指向不同 destination 专家，而这些专家分布在不同各个 rank；因此不是对同一个张量做统一 reduction，而是 destination-dependent 交换。</div></div><div class="quiz-item"><div class="quiz-q">2. top-k=2 时，为什么网络里搬运的基本对象更应该想成分配关系，而不是原始 token？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">一个逻辑 token 会产生两个 token–专家分配关系s，可能去两个不同专家。合并后还要用路由 weights 合并两个专家 outputs，再恢复这个 token 的逻辑位置。</div></div><div class="quiz-item"><div class="quiz-q">3. “EP = All-to-All”为什么不够准确？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">All-to-All 是最直观的分发器，但当前 Megatron 训练配置还支持 allgather 和 flex。EP 定义专家 placement / 路由的并行语义，不定义唯一 transport implementation。</div></div><div class="quiz-item"><div class="quiz-q">4. 为什么不能写 world_size = TP×PP×CP×EP×DP 当成统一源码公式？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当前 Megatron 分别构造稠密并行网格与专家 grid。稠密并行网格和专家 grid 使用不同 TP/EP/CP/DP 关系；专家 generator 当前把 CP 轴设为 1，所以必须看具体 process-进程组 construction。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A11 · Mini 专家并行</strong><br />跑通路由器 → 分发 → local 专家 → reverse 合并，并检查 token identity。 <a href="../../labs/mini-expert-parallel.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A11 · Mini 专家并行</strong><br />跑通路由器 → 分发 → local 专家 → reverse 合并，并检查 token identity。 <a href="../../labs/mini-expert-parallel.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
