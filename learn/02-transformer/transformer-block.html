@@ -147,7 +147,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       </section>
 
       <section class="article-section" id="infra">
-        <div class="section-no">09 · 从 AI Infra 角度拆一个 Block</div>
+        <div class="section-no">09 · 从系统角度拆一个 Block</div>
         <h2>现在终于可以把AI Infra技术贴到块上。</h2>
         <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>Tensor Parallel</b><span>切查询-键-值（QKV） / output投影权重与heads</span></div><div><small>MLP LINEARS</small><b>Tensor Parallel</b><span>切up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>上下文Parallel</b><span>长序列跨ranks分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同GPU 阶段保存不同层</span></div><div><small>TRAINING STATES</small><b>Distributed优化器</b><span>分片优化器 / parameter-related states</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史K/V跨token复用</span></div></div>
         <p>这张图就是后面几大模块的导航。以后每学一个并行策略，我们都会回来问：它到底切的是块里的哪一块？</p>
