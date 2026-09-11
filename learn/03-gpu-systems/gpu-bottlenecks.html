@@ -34,13 +34,13 @@
       <h1>GPU 到底在等什么：计算、访存还是通信？</h1>
       <p class="dek">“图形处理器（GPU）利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做推理基础设施时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 kernel 启动 / 中央处理器（CPU）调度开销。优化方向必须跟瓶颈对上。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释计算受限（<code>compute-bound</code>）、带宽受限（<code>memory-bound</code>）、通信受限（<code>communication-bound</code>）。</li><li>理解算术强度为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解通信与计算重叠的收益上限，并把它连接到 Megatron。</li><li>解释为什么大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释<code>compute-bound</code>、<code>memory-bound</code>、<code>communication-bound</code>。</li><li>理解算术强度为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解通信与计算重叠的收益上限，并把它连接到 Megatron。</li><li>解释为什么大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
 
       <section class="article-section" id="triad">
         <div class="section-no">01 · 三种不同上限</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
         <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / 算术逻辑单元（ALU） 能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但高带宽内存（HBM） / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective、点对点通信（P2P） 或网络传输。</span></div></div>
-        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：计算受限（计算受限） 更关注更快的通用矩阵乘法（GEMM）、precision 和 kernel；带宽受限（带宽受限） 更关注少搬数据、fusion、复用；通信受限（通信受限） 更关注通信量、拓扑、collective 算法和 overlap。</p>
+        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的通用矩阵乘法（GEMM）、precision 和 kernel；<code>memory-bound</code> 更关注少搬数据、fusion、复用；<code>communication-bound</code> 更关注通信量、拓扑、collective 算法和 overlap。</p>
         <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
       </section>
 
@@ -48,8 +48,8 @@
         <div class="section-no">02 · 算术强度</div>
         <h2>判断计算还是内存，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
         <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分动态随机存取存储器（DRAM）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
-        <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受内存带宽限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入计算受限（计算受限） 区域。</span></div></div>
-        <p>“某类算子永远带宽受限（带宽受限）”也不是绝对规律。shape、批次、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
+        <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受内存带宽限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入<code>compute-bound</code> 区域。</span></div></div>
+        <p>“某类算子永远<code>memory-bound</code>”也不是绝对规律。shape、批次、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
       </section>
 
       <section class="article-section" id="roofline">
@@ -57,32 +57,32 @@
         <h2>Roofline 只是把两个上限画在一张图上。</h2>
         <p>横轴是算术强度，纵轴是能达到的计算性能。极简版可以想成：</p>
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
-        <div class="roof-caption"><div><b>左边 · 内存-limited</b><span>每 byte 做的计算太少，性能上限随带宽和算术强度增长。</span></div><div><b>右边 · 计算-limited</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
+        <div class="roof-caption"><div><b>左边 · memory-bound</b><span>每 byte 做的计算太少，性能上限随带宽和算术强度增长。</span></div><div><b>右边 · compute-bound</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
         <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
         <div class="source-note">官方延伸阅读：NVIDIA Nsight 计算的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
       </section>
 
       <section class="article-section" id="compute">
-        <div class="section-no">04 · 计算受限</div>
+        <div class="section-no">04 · compute-bound</div>
         <h2>计算受限时，你真的在“吃计算单元”。</h2>
-        <p>想象一个足够大的 Linear：<code>[M,K] @ [K,N]</code>。如果矩阵尺寸合适、数据复用高、底层库能充分使用 Tensor Cores，kernel 可能更接近计算受限（计算受限）。</p>
+        <p>想象一个足够大的 Linear：<code>[M,K] @ [K,N]</code>。如果矩阵尺寸合适、数据复用高、底层库能充分使用 Tensor Cores，kernel 可能更接近<code>compute-bound</code>。</p>
         <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / 流式多处理器（SM） 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯计算 efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine 等实现质量很重要</span></div></div>
         <p>这也是为什么 Megatron 会如此关心张量并行（TP） 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
       </section>
 
       <section class="article-section" id="memory">
-        <div class="section-no">05 · 带宽受限</div>
+        <div class="section-no">05 · memory-bound</div>
         <h2>带宽受限时，减少“搬”往往比减少“算”更重要。</h2>
         <p>如果一个操作只对每个元素做很少计算，却必须把大量数据从 HBM 读进来再写回去，那么 Tensor Cores 再强也帮不了太多。典型优化思路是：</p>
-        <div class="stall-grid"><div><b>Kernel fusion</b><span>多个操作合并，减少中间张量写回 HBM 再读出的次数。</span></div><div><b>Better locality</b><span>让数据更多在 register / shared 内存 / cache 层级复用。</span></div><div><b>Fewer bytes</b><span>更低 precision、压缩、只搬真正需要的数据。</span></div><div><b>Batching</b><span>让一次权重读取服务更多 token / 请求，提高复用。</span></div><div><b>布局</b><span>合适的数据布局能帮助 coalesced access 与底层 kernel。</span></div><div><b>Avoid copies</b><span>不必要的张量 materialization / device copy 会直接烧带宽。</span></div></div>
+        <div class="stall-grid"><div><b>Kernel fusion</b><span>多个操作合并，减少中间张量写回 HBM 再读出的次数。</span></div><div><b>Better locality</b><span>让数据更多在 register / shared 内存 / cache 层级复用。</span></div><div><b>Fewer bytes</b><span>更低 precision、压缩、只搬真正需要的数据。</span></div><div><b>Batching</b><span>让一次权重读取服务更多 token / 请求，提高复用。</span></div><div><b>布局</b><span>合适的 data layout能帮助 coalesced access 与底层 kernel。</span></div><div><b>Avoid copies</b><span>不必要的张量 materialization / device copy 会直接烧带宽。</span></div></div>
         <p>后面读 FlashAttention 时，你会看到一个经典例子：它不是简单把 attention 数学公式改掉，而是重新组织数据流，减少昂贵的 HBM 读写。</p>
       </section>
 
       <section class="article-section" id="launch">
-        <div class="section-no">06 · 还有一个不能忘的成本：内核启动</div>
+        <div class="section-no">06 · kernel launch overhead</div>
         <h2>有时既没吃满计算，也没吃满带宽：工作可能太碎了。</h2>
-        <p>每次 CUDA kernel 启动都有调度/提交开销。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
-        <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">启动</span><span class="launch">启动</span><span class="launch">启动</span></div><div class="gpu-line"><small>GPU</small><span class="work a">tiny A</span><span class="work b">tiny B</span></div></div>
+        <p>每次 CUDA kernel launch 都有调度/提交 overhead。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
+        <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">launch</span><span class="launch">launch</span><span class="launch">launch</span></div><div class="gpu-line"><small>GPU</small><span class="work a">tiny A</span><span class="work b">tiny B</span></div></div>
         <p>这也是 CUDA Graphs、kernel fusion、continuous batching 等技术有价值的一部分原因：它们不一定只是在“让某个 kernel 更快”，也可能是在减少碎片化调度和空档。</p>
       </section>
 
@@ -90,8 +90,8 @@
         <div class="section-no">07 · 通信受限</div>
         <h2>一旦跨 GPU，就多了一份“必须把数据送到别人那里”的时间。</h2>
         <p>单 GPU 里主要盯计算和内存 hierarchy；多 GPU 还要把 GPU↔GPU、node↔node 的通信加进账本。最简单的传输时间直觉：</p>
-        <div class="comm-card"><small>IDEALIZED 传输 MODEL</small><b>time ≈ 延迟 + bytes / 带宽</b><p>小消息时固定启动延迟更显眼；大消息时有效带宽更关键。collective 通信还会包含多轮传输、拓扑和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐。</p></div>
-        <p>这里先认两个后面会反复出现的链路名：高速外设组件互连（PCIe） 是常见主机互连；基于融合以太网的 RDMA（RoCE） 则是在以太网上承载远程直接内存访问（RDMA） 语义的网络技术。它们和 NVLink、InfiniBand 分别处在不同硬件/网络路径上。</p><div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>延迟 matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>Bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
+        <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency + bytes / bandwidth</b><p>小消息时固定启动延迟更显眼；大消息时有效带宽更关键。collective 通信还会包含多轮传输、拓扑和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐。</p></div>
+        <p>这里先认两个后面会反复出现的链路名：高速外设组件互连（PCIe） 是常见主机互连；基于融合以太网的 RDMA（RoCE） 则是在以太网上承载远程直接内存访问（RDMA） 语义的网络技术。它们和 NVLink、InfiniBand 分别处在不同硬件/网络路径上。</p><div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
         <p>后面学 all-reduce / all-gather / reduce-scatter 时，我们会把“需要搬多少 bytes、走几轮、哪些 rank 互相交换”算得更具体。</p>
       </section>
 
@@ -108,7 +108,7 @@
         <div class="section-no">09 · 为什么 vLLM 很在意批处理</div>
         <h2>LLM 推理里，Prefill 和 Decode 常常不是同一种性能问题。</h2>
         <div class="prefill-decode-pressure"><div><small>PREFILL</small><b>很多 token 一起算</b><span>Prompt 一次送进大量 token，大矩阵乘更容易形成高效 GEMM，通常更有机会把计算吃起来。</span></div><div><small>DECODE</small><b>每个请求每步只新增少量 token</b><span>单请求很难形成足够大的矩阵；模型权重需要反复被读取，常更容易受到内存带宽、批次大小、键-值（KV） 访问等因素限制。</span></div></div>
-        <p>这不是“Prefill 永远计算受限（计算受限）、Decode 永远带宽受限（带宽受限）”的绝对定律。批次大小、模型结构、quantization、hardware、kernel 都会改变瓶颈。但它给了我们一个极其重要的 vLLM 直觉：</p>
+        <p>这不是“Prefill 永远<code>compute-bound</code>、Decode 永远<code>memory-bound</code>”的绝对定律。批次大小、模型结构、quantization、hardware、kernel 都会改变瓶颈。但它给了我们一个极其重要的 vLLM 直觉：</p>
         <div class="concept-note"><p><strong>Continuous batching 的价值之一：</strong>把多个请求的 Decode token 聚起来，让一次权重读取服务更多 token，提高 GPU 的有效工作量与数据复用。</p></div>
       </section>
 
@@ -128,7 +128,7 @@
         <p>因此 04 Distributed 不会从抽象“分布式系统理论”起步，而会直接从你已经遇到的问题开始：<strong>两张 GPU 到底如何知道自己是谁、如何建立通信组、all-reduce 又到底搬了什么？</strong></p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.3</span></div><h2>优化之前，先说出你认为瓶颈在哪。</h2><div class="quiz-item"><div class="quiz-q">1. 一个 kernel 的 Tensor Core 很空闲，但 HBM 吞吐量已经很高，更应该先怀疑计算还是内存？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更应该先怀疑带宽受限（带宽受限）。计算单元没有吃满，而内存吞吐量接近上限，说明继续增加理论 FLOPs 往往帮助不大，应该优先考虑少搬数据、提高复用或 fusion。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么“60ms 计算 + 40ms communication”不一定必须等于 100ms？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果依赖关系和资源允许，一部分 communication 可以与仍在进行的计算并发。理想 overlap 会把一部分通信时间隐藏在计算时间内，但实际收益会受依赖和资源竞争限制。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 vLLM 会极其在意 continuous batching？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">自回归 Decode 对单个请求每步工作量很小。把多个请求的 token 聚在一起，可以形成更大的有效批次，让权重读取服务更多 token、提高 GPU 利用率和吞吐；同时调度器还能及时补入新请求。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.3</span></div><h2>优化之前，先说出你认为瓶颈在哪。</h2><div class="quiz-item"><div class="quiz-q">1. 一个 kernel 的 Tensor Core 很空闲，但 HBM 吞吐量已经很高，更应该先怀疑计算还是内存？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更应该先怀疑<code>memory-bound</code>。计算单元没有吃满，而内存吞吐量接近上限，说明继续增加理论 FLOPs 往往帮助不大，应该优先考虑少搬数据、提高复用或 fusion。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么“60ms 计算 + 40ms communication”不一定必须等于 100ms？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果依赖关系和资源允许，一部分 communication 可以与仍在进行的计算并发。理想 overlap 会把一部分通信时间隐藏在计算时间内，但实际收益会受依赖和资源竞争限制。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 vLLM 会极其在意 continuous batching？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">自回归 Decode 对单个请求每步工作量很小。把多个请求的 token 聚在一起，可以形成更大的有效批次，让权重读取服务更多 token、提高 GPU 利用率和吞吐；同时调度器还能及时补入新请求。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
@@ -163,7 +163,7 @@
       <div class="next-lesson muted-next"><div><small>NEXT · 04.1</small><br /><strong>进程、rank 与 process group：多张 GPU 先怎么“认识彼此”？</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#triad">三种瓶颈</a><a href="#intensity">算术强度</a><a href="#roofline">Roofline</a><a href="#compute">计算受限</a><a href="#memory">带宽受限</a><a href="#launch">内核启动开销</a><a href="#communication">通信</a><a href="#overlap">通信重叠</a><a href="#prefill-decode">Prefill / Decode</a><a href="#profile">性能分析</a><a href="#bridge">下一模块</a><a href="#checkpoint">检查点</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#triad">三种瓶颈</a><a href="#intensity">算术强度</a><a href="#roofline">Roofline</a><a href="#compute">compute-bound</a><a href="#memory">memory-bound</a><a href="#launch">launch overhead</a><a href="#communication">通信</a><a href="#overlap">通信重叠</a><a href="#prefill-decode">Prefill / Decode</a><a href="#profile">性能分析</a><a href="#bridge">下一模块</a><a href="#checkpoint">检查点</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
 </body>
