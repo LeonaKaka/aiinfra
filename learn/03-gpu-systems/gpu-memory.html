@@ -36,7 +36,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把图形处理器（GPU）显存拆成参数、梯度、优化器状态、激活值、临时张量/工作区、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个张量或一份模型权重占多少内存。</li><li>理解“每个参数 16 bytes”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释激活检查点、分布式优化器和分组查询注意力（GQA）分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated</code> 与 <code>memory_reserved</code>，不再把 <code>nvidia-smi</code> 的数字直接等同于仍在使用的张量。</li></ul></div>
 
       <section class="article-section" id="ledger">
-        <div class="section-no">01 · THE 内存 LEDGER</div>
+        <div class="section-no">01 · 先建立显存账本</div>
         <h2>先别算数字，先把显存里的“住户”认全。</h2>
         <div class="memory-ledger">
           <div class="memory-ledger-head"><span>GPU 显存 LEDGER</span><span>谁会长期占着，谁只在某一阶段出现？</span></div>
@@ -51,7 +51,7 @@
       </section>
 
       <section class="article-section" id="bytes">
-        <div class="section-no">02 · THE ONLY FORMULA YOU NEED FIRST</div>
+        <div class="section-no">02 · 先记住一个最基本公式</div>
         <h2>一个张量占多少内存，第一步就是：元素数 × 每个元素多少 bytes。</h2>
         <div class="bytes-card"><small>BASIC 内存 MATH</small><b>内存 = numel × bytes_per_element</b><p>32 位浮点（FP32） 通常 4 bytes；16 位浮点（FP16） / BF16 16 位浮点（BF16） 通常 2 bytes；8 位浮点（FP8） / 8 位整数（INT8） 常可按 1 byte 粗算。实际模型还可能有量化 scale、元数据、padding/alignment 等额外开销。</p></div>
         <p>比如一个 <code>[8, 4096, 4096]</code> 的 BF16 张量：</p>
@@ -65,7 +65,7 @@ memory = 268,435,456 bytes
       </section>
 
       <section class="article-section" id="parameters">
-        <div class="section-no">03 · PARAMETERS</div>
+        <div class="section-no">03 · 参数</div>
         <h2>“7B 模型”先能告诉你的，只是权重这一笔账。</h2>
         <p>7B 大约表示 70 亿个参数。若所有权重都用 BF16/FP16 存：</p>
         <div class="code-block"><div class="code-head"><span>rough estimate</span><span>7B weights</span></div><pre><code>7,000,000,000 parameters × 2 bytes
@@ -77,7 +77,7 @@ memory = 268,435,456 bytes
       </section>
 
       <section class="article-section" id="gradients">
-        <div class="section-no">04 · GRADIENTS</div>
+        <div class="section-no">04 · 梯度</div>
         <h2>训练时，参数通常还要有一份对应的 gradient。</h2>
         <p>如果一个可训练参数张量是 <code>W</code>，backward 后 PyTorch 通常会把对应梯度放在 <code>W.grad</code>。梯度 shape 与参数 shape 对应，所以数量级也常和参数相当。</p>
         <div class="state-stack"><div><small>PARAM</small><b>W</b><code>shape = [H,4H]</code></div><div><small>GRAD</small><b>W.grad</b><code>same shape</code></div><div class="optional"><small>DTYPE</small><b>not universal</b><code>depends on setup</code></div><div class="optional"><small>SHARDING</small><b>can change</b><code>DP / ZeRO / Megatron</code></div></div>
@@ -85,7 +85,7 @@ memory = 268,435,456 bytes
       </section>
 
       <section class="article-section" id="optimizer">
-        <div class="section-no">05 · OPTIMIZER STATES</div>
+        <div class="section-no">05 · 优化器状态</div>
         <h2>Adam 为什么显存贵？因为每个参数背后不只存“这个参数自己”。</h2>
         <p>以常见 Adam/AdamW 心智模型为例，优化器会为参数维护一阶动量 <code>m</code> 和二阶动量 <code>v</code>。很多混合精度训练配置会用 FP32 保存这些状态；某些实现还会保留 FP32 master weight。</p>
         <div class="state-stack"><div><small>MODEL WEIGHT</small><b>parameter</b><code>e.g. BF16 · 2B</code></div><div><small>GRADIENT</small><b>grad</b><code>e.g. BF16 · 2B</code></div><div><small>ADAM</small><b>m + v</b><code>often 4B + 4B</code></div><div class="optional"><small>SOME SETUPS</small><b>master weight</b><code>possibly FP32 · 4B</code></div></div>
@@ -94,7 +94,7 @@ memory = 268,435,456 bytes
       </section>
 
       <section class="article-section" id="activations">
-        <div class="section-no">06 · ACTIVATIONS</div>
+        <div class="section-no">06 · 激活值</div>
         <h2>Activation 的麻烦在于：它不只和模型大小有关，还和“这次喂多少 token”有关。</h2>
         <p>训练时 forward 产生的某些中间结果必须留到 backward 使用；推理同样会产生 layer output、attention / 多层感知机（MLP） 中间结果等 activation，但通常只需短暂存活，不必为 backward 跨阶段保留。批次越大、sequence 越长、hidden 越宽、layer 越多，训练时需要保存的 activation 总量通常越大。</p>
         <div class="activation-lifetime"><div><small>FORWARD</small><b>produce activations</b></div><span>→ keep some →</span><div><small>BACKWARD</small><b>reuse to 计算 gradients</b></div><span>→</span><div><small>AFTER USE</small><b>eligible to free/reuse</b></div></div>
@@ -103,7 +103,7 @@ memory = 268,435,456 bytes
       </section>
 
       <section class="article-section" id="allocator">
-        <div class="section-no">07 · WHY NVIDIA-SMI CAN CONFUSE YOU</div>
+        <div class="section-no">07 · 为什么 nvidia-smi 容易让人误判</div>
         <h2>“PyTorch 没有这么多活张量，为什么显存看起来还没还回去？”</h2>
         <p>PyTorch 为了避免频繁向 CUDA 申请/释放显存，使用 caching allocator。已经不被张量使用的一些块，可以继续留在 allocator 管理的池里，等下次快速复用。</p>
         <div class="allocator-compare"><div><small>memory_allocated()</small><b>活着的张量</b><span>PyTorch 当前由张量占用的 GPU 显存。</span></div><div><small>memory_reserved()</small><b>allocator 管理的池</b><span>包含当前 allocated，也可能包含暂时空闲、但仍被 PyTorch 保留用于复用的块。</span></div></div>
@@ -118,7 +118,7 @@ print(torch.cuda.memory_summary())</code></pre></div>
       </section>
 
       <section class="article-section" id="inference">
-        <div class="section-no">08 · INFERENCE HAS A DIFFERENT BILL</div>
+        <div class="section-no">08 · 推理阶段的显存账本不一样</div>
         <h2>推理省掉 gradients 和 optimizer，却多了一个会越聊越大的 KV Cache。</h2>
         <p>标准多头注意力（MHA）/GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条序列</strong>：</p>
         <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有 block、alignment、元数据等开销；多头潜在注意力（MLA） 等架构的缓存形式也不同。</p></div>
@@ -128,14 +128,14 @@ print(torch.cuda.memory_summary())</code></pre></div>
       </section>
 
       <section class="article-section" id="oom">
-        <div class="section-no">09 · DEBUG AN OOM LIKE AN INFRA ENGINEER</div>
+        <div class="section-no">09 · 像 Infra 工程师一样排查 OOM</div>
         <h2>看到 OOM，先问“哪一类账爆了”，而不是立刻把批次降到 1。</h2>
         <div class="oom-flow"><div><small>1</small><b>Weights?</b><span>模型本身就放不下？dtype / quantization / model parallel。</span></div><div><small>2</small><b>激活值?</b><span>批次 / sequence / hidden 太大？checkpointing 是否能换计算省显存？</span></div><div><small>3</small><b>Optimizer?</b><span>训练 states 太大？是否需要分片 / offload / 分布式优化器？</span></div><div><small>4</small><b>KV / runtime?</b><span>推理 context / concurrency 太高？allocator、workspace、NCCL 是否也在占？</span></div></div>
         <p>一个非常实用的习惯是记录<strong>峰值</strong>而不是只看某个时刻。很多 OOM 发生在 backward、optimizer step 或某个临时 workspace 峰值，而不是 forward 一开始。</p>
       </section>
 
       <section class="article-section" id="bridge">
-        <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
+        <div class="section-no">10 · 接到 Megatron 与 vLLM</div>
         <h2>现在你已经能看懂两条路线为什么会选择完全不同的省显存技术。</h2>
         <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>分片 model states</b><span>张量并行（TP） 切参数/通用矩阵乘法（GEMM）；Sequence/Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer states / gradients / parameters 的不同阶段。</span></div><div><small>vLLM · INFERENCE</small><b>manage KV as a first-class resource</b><span>Paged KV blocks、continuous batching、prefix reuse、KV 传输都围绕“有限高带宽内存（HBM） 怎样服务更多 token / 请求”。</span></div></div>
         <div class="concept-note"><p><strong>后面读源码时始终问：</strong>这个优化到底是在减少参数、梯度、优化器状态、激活值、KV Cache，还是只是在改变它们“放在哪里”？</p></div>
