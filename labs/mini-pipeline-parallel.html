@@ -32,12 +32,12 @@
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV 传输</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区描述符</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
     <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
@@ -45,11 +45,11 @@
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Pipeline Parallel</span></div>
     <div class="lab-kicker">LAB A9 · PIPELINE PARALLEL</div>
-    <h1>PP 真正跨 stage 搬的不是整套参数。<br />前向计算 传 activation，反向传播 把 activation 梯度 送回来。</h1>
-    <p class="dek">这个实验把两层模型硬拆成两个进程：rank 0 只拥有第一段权重，rank 1 只拥有第二段权重和 loss。多个 microbatch 依次穿过 stage 边界，再反向把 <code>dL/dh</code> 送回来。最后两边各自的参数梯度必须和单进程 dense model 完全一致。</p>
+    <h1>PP 真正跨阶段搬的不是整套参数。<br />前向计算传 activation，反向传播把 activation 梯度送回来。</h1>
+    <p class="dek">这个实验把两层模型硬拆成两个进程：rank 0 只拥有第一段权重，rank 1 只拥有第二段权重和 loss。多个 microbatch 依次穿过阶段边界，再反向把 <code>dL/dh</code> 送回来。最后两边各自的参数梯度必须和单进程 dense model 完全一致。</p>
 
     <section class="lab-section" id="ownership"><div class="lab-kicker">01 · MODEL 归属关系</div><h2>先把“谁拥有哪部分模型”钉死，PP 才不会和 DP/TP 混掉。</h2>
-      <div class="stage-flow"><div class="stage-card train"><small>STAGE 0 · RANK 0</small><b>x @ W0 → h</b><span>保存输入 microbatch；前向计算 把 h 发给下一 stage；反向传播 收到 dL/dh 后计算 dW0。</span></div><div class="stage-card comm"><small>P2P BOUNDARY</small><b>h → · ← dL/dh</b><span>stage 之间传的是边界 activation 与对应 梯度，不是每个 microbatch 都复制全部参数。</span></div><div class="stage-card train"><small>STAGE 1 · RANK 1</small><b>h @ W1 → loss</b><span>拥有第二段权重与 loss；反向传播 计算 dW1 和 dL/dh，再把后者发回 rank 0。</span></div></div>
+      <div class="stage-flow"><div class="stage-card train"><small>阶段 0 · RANK 0</small><b>x @ W0 → h</b><span>保存输入 microbatch；前向计算把 h 发给下一阶段；反向传播收到 dL/dh 后计算 dW0。</span></div><div class="stage-card comm"><small>P2P BOUNDARY</small><b>h → · ← dL/dh</b><span>阶段之间传的是边界 activation 与对应梯度，不是每个 microbatch 都复制全部参数。</span></div><div class="stage-card train"><small>阶段 1 · RANK 1</small><b>h @ W1 → loss</b><span>拥有第二段权重与 loss；反向传播计算 dW1 和 dL/dh，再把后者发回 rank 0。</span></div></div>
     </section>
 
     <section class="lab-section" id="schedule"><div class="lab-kicker">02 · MICROBATCh SCHEDULE</div><h2>为了先看清依赖，这里故意用最简单的 GPipe-style schedule。</h2>
@@ -62,13 +62,13 @@ Stage 1: recv(h_i) → compute loss_i
 Backward reverses the dependency:
 Stage 1: backward(loss_i) → send(dh_i)
 Stage 0: recv(dh_i) → accumulate dW0</pre></div>
-      <p>这个顺序故意没有冒充 Megatron 的生产 schedule。真实 Pipeline Parallel 会加入 warmup、steady-state 1F1B、cooldown，甚至 interleaving / virtual pipeline stage 来减少 bubble。这个 Lab 只负责先把<strong>stage 归属关系、microbatch 与 P2P dependency</strong>跑对。</p>
+      <p>这个顺序故意没有冒充 Megatron 的生产 schedule。真实 Pipeline Parallel 会加入 warmup、steady-state 1F1B、cooldown，甚至 interleaving / virtual pipeline 阶段来减少 bubble。这个 Lab 只负责先把<strong>阶段归属关系、microbatch 与 P2P dependency</strong>跑对。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>如果跨进程 前向计算/反向传播 拼接正确，两个 stage 的参数梯度都应等于 dense reference。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>如果跨进程前向计算/反向传播拼接正确，两个阶段的参数梯度都应等于 dense reference。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_pipeline_parallel.py</pre></div>
-      <p>验收不是“send/recv 没报错”，而是 <code>dW0</code> 与 <code>dW1</code> 都和单进程两层模型对齐。这样才能证明 stage boundary 没把 autograd 语义弄丢。</p>
+      <p>验收不是“send/recv 没报错”，而是 <code>dW0</code> 与 <code>dW1</code> 都和单进程两层模型对齐。这样才能证明阶段 boundary 没把 autograd 语义弄丢。</p>
       <a class="code-link" href="./code/mini_pipeline_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_pipeline_parallel.py</b></div><span>→</span></a>
     </section>
 
@@ -77,11 +77,11 @@ Stage 0: recv(dh_i) → accumulate dW0</pre></div>
       <p>这也是 Source Map 里把 Control 与 Data 分开的原因：schedule 决定“现在轮到谁算”，P2P helper 决定“边界上具体传什么”。</p>
     </section>
 
-    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>先答依赖，再背 1F1B。</h2><div class="check-list"><div>① 为什么 rank 0 不需要拥有 W1 才能完成自己的 反向传播？</div><div>② stage 1 为什么要把 <code>dL/dh</code> 发回，而不是把 dW1 发回？</div><div>③ 这个 GPipe-style schedule 的 bubble 从哪里来？1F1B 想改善什么？</div></div></section>
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>先答依赖，再背 1F1B。</h2><div class="check-list"><div>① 为什么 rank 0 不需要拥有 W1 才能完成自己的反向传播？</div><div>② 阶段 1 为什么要把 <code>dL/dh</code> 发回，而不是把 dW1 发回？</div><div>③ 这个 GPipe-style schedule 的 bubble 从哪里来？1F1B 想改善什么？</div></div></section>
 
     <nav class="lab-footer-nav"><a href="./mini-sequence-parallel.html">← Lab A8 · Sequence Parallel</a><a href="./mini-context-parallel.html">Lab A10 · Context Parallel →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#ownership">先把“谁拥有哪部分模型”钉死，PP 才不会和 DP/TP 混掉。</a><a href="#schedule">为了先看清依赖，这里故意用最简单的 GPipe-style schedule。</a><a href="#run">如果跨进程 前向计算/反向传播 拼接正确，两个 stage 的参数梯度都应等于 dense reference。</a><a href="#source">回源码时把 schedule 和 P2P 分开读。</a><a href="#checkpoint">先答依赖，再背 1F1B。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#ownership">先把“谁拥有哪部分模型”钉死，PP 才不会和 DP/TP 混掉。</a><a href="#schedule">为了先看清依赖，这里故意用最简单的 GPipe-style schedule。</a><a href="#run">如果跨进程前向计算/反向传播拼接正确，两个阶段的参数梯度都应等于 dense reference。</a><a href="#source">回源码时把 schedule 和 P2P 分开读。</a><a href="#checkpoint">先答依赖，再背 1F1B。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
