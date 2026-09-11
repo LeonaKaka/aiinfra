@@ -31,9 +31,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>GPU Memory</span></div>
       <div class="lesson-kicker"><span>LESSON 03.2 · GPU SYSTEMS</span><span>约 50 min</span></div>
       <h1>显存到底花在哪：先学会给 GPU 做一张账本。</h1>
-      <p class="dek">“模型 7B，为什么 24GB 显卡还训练不了？”“推理明明不反向传播，为什么上下文一长还是 内存不足/显存不足（OOM）？”这类问题都不能只看参数量。训练和推理会同时占用多种不同寿命、不同形状的数据。把这些账分清，后面你才看得懂 Megatron 为什么要把优化器状态分片、vLLM 为什么如此在意 键-值（KV） Cache。</p>
+      <p class="dek">“模型 7B，为什么 24GB 显卡还训练不了？”“推理明明不反向传播，为什么上下文一长还是显存不足（OOM）？”这类问题都不能只看参数量。训练和推理会同时占用多种不同寿命、不同形状的数据。把这些账分清，后面你才看得懂 Megatron 为什么要把优化器状态分片、vLLM 为什么如此在意 KV Cache。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 图形处理器（GPU） 显存拆成 参数、梯度、优化器状态、激活值、临时张量 / 工作区、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个张量 或一份模型权重占多少内存。</li><li>理解“每个参数 16 bytes”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释 激活检查点、分布式优化器、分组查询注意力（GQA） 分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated</code> 与 <code>memory_reserved</code>，不再把 <code>nvidia-smi</code> 的数字直接等同于仍在使用的张量。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把图形处理器（GPU）显存拆成参数、梯度、优化器状态、激活值、临时张量/工作区、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个张量或一份模型权重占多少内存。</li><li>理解“每个参数 16 bytes”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释激活检查点、分布式优化器和分组查询注意力（GQA）分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated</code> 与 <code>memory_reserved</code>，不再把 <code>nvidia-smi</code> 的数字直接等同于仍在使用的张量。</li></ul></div>
 
       <section class="article-section" id="ledger">
         <div class="section-no">01 · THE MEMORY LEDGER</div>
