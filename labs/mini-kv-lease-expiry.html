@@ -32,12 +32,12 @@
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV 传输</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区描述符</a>
     <a class="lesson-link lab-side-link current infer-current" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
     <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
@@ -46,18 +46,18 @@
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>KV 租约 / Expiry</span></div>
     <div class="lab-kicker">LAB B7 · RELEASE WITHOUT CORRUPTION OR LEAKS</div>
     <h1>远端 KV 释放太早会读坏。<br />永远不释放又会把显存慢慢吃光。</h1>
-    <p class="dek">B5 解决“transfer 没完成前不能复用 memory”，B6 解决“哪块 allocation / region 真正在被传”。最后还缺一个生产系统必须回答的问题：如果 消费端 挂了、网络断了，生产端 难道永远把 blocks 钉住吗？租约 给 memory 生命周期 加上一个有期限的承诺；心跳 表示“我还需要它”，完成确认 表示“我已经用完”，expiry 则是失联后的 leak-safe fallback。</p>
+    <p class="dek">B5 解决“传输没完成前不能复用内存”，B6 解决“哪块分配 / region 真正在被传”。最后还缺一个生产系统必须回答的问题：如果消费端挂了、网络断了，生产端难道永远把 blocks 钉住吗？租约给内存生命周期加上一个有期限的承诺；心跳表示“我还需要它”，完成确认表示“我已经用完”，expiry 则是失联后的 leak-safe fallback。</p>
 
     <section class="lab-section" id="state"><div class="lab-kicker">01 · THE STATE MACHINE</div><h2>一块远端 KV 只有两条安全释放路径：明确完成，或者租约到期。</h2>
       <div class="stage-flow">
-        <div class="stage-card infer"><small>PINNED</small><b>租约 starts</b><span>生产端 暂时不能把这些 blocks 还给 allocator；同时记录一个 expiry deadline。</span></div>
-        <div class="stage-card comm"><small>ALIVE</small><b>心跳 renews</b><span>消费端 仍在使用远端 KV 时周期性续约，把安全窗口继续向后推。</span></div>
+        <div class="stage-card infer"><small>PINNED</small><b>租约 starts</b><span>生产端暂时不能把这些 blocks 还给 allocator；同时记录一个 expiry deadline。</span></div>
+        <div class="stage-card comm"><small>ALIVE</small><b>心跳 renews</b><span>消费端仍在使用远端 KV 时周期性续约，把安全窗口继续向后推。</span></div>
         <div class="stage-card train"><small>RELEASE</small><b>complete OR expire</b><span>正常完成可以提前释放；失联时则等 deadline 到期后回收，避免永久泄漏。</span></div>
       </div>
       <p>这里最重要的不是某个固定 TTL 数字，而是不变量：<strong>在仍可能有合法远端读取时不能释放；在对端永久消失时又必须最终能够回收。</strong></p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">02 · RUN THE 失败 PATH</div><h2>一个请求正常 心跳 + 完成确认；另一个请求完全失联，最后靠 expiry 回收。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">02 · RUN THE 失败 PATH</div><h2>一个请求正常心跳 + 完成确认；另一个请求完全失联，最后靠 expiry 回收。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_kv_lease_expiry.py</pre></div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified · virtual clock</span></div><pre>initial lease expiry          : 6.0
@@ -67,17 +67,17 @@ completion req501 @ t=5.0     : release=completion
 silent req502 @ t=6.5         : release=expiry
 PASS</pre></div>
       <a class="code-link" href="./code/mini_kv_lease_expiry.py"><div><small>FULL SOURCE</small><b>打开 mini_kv_lease_expiry.py</b></div><span>→</span></a>
-      <div class="truth-note"><b>脚本使用 virtual clock，不是在 benchmark 30 秒超时。</b><p>为了让状态机瞬间、可重复地跑完，时间是人为推进的；6/1/4 的教学比例只是把当前源码审查时的 租约 / 心跳 / extension 比例缩小展示。真实系统的默认值与实现以后都可能变化，不能把这个 toy 当协议规范。</p></div>
+      <div class="truth-note"><b>脚本使用 virtual clock，不是在 benchmark 30 秒超时。</b><p>为了让状态机瞬间、可重复地跑完，时间是人为推进的；6/1/4 的教学比例只是把当前源码审查时的租约 / 心跳 / extension 比例缩小展示。真实系统的默认值与实现以后都可能变化，不能把这个 toy 当协议规范。</p></div>
     </section>
 
-    <section class="lab-section" id="stale"><div class="lab-kicker">03 · STALE MESSAGE</div><h2>旧请求的 心跳 不能把已经复用的新 memory 又“续活”。</h2>
+    <section class="lab-section" id="stale"><div class="lab-kicker">03 · STALE MESSAGE</div><h2>旧请求的心跳不能把已经复用的新内存又“续活”。</h2>
       <div class="source-bridge"><div><small>OLD OWNER</small><b>请求 501 · generation 0</b><code>late heartbeat arrives</code></div><span>must not mutate →</span><div><small>CURRENT OWNER</small><b>generation 1</b><code>lease remains unchanged</code></div></div>
-      <p>脚本用 <code>generation</code> 显式演示这个 ABA-style 风险。<strong>generation 是教学字段，不是说当前 vLLM 就用同样的 generation protocol。</strong>真正要记住的是：异步系统里的 完成确认 / 心跳 必须绑定到正确的 请求 / block 生命周期，迟到消息不能影响已经被重新分配的资源。</p>
+      <p>脚本用 <code>generation</code> 显式演示这个 ABA-style 风险。<strong>generation 是教学字段，不是说当前 vLLM 就用同样的 generation protocol。</strong>真正要记住的是：异步系统里的完成确认 / 心跳必须绑定到正确的请求 / block 生命周期，迟到消息不能影响已经被重新分配的资源。</p>
     </section>
 
-    <section class="lab-section" id="real"><div class="lab-kicker">04 · MAP TO CURRENT VLLM NIXL</div><h2>当前代码已经能找到这套 生命周期 机制的几个关键锚点。</h2>
-      <div class="result-grid"><div class="result-card"><small>租约</small><b>kv_lease_duration</b><span>当前 NIXL 调度器 默认读取 30 秒 租约，并把 心跳 interval 设成 lease_duration // 6。</span></div><div class="result-card"><small>PIN</small><b>request_finished()</b><span>需要远端读取的 请求 会延迟释放 blocks，并记录基于 <code>perf_counter()</code> 的 expiry deadline。</span></div><div class="result-card"><small>心跳</small><b>heartbeat_by_engine</b><span>调度器 按 remote 推理引擎 聚合仍需续约的 请求，并节流后把 心跳 元数据 交给 worker。</span></div></div>
-      <p>正常 receive 完成后，调度器 还会停止对应 请求 的 心跳。换句话说，租约 不是“定时器小功能”，而是 请求 lifecycle、block allocator 与远端 transfer 完成确认 之间的资源所有权协议。</p>
+    <section class="lab-section" id="real"><div class="lab-kicker">04 · MAP TO CURRENT VLLM NIXL</div><h2>当前代码已经能找到这套生命周期机制的几个关键锚点。</h2>
+      <div class="result-grid"><div class="result-card"><small>租约</small><b>kv_lease_duration</b><span>当前 NIXL 调度器默认读取 30 秒租约，并把心跳 interval 设成 lease_duration // 6。</span></div><div class="result-card"><small>PIN</small><b>request_finished()</b><span>需要远端读取的请求会延迟释放 blocks，并记录基于 <code>perf_counter()</code> 的 expiry deadline。</span></div><div class="result-card"><small>心跳</small><b>heartbeat_by_engine</b><span>调度器按 remote 推理引擎聚合仍需续约的请求，并节流后把心跳元数据交给工作进程。</span></div></div>
+      <p>正常 receive 完成后，调度器还会停止对应请求的心跳。换句话说，租约不是“定时器小功能”，而是请求生命周期、block allocator 与远端传输完成确认之间的资源所有权协议。</p>
     </section>
 
     <section class="lab-section" id="clock"><div class="lab-kicker">05 · CLOCK DOMAIN TRAP</div><h2><code>perf_counter()</code> 是进程本地时钟，不能把另一个进程的 deadline 原样拿来比较。</h2>
@@ -87,17 +87,17 @@ PASS</pre></div>
 handshake: estimate peer clock offset from round trip
 
 worker: rebase / reason about lifetime in its own clock domain</pre></div>
-      <p>这是一个非常典型的分布式坑：即使两个数都叫“seconds”，也不代表零点相同。当前 vLLM 的 connector 元数据 明确携带 <code>scheduler_clock</code>，NIXL handshake 还会用往返时间估计 peer clock offset。B7 的 virtual clock 故意只有一个时间域，避免把这个工程问题藏在 toy 代码里。</p>
+      <p>这是一个非常典型的分布式坑：即使两个数都叫“seconds”，也不代表零点相同。当前 vLLM 的 connector 元数据明确携带 <code>scheduler_clock</code>，NIXL handshake 还会用往返时间估计 peer clock offset。B7 的 virtual clock 故意只有一个时间域，避免把这个工程问题藏在 toy 代码里。</p>
     </section>
 
     <section class="lab-section" id="close"><div class="lab-kicker">06 · INFERENCE SOFTWARE CAPSTONE</div><h2>到这里，KV Connector 的软件心智模型已经闭合。</h2>
-      <div class="check-list"><div>① 调度器 决定远端 KV 是否可用、需要哪些 blocks。</div><div>② 块表 / region 描述符 决定逻辑 KV 对应哪块可传输 memory。</div><div>③ Handshake 检查兼容性并交换远端 agent/layout 信息。</div><div>④ 异步 / layer-wise transfer 追踪“什么时候发起、什么时候真正需要”。</div><div>⑤ 完成确认 + 租约 / 心跳 / expiry 决定“什么时候可以安全释放”。</div></div>
+      <div class="check-list"><div>① 调度器决定远端 KV 是否可用、需要哪些 blocks。</div><div>② 块表 / region 描述符决定逻辑 KV 对应哪块可传输内存。</div><div>③ Handshake 检查兼容性并交换远端 agent/布局信息。</div><div>④ 异步 / layer-wise 传输追踪“什么时候发起、什么时候真正需要”。</div><div>⑤ 完成确认 + 租约 / 心跳 / expiry 决定“什么时候可以安全释放”。</div></div>
       <p>再往后就不是继续发明 toy 协议，而是把同一套问题放到真实 NIXL / UCX / RDMA / GPUDirect 环境里验证 transport、带宽、并发与失败恢复。没有对应硬件时，网站会停在源码级解释，不伪造 benchmark。</p>
     </section>
 
     <nav class="lab-footer-nav"><a href="./mini-registered-region-descriptor.html">← Lab B6 · 已注册内存区</a><a href="./mini-inference-engine.html">Lab B8 · Inference 推理引擎 →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#state">一块远端 KV 只有两条安全释放路径：明确完成，或者租约到期。</a><a href="#run">一个请求正常 心跳 + 完成确认；另一个请求完全失联，最后靠 expiry 回收。</a><a href="#stale">旧请求的 心跳 不能把已经复用的新 memory 又“续活”。</a><a href="#real">当前代码已经能找到这套 生命周期 机制的几个关键锚点。</a><a href="#clock">perf_counter() 是进程本地时钟，不能把另一个进程的 deadline 原样拿来比较。</a><a href="#close">到这里，KV Connector 的软件心智模型已经闭合。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#state">一块远端 KV 只有两条安全释放路径：明确完成，或者租约到期。</a><a href="#run">一个请求正常心跳 + 完成确认；另一个请求完全失联，最后靠 expiry 回收。</a><a href="#stale">旧请求的心跳不能把已经复用的新内存又“续活”。</a><a href="#real">当前代码已经能找到这套生命周期机制的几个关键锚点。</a><a href="#clock">perf_counter() 是进程本地时钟，不能把另一个进程的 deadline 原样拿来比较。</a><a href="#close">到这里，KV Connector 的软件心智模型已经闭合。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
