@@ -27,7 +27,7 @@
 <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>06.2</span></div><h2>把“逻辑阶段”和“调度粒度”分开回答。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么 prompt 有 1000 token 时，不必串行跑 1000 次目标模型？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 prompt token 已知，causal mask可以让许多位置在同一批次ed execution 中并行计算。</div></div><div class="quiz-item"><div class="quiz-q">2. “Prefill 是一次”与chunked Prefill 矛盾吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不矛盾。一个请求有一段逻辑处理输入工作负载，但调度器可以把它拆成多个 execution 分块，逐步让 num_computed_token 追上 prompt state。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么说当前 vLLM V1 调度器没有全局 Prefill/Decode 两阶段？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为它按每个请求还需要计算多少 token 来安排本轮 token budget；同一iteration可以同时安排已有 Decode token 与 Prefill 分块。Prefill/Decode 是工作负载语义，不是调度器必须切换的全局 mode。</div></div><div class="quiz-item"><div class="quiz-q">4. P/D 分离为什么一定会引出 KV 传输？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Prefill 工作进程已经建立 prompt 历史 K/V；Decode 工作进程若不想重新 Prefill，就必须获得这些状态并映射到自己的 KV 布局。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">

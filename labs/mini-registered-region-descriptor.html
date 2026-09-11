@@ -77,7 +77,7 @@ region geometry compatible   : True
 max transferred-block error : 0.000e+00
 PASS</pre></div>
       <a class="code-link" href="./code/mini_registered_region_descriptor.py"><div><small>FULL SOURCE</small><b>打开 mini_registered_region_descriptor.py</b></div><span>→</span></a>
-      <div class="truth-note"><b>远端不能拿你的 <code>data_ptr()</code> 当普通地址直接读。</b><p>脚本只交换 offset/shape/stride，并用普通 torch.distributed 搬 tensor。真实 NIXL 需要 transport-aware 内存注册、agent 元数据与 remote descriptors；这里没有 rkey、UCX、RDMA 或 GPUDirect。</p></div>
+      <div class="truth-note"><b>远端不能拿你的 <code>data_ptr()</code> 当普通地址直接读。</b><p>脚本只交换 offset/shape/stride，并用普通 torch.distributed 搬 tensor。真实 NIXL 需要 transport-aware 内存注册、agent 元数据与 remote descriptors（描述符：描述一段可传输内存位置和属性的结构）；这里没有 rkey、UCX、RDMA 或 GPUDirect。</p></div>
     </section>
 
     <section class="lab-section" id="real"><div class="lab-kicker">04 · 映射到当前 vLLM NIXL</div><h2>当前 <code>register_kv_caches()</code> 正好把分配 registration 与 logical region geometry 分开处理。</h2>

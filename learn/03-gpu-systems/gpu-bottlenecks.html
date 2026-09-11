@@ -39,15 +39,15 @@
       <section class="article-section" id="triad">
         <div class="section-no">01 · 三种不同上限</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
-        <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / 算术逻辑单元（ALU） 能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但高带宽内存（HBM） / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective、点对点通信（P2P） 或网络传输。</span></div></div>
-        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的通用矩阵乘法（GEMM）、precision 和 kernel；<code>memory-bound</code> 更关注少搬数据、fusion、复用；<code>communication-bound</code> 更关注通信量、拓扑、collective 算法和 overlap。</p>
+        <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元） 能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但HBM（高带宽内存：数据中心 GPU/加速器常见的高带宽设备内存技术） / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective（集合通信：一组 ranks 共同参与的数据通信操作）、P2P（点对点通信：两个 peer/rank 之间直接发送和接收数据的通信模式） 或网络传输。</span></div></div>
+        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的通用矩阵乘法（GEMM）、precision 和 kernel；<code>memory-bound</code> 更关注少搬数据、fusion、复用；<code>communication-bound</code> 更关注通信量、拓扑、collective 算法和 overlap（重叠执行：让计算与通信并行以隐藏部分等待时间）。</p>
         <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
       </section>
 
       <section class="article-section" id="intensity">
         <div class="section-no">02 · 算术强度</div>
         <h2>判断计算还是内存，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
-        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分动态随机存取存储器（DRAM）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
+        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分DRAM（动态随机存取存储器：主机内存和部分设备内存常用的易失性存储技术）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
         <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受内存带宽限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入<code>compute-bound</code> 区域。</span></div></div>
         <p>“某类算子永远<code>memory-bound</code>”也不是绝对规律。shape、批次、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
       </section>
@@ -57,7 +57,7 @@
         <h2>Roofline 只是把两个上限画在一张图上。</h2>
         <p>横轴是算术强度，纵轴是能达到的计算性能。极简版可以想成：</p>
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
-        <div class="roof-caption"><div><b>左边 · memory-bound</b><span>每 byte 做的计算太少，性能上限随带宽和算术强度增长。</span></div><div><b>右边 · compute-bound</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
+        <div class="roof-caption"><div><b>左边 · memory-bound（内存带宽受限：性能主要受数据读写带宽限制）</b><span>每 byte 做的计算太少，性能上限随带宽和算术强度增长。</span></div><div><b>右边 · compute-bound（计算受限：性能主要受计算吞吐限制）</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
         <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
         <div class="source-note">官方延伸阅读：NVIDIA Nsight 计算的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
       </section>
@@ -66,7 +66,7 @@
         <div class="section-no">04 · compute-bound</div>
         <h2>计算受限时，你真的在“吃计算单元”。</h2>
         <p>想象一个足够大的 Linear：<code>[M,K] @ [K,N]</code>。如果矩阵尺寸合适、数据复用高、底层库能充分使用 Tensor Cores，kernel 可能更接近<code>compute-bound</code>。</p>
-        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / 流式多处理器（SM） 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯计算 efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine 等实现质量很重要</span></div></div>
+        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / SM（流式多处理器：NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元） 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯计算 efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine（推理引擎：把 request 管理、scheduler 和模型执行组织成服务循环） 等实现质量很重要</span></div></div>
         <p>这也是为什么 Megatron 会如此关心张量并行（TP） 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
       </section>
 
@@ -74,25 +74,25 @@
         <div class="section-no">05 · memory-bound</div>
         <h2>带宽受限时，减少“搬”往往比减少“算”更重要。</h2>
         <p>如果一个操作只对每个元素做很少计算，却必须把大量数据从 HBM 读进来再写回去，那么 Tensor Cores 再强也帮不了太多。典型优化思路是：</p>
-        <div class="stall-grid"><div><b>Kernel fusion</b><span>多个操作合并，减少中间张量写回 HBM 再读出的次数。</span></div><div><b>Better locality</b><span>让数据更多在 register / shared 内存 / cache 层级复用。</span></div><div><b>Fewer bytes</b><span>更低 precision、压缩、只搬真正需要的数据。</span></div><div><b>Batching</b><span>让一次权重读取服务更多 token / 请求，提高复用。</span></div><div><b>布局</b><span>合适的 data layout能帮助 coalesced access 与底层 kernel。</span></div><div><b>Avoid copies</b><span>不必要的张量 materialization / device copy 会直接烧带宽。</span></div></div>
+        <div class="stall-grid"><div><b>Kernel fusion</b><span>多个操作合并，减少中间张量写回 HBM 再读出的次数。</span></div><div><b>Better locality</b><span>让数据更多在 register / shared 内存 / cache 层级复用。</span></div><div><b>Fewer bytes</b><span>更低 precision、压缩、只搬真正需要的数据。</span></div><div><b>Batching</b><span>让一次权重读取服务更多 token / 请求，提高复用。</span></div><div><b>布局</b><span>合适的 data layout能帮助 coalesced access 与底层 kernel。</span></div><div><b>Avoid copies</b><span>不必要的张量 materialization / device（设备位置：表示数据位于 CPU 还是哪张 GPU） copy 会直接烧带宽。</span></div></div>
         <p>后面读 FlashAttention 时，你会看到一个经典例子：它不是简单把 attention 数学公式改掉，而是重新组织数据流，减少昂贵的 HBM 读写。</p>
       </section>
 
       <section class="article-section" id="launch">
         <div class="section-no">06 · kernel launch overhead</div>
         <h2>有时既没吃满计算，也没吃满带宽：工作可能太碎了。</h2>
-        <p>每次 CUDA kernel launch 都有调度/提交 overhead。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
+        <p>每次 CUDA（NVIDIA GPU 并行计算平台：官方产品名，没有应当强行展开的现代英文全称） kernel launch 都有调度/提交 overhead。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
         <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">launch</span><span class="launch">launch</span><span class="launch">launch</span></div><div class="gpu-line"><small>GPU</small><span class="work a">tiny A</span><span class="work b">tiny B</span></div></div>
-        <p>这也是 CUDA Graphs、kernel fusion、continuous batching 等技术有价值的一部分原因：它们不一定只是在“让某个 kernel 更快”，也可能是在减少碎片化调度和空档。</p>
+        <p>这也是 CUDA Graphs、kernel fusion、continuous batching（连续批处理：每个调度轮次都可以重新组成执行 batch） 等技术有价值的一部分原因：它们不一定只是在“让某个 kernel 更快”，也可能是在减少碎片化调度和空档。</p>
       </section>
 
       <section class="article-section" id="communication">
         <div class="section-no">07 · 通信受限</div>
         <h2>一旦跨 GPU，就多了一份“必须把数据送到别人那里”的时间。</h2>
         <p>单 GPU 里主要盯计算和内存 hierarchy；多 GPU 还要把 GPU↔GPU、node↔node 的通信加进账本。最简单的传输时间直觉：</p>
-        <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency + bytes / bandwidth</b><p>小消息时固定启动延迟更显眼；大消息时有效带宽更关键。collective 通信还会包含多轮传输、拓扑和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐。</p></div>
-        <p>这里先认两个后面会反复出现的链路名：高速外设组件互连（PCIe） 是常见主机互连；基于融合以太网的 RDMA（RoCE） 则是在以太网上承载远程直接内存访问（RDMA） 语义的网络技术。它们和 NVLink、InfiniBand 分别处在不同硬件/网络路径上。</p><div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
-        <p>后面学 all-reduce / all-gather / reduce-scatter 时，我们会把“需要搬多少 bytes、走几轮、哪些 rank 互相交换”算得更具体。</p>
+        <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency（延迟：一次 request 或一步操作从开始到完成所花的时间） + bytes / bandwidth</b><p>小消息时固定启动延迟更显眼；大消息时有效带宽更关键。collective 通信还会包含多轮传输、拓扑和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐。</p></div>
+        <p>这里先认两个后面会反复出现的链路名：PCIe（高速外设组件互连：CPU、GPU、NIC 等设备之间常见的主机互连总线） 是常见主机互连；RoCE（基于融合以太网的 RDMA：在以太网上承载 RDMA 语义的网络技术） 则是在以太网上承载RDMA（远程直接内存访问：允许远端内存传输减少 CPU 数据搬运参与的网络访问机制） 语义的网络技术。它们和 NVLink、InfiniBand 分别处在不同硬件/网络路径上。</p><div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
+        <p>后面学 all-reduce（全归约：归约各 rank 数据并把结果返回给所有参与者） / all-gather（全收集：收集各 rank 分片并让所有参与者得到完整结果） / reduce-scatter（归约分散：先归约再让每个 rank 只保留一份分片） 时，我们会把“需要搬多少 bytes、走几轮、哪些 rank 互相交换”算得更具体。</p>
       </section>
 
       <section class="article-section" id="overlap">
@@ -115,23 +115,23 @@
       <section class="article-section" id="profile">
         <div class="section-no">10 · 怎样分析真实系统</div>
         <h2>不要靠猜，用不同 profiler 回答不同层级的问题。</h2>
-        <p>时间线里你会频繁看到 NVIDIA 集体通信库（NCCL） 发起的 collective / P2P；它是通信软件层，不是 NVLink、InfiniBand 或以太网链路本身。</p>
-        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems</b><span>看 CPU、CUDA kernels、NCCL、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight 计算</b><span>看某个 kernel 的计算 / 内存吞吐量、occupancy、roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler</b><span>把 Python/PyTorch op 和 CUDA activities 对起来，定位模型级热点。</span></div></div>
+        <p>时间线里你会频繁看到 NCCL（NVIDIA 集体通信库：GPU 集群中常用的 collective / P2P 通信软件库） 发起的 collective / P2P；它是通信软件层，不是 NVLink、InfiniBand 或以太网链路本身。</p>
+        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems</b><span>看 CPU、CUDA kernels、NCCL、streams（CUDA 流：按顺序组织 GPU 异步工作的执行队列）、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight 计算</b><span>看某个 kernel 的计算 / 内存吞吐量、occupancy、roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler</b><span>把 Python/PyTorch op 和 CUDA activities 对起来，定位模型级热点。</span></div></div>
         <p>真正的性能工作通常是从宏观 timeline 找热点，再下钻到关键 kernel，而不是打开源码随机找“看起来可以优化”的 for-loop。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">11 · 下一步去哪里</div>
         <h2>GPU Systems 到这里结束，下一模块开始研究“通信到底怎么发生”。</h2>
-        <p>推理侧后面还会遇到 Prefill/Decode 分离（P/D）：把两阶段放到不同资源池后，除了调度，还要为 KV 交接支付新的通信成本。</p>
-        <div class="bridge-grid"><div><small>TRAINING · MEGATRON</small><b>计算 + communication</b><span>TP/流水线并行（PP）/数据并行（DP） 把工作拆开；NCCL collectives 搬数据；overlap 尽量把通信藏起来；parallel size 还会改变 local GEMM efficiency。</span></div><div><small>INFERENCE · vLLM</small><b>内存 + 调度 + communication</b><span>continuous batching 提高利用率；Paged KV 管 HBM；P/D 与 KV Connector 再引入跨设备/节点数据传输。</span></div></div>
+        <p>推理侧后面还会遇到 P/D（Prefill/Decode 分离：把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff）：把两阶段放到不同资源池后，除了调度，还要为 KV 交接支付新的通信成本。</p>
+        <div class="bridge-grid"><div><small>TRAINING · MEGATRON</small><b>计算 + communication</b><span>TP/PP（流水线并行：沿模型深度切成多个 pipeline stages，并用 microbatch 流水）/数据并行（DP） 把工作拆开；NCCL collectives 搬数据；overlap 尽量把通信藏起来；parallel size 还会改变 local GEMM efficiency。</span></div><div><small>INFERENCE · vLLM</small><b>内存 + 调度 + communication</b><span>continuous batching 提高利用率；Paged KV 管 HBM；P/D 与 KV Connector 再引入跨设备/节点数据传输。</span></div></div>
         <p>因此 04 Distributed 不会从抽象“分布式系统理论”起步，而会直接从你已经遇到的问题开始：<strong>两张 GPU 到底如何知道自己是谁、如何建立通信组、all-reduce 又到底搬了什么？</strong></p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.3</span></div><h2>优化之前，先说出你认为瓶颈在哪。</h2><div class="quiz-item"><div class="quiz-q">1. 一个 kernel 的 Tensor Core 很空闲，但 HBM 吞吐量已经很高，更应该先怀疑计算还是内存？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更应该先怀疑<code>memory-bound</code>。计算单元没有吃满，而内存吞吐量接近上限，说明继续增加理论 FLOPs 往往帮助不大，应该优先考虑少搬数据、提高复用或 fusion。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么“60ms 计算 + 40ms communication”不一定必须等于 100ms？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果依赖关系和资源允许，一部分 communication 可以与仍在进行的计算并发。理想 overlap 会把一部分通信时间隐藏在计算时间内，但实际收益会受依赖和资源竞争限制。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 vLLM 会极其在意 continuous batching？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">自回归 Decode 对单个请求每步工作量很小。把多个请求的 token 聚在一起，可以形成更大的有效批次，让权重读取服务更多 token、提高 GPU 利用率和吞吐；同时调度器还能及时补入新请求。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
@@ -149,6 +149,7 @@
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
         <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
+        <tr><td><code>NIC</code></td><td>Network Interface Card</td><td>网络接口卡</td><td>主机连接网络 fabric 的硬件接口。</td></tr>
         <tr><td><code>RoCE</code></td><td>RDMA over Converged Ethernet</td><td>基于融合以太网的 RDMA</td><td>在以太网上承载 RDMA 语义的网络技术。</td></tr>
         <tr><td><code>RDMA</code></td><td>Remote Direct Memory Access</td><td>远程直接内存访问</td><td>允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>

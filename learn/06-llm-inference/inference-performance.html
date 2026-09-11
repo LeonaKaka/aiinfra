@@ -43,7 +43,7 @@
   <div class="lesson-kicker"><span>LESSON 06.4 · PERFORMANCE</span><span>约 55 min</span></div>
 
   <h1>推理性能：先估算，再测；先问“快在哪里”，再看一个吞吐数字。</h1>
-  <p class="dek">到这里你已经知道自回归生成、Prefill / Decode 和键-值（KV）缓存。现在补上进入 vLLM 前最重要的一层工程能力：先用容量、计算量和图形处理器（GPU）显存带宽做数量级估算，再用一致的workload测TTFT、ITL、TPOT、throughput和tail latency。没有这一步，“优化了 30%”通常只是一个缺少上下文的数字。</p>
+  <p class="dek">到这里你已经知道自回归生成、Prefill / Decode 和键-值（KV）缓存。现在补上进入 vLLM 前最重要的一层工程能力：先用容量、计算量和图形处理器（GPU）显存带宽做数量级估算，再用一致的workload（工作负载：系统实际接收的一组 request 规模与分布特征）测TTFT、ITL、TPOT、throughput和tail latency。没有这一步，“优化了 30%”通常只是一个缺少上下文的数字。</p>
 
   <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul>
     <li>区分“放得下”“算得动”“服务得快”三个不同问题。</li>
@@ -51,7 +51,7 @@
     <li>用“数据量 ÷ 有效带宽”理解显存带宽给出的理想下界。</li>
     <li>知道为什么提高concurrency 和 batch size可能增加throughput，却同时恶化user latency。</li>
     <li>设计一个可比较的推理benchmark，而不是只记录一个孤立的吞吐数字。</li>
-    <li>读到performance claim时，主动检查workload、分位数、cache state和SLO。</li>
+    <li>读到performance claim时，主动检查workload、分位数、cache state和SLO（服务级目标：系统希望达到的延迟、可用性或吞吐目标）。</li>
   </ul></div>
 
   <section class="article-section" id="faster">
@@ -119,7 +119,7 @@
       <div><small>INPUT</small><b>input-token length或真实输入分布</b></div>
       <div><small>OUTPUT</small><b>output-token length或真实输出分布</b></div>
       <div><small>LOAD</small><b>concurrency、request arrival rate、benchmark duration</b></div>
-      <div><small>FEATURES</small><b>Prefix Cache、Chunked Prefill、投机解码等开关</b></div>
+      <div><small>FEATURES</small><b>Prefix Cache（前缀缓存：复用相同输入前缀已经计算好的 KV state）、Chunked Prefill、投机解码等开关</b></div>
     </div>
     <p>还要说明是否streaming、有没有预热、数据集是什么、采样参数是否一致。否则“系统 A 比系统 B 快 20%”很可能只是输入更短、并发更高或缓存命中了。</p>
   </section>
@@ -186,7 +186,7 @@
   </section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">

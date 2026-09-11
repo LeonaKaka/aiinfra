@@ -127,7 +127,7 @@ return SchedulerOutput(...)</code></pre></div>
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.2</span></div><h2>能解释调度器，才算开始懂在线推理。</h2><div class="quiz-item"><div class="quiz-q">1. continuous batching 最准确的心智模型是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">每个调度/iteration之间可以重新组成批次：完成的请求离开，新请求可以进入，已有请求继续推进。它不是在一个正在运行的 GPU 内核里随时插人。</div></div><div class="quiz-item"><div class="quiz-q">2. 当前 V1 <code>Scheduler</code> 为什么不需要一套 Prefill loop 再加一套 Decode loop？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">它统一追踪请求的 <code>num_computed_tokens</code> 与当前已知 token state 之间的差距，再按预算推进。长 prompt 往往一次推进一段；baseline decode 往往只推进新增加的位置，因此工作负载不同，但调度抽象可以统一。</div></div><div class="quiz-item"><div class="quiz-q">3. KV 分配失败为什么会反过来改变调度器 decision？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 scheduled token 如果没有物理 KV slots 就无法安全执行。当前 running path 会在 <code>allocate_slots</code> 失败时尝试 preempt victim 释放资源；所以 KV 归属关系是调度的硬约束，不是执行后的附属 bookkeeping。</div></div><div class="quiz-item"><div class="quiz-q">4. 当前 V1 抢占后默认怎样恢复被释放的 KV？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">默认是 RECOMPUTE：请求以后重新获得机会时recompute必要状态，而不是默认把 KV swap 到中央处理器（CPU）再 swap 回来。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">

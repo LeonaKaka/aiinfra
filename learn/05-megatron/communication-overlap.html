@@ -33,9 +33,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Communication Overlap</span></div>
       <div class="lesson-kicker"><span>LESSON 05.8 · MEGATRON</span><span>约 75 min</span></div>
       <h1>Communication Overlap：真正要找的不是第二条 stream，而是“第一次不得不 wait”的位置。</h1>
-      <p class="dek">前面每加一种并行都会出现通信：DP 要同步 gradients / parameters，TP 要交换 activations，PP 要在不同 stages 之间传数据，EP 还要搬运 routed tokens。communication overlap 的目标不是把这些通信量变没，而是让 communication 尽早 start、让 independent compute 继续推进，把真正的 wait 推迟到数据第一次必须被消费的位置。</p>
+      <p class="dek">前面每加一种并行都会出现通信：DP 要同步 gradients / parameters，TP 要交换 activations，PP 要在不同 stages 之间传数据，EP（专家并行：把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert） 还要搬运 routed tokens。communication overlap 的目标不是把这些通信量变没，而是让 communication 尽早 start、让 independent compute 继续推进，把真正的 wait 推迟到数据第一次必须被消费的位置。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“ready → async launch → independent compute → wait”四个事件解释 overlap。</li><li>区分collective 的 total duration 与 exposed critical-path tail。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解bucket size 为什么同时控制“多久才能 ready”和“单次集合通信的数据量是否足够大”。</li><li>把同一个方法迁移到TP全收集（AG）/归约分散（RS）、PP点对点通信（P2P）与专家并行（EP）全对全通信（A2A）。</li><li>知道打开overlap flag不等于吞吐量一定提高，最终必须用时间线与单步时间验证。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“ready → async launch → independent compute → wait”四个事件解释 overlap。</li><li>区分collective 的 total duration 与 exposed critical-path tail。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解bucket（通信桶：把多块小数据合并后统一通信的分组单位） size 为什么同时控制“多久才能 ready”和“单次集合通信的数据量是否足够大”。</li><li>把同一个方法迁移到TPAG（全收集：把各 rank 的 shard 收集成完整结果并让参与者获得）/RS（归约分散：先做 reduction，再让每个 rank 只保留一个 reduced shard）、PP点对点通信（P2P）与专家并行（EP）A2A（全对全通信：每个 rank 给不同 peers 发送不同数据）。</li><li>知道打开overlap flag不等于吞吐量一定提高，最终必须用时间线与单步时间验证。</li></ul></div>
 
       <section class="article-section" id="mental-model">
         <div class="section-no">01 · 一个通用心智模型</div>
@@ -82,16 +82,16 @@
       <section class="article-section" id="pp">
         <div class="section-no">06 · PP 重叠：microbatches 创造 independent work</div>
         <h2>P2P 能否藏起来，取决于 schedule 是否给同一 rank 留出另一个可执行微批次。</h2>
-        <p>流水线并行的 send/recv 有直接pipeline-stage dependency，但一前向一反向（1F1B） / 虚拟流水线并行（VPP）会制造“别的微批次可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P 通信可与计算重叠执行，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制预热/flush 阶段。</p>
+        <p>流水线并行的 send/recv 有直接pipeline-stage dependency，但1F1B（一前向一反向：Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式） / VPP（虚拟流水线并行：在一个物理 pipeline rank 上放多个模型分段，以更细粒度的 interleaving 降低流水线 bubble）会制造“别的微批次可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P 通信可与计算重叠执行，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制预热/flush 阶段。</p>
         <div class="serial-vs-overlap"><div class="timeline-card"><small>DEPENDENCY</small><b>MB0 激活值未到，MB0 下一流水线阶段不能凭空开始</b><div class="timeline-track"><span class="compute">F MB0</span><span class="comm">send</span><span class="idle">等待</span><span class="idle">—</span><span class="idle">—</span><span class="idle">—</span></div></div><div class="timeline-card good"><small>SCHEDULE WINDOW</small><b>通信 MB0 时，本 rank 可以推进另一独立微批次</b><div class="timeline-track"><span class="comm">send MB0</span><span class="compute">F MB1</span><span class="compute">B MB-1</span><span class="comm">recv</span><span class="compute">F MB2</span><span class="compute">B MB0</span></div></div></div>
-        <div class="precision-note"><strong>不要把 PP overlap 简化成一个 flag。</strong>VPP、microbatch count、warmup / steady / cooldown、P2P API与各 pipeline stages的计算 balance 一起决定实际窗口。</div>
+        <div class="precision-note"><strong>不要把 PP overlap 简化成一个 flag。</strong>VPP、microbatch count、warmup / steady / cooldown、P2P API与各 pipeline stages（流水线阶段：负责模型连续一部分 layers 的执行阶段）的计算 balance 一起决定实际窗口。</div>
       </section>
 
       <section class="article-section" id="ep">
         <div class="section-no">07 · EP 重叠：A2A 需要batch-level window</div>
         <h2>Expert All-to-All 很重时，Megatron 会主动重排工作，而不是只把 <code>all_to_all</code> 改成 async。</h2>
-        <p>当前混合专家模型（MoE） README 把batch-level A2A overlap列为正式优化，并给出 <code>--overlap-moe-expert-parallel-comm --delay-wgrad-compute</code>。当前 <code>TransformerConfig</code> 还对这条路径施加明确约束：需要 EP&gt;1、dispatcher 为 <code>alltoall</code> 或 <code>flex</code>、bf16/fp16，并对 full recompute、shared-expert overlap等组合有限制。</p>
-        <div class="dependency-graph"><div><small>EP COMM</small><b>A2A assignments</b></div><span>overlap with</span><div><small>INDEPENDENT WORK</small><b>other batch / delayed wgrad</b></div><span>then</span><div><small>WAIT</small><b>expert input required</b></div></div>
+        <p>当前混合专家模型（MoE） README 把batch-level A2A overlap列为正式优化，并给出 <code>--overlap-moe-expert-parallel-comm --delay-wgrad-compute</code>。当前 <code>TransformerConfig</code> 还对这条路径施加明确约束：需要 EP&gt;1、dispatcher（分发器：按 routing 结果把 token 送到对应 expert 或目标） 为 <code>alltoall</code> 或 <code>flex</code>、bf16/fp16，并对 full recompute、shared-expert overlap等组合有限制。</p>
+        <div class="dependency-graph"><div><small>EP COMM</small><b>A2A assignments（分配关系：一次 token 到某个 expert 的 routing 记录）</b></div><span>overlap with</span><div><small>INDEPENDENT WORK</small><b>other batch / delayed wgrad</b></div><span>then</span><div><small>WAIT</small><b>expert input required</b></div></div>
         <p><code>delay_wgrad_compute</code> 的意义可以从依赖图理解：把本来马上要执行的一部分 weight-梯度计算延后，给 A2A 留出一段能并发的计算工作。它不是“延后就一定快”，而是人为调整关键路径。</p>
         <div class="source-note">当前 MoE README 的 Communication Bottleneck 表把 EP All-to-All 对应到 <code>--overlap-moe-expert-parallel-comm --delay-wgrad-compute</code>；当前 <code>TransformerConfig</code> 也直接校验这条overlap path 的 dispatcher、precision 与 recompute 约束。</div>
       </section>
@@ -132,26 +132,26 @@ if consumer_needs(bucket):
       <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A5 · Bucketed Async Reduce-Scatter</strong><br />先制造梯度-就绪 → async launch → later 等待的真实依赖窗口。 <a href="../../labs/mini-bucketed-reduce-scatter.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A7 · Profiler-ready Overlap</strong><br />再用 profiler 标记关键事件；CPU 只验顺序，GPU/NCCL 才能证明真实重叠执行。 <a href="../../labs/mini-profiler-overlap.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A12 · Mini Training System</strong><br />最后把 TP×DP、bucket readiness、sharded optimizer 与参数 gather 串成一个 training step。 <a href="../../labs/mini-training-system.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
-        <tr><td><code>AG</code></td><td>All-Gather</td><td>全收集</td><td>把各 rank 的 shard 收集成完整结果并让参与者获得。</td></tr>
-        <tr><td><code>RS</code></td><td>Reduce-Scatter</td><td>归约分散</td><td>先做 reduction，再让每个 rank 只保留一个 reduced shard。</td></tr>
-        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
-        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
-        <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
-        <tr><td><code>A2A</code></td><td>All-to-All</td><td>全对全通信</td><td>每个 rank 给不同 peers 发送不同数据；MoE dispatch 中很典型。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
+        <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
+        <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
+        <tr><td><code>RS</code></td><td>Reduce-Scatter</td><td>归约分散</td><td>先做 reduction，再让每个 rank 只保留一个 reduced shard。</td></tr>
         <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
+        <tr><td><code>AG</code></td><td>All-Gather</td><td>全收集</td><td>把各 rank 的 shard 收集成完整结果并让参与者获得。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
         <tr><td><code>VPP</code></td><td>Virtual Pipeline Parallelism</td><td>虚拟流水线并行</td><td>在一个物理 pipeline rank 上放多个模型分段，以更细粒度的 interleaving 降低流水线 bubble。</td></tr>
         <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
-        <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
+        <tr><td><code>A2A</code></td><td>All-to-All</td><td>全对全通信</td><td>每个 rank 给不同 peers 发送不同数据；MoE dispatch 中很典型。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
         <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>

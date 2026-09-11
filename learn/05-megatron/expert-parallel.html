@@ -33,7 +33,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>expert并行</span></div>
       <div class="lesson-kicker"><span>LESSON 05.7 · MEGATRON</span><span>约 70 min</span></div>
       <h1>Expert Parallel (EP)：router一旦把 token 指向远端expert，通信为什么会变成多对多？</h1>
-      <p class="dek">稠密 MLP 是“所有 token 都经过同一组权重”。混合expert模型（MoE）则由router给每个 token 选择少数expert，只执行被选中的expert MLP。expert并行再把expert set分到不同 rank。于是系统问题不再是“把同一个张量求和”，而是“每个 token 应该发给哪个expert，以及那个expert位于哪个 rank”。All-to-All 会自然出现，但它只是dispatcher的一种实现，不是Expert Parallel (EP)的定义。</p>
+      <p class="dek">稠密 MLP 是“所有 token 都经过同一组权重”。混合expert模型（MoE）则由router（路由器：根据规则决定 token 或 request 应被送往哪里）给每个 token 选择少数expert，只执行被选中的expert MLP。expert并行再把expert set分到不同 rank。于是系统问题不再是“把同一个张量求和”，而是“每个 token 应该发给哪个expert，以及那个expert位于哪个 rank”。All-to-All 会自然出现，但它只是dispatcher的一种实现，不是Expert Parallel (EP)的定义。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE 层 = router + expert + 稀疏的 token→expert分配关系。</li><li>区分三种不同语义：logical token ownership、expert parameters归属、temporary compute ownership。</li><li>从路由推导多对多数据移动为什么适合 All-to-All。</li><li>看懂dispatch → local expert GEMM → combine → 恢复 token 顺序的完整生命周期。</li><li>知道当前 Megatron 训练dispatcher支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，且 <code>flex</code> 后端当前包括 DeepEP / HybridEP / NVIDIA 集体通信库（NCCL）-EP。</li><li>理解dense grid与expert grid是两套 rank 生成视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道load balancing解决路由分布不均，分组 GEMM 则优化local expert compute；两者不是同一个问题。</li></ul></div>
 
@@ -56,16 +56,16 @@
       <section class="article-section" id="routing">
         <div class="section-no">03 · 路由如何改变execution ownership</div>
         <h2>真正要分清三件事：logical token ownership关系保持在 source rank；hidden state 会移动；expert计算在expert owner 上临时执行。</h2>
-        <p>下面故意把例子简化成 <code>EP=4</code>、<code>expert-TP=1</code>、top-1 路由，目的是先把归属关系看清。每个 source rank 都有自己的原始 token；router只产生 destination expert与routing metadata；dispatcher把 token hidden states 发到expert owner；local expert GEMM 完成后，再把输出送回原始 token 所属的 rank 与位置。</p>
+        <p>下面故意把例子简化成 <code>EP=4</code>、<code>expert-TP=1</code>、top-1 路由，目的是先把归属关系看清。每个 source rank 都有自己的原始 token；router只产生 destination expert与routing metadata（元数据：描述数据身份、布局和执行方式的控制信息）；dispatcher把 token hidden states 发到expert owner；local expert GEMM 完成后，再把输出送回原始 token 所属的 rank 与位置。</p>
         <div class="ep-core-wrap"><div class="ep-core-meta"><span>EXPERT PARALLEL · OWNERSHIP LIFECYCLE</span><span>logical source stays fixed · data moves to expert compute</span></div><img class="ep-core-svg" src="./expert-parallel-flow.svg" alt="Expert Parallel 数据流：逻辑 token ownership 保持在四个 source ranks；router 产生 destination expert，All-to-All dispatch 把 token hidden states 送到 expert owner ranks，local Grouped GEMM 执行 experts，随后 reverse All-to-All combine 并恢复每个 source rank 的原始 token 顺序。" /></div>
-        <div class="ep-core-takeaway"><strong>最重要的不变量：</strong>EP 改变的是 hidden state 所在位置与某段时间内“谁执行这个 token 的expert前馈网络（FFN）”；logical token 归属关系本身并没有被重新分配。source rank 需要保留足够的 permutation / routing metadata，才能在合并后恢复原 token order。</div>
+        <div class="ep-core-takeaway"><strong>最重要的不变量：</strong>EP 改变的是 hidden state 所在位置与某段时间内“谁执行这个 token 的expertFFN（前馈网络：Transformer / MoE 中按 token 独立应用的前馈子网络）”；logical token 归属关系本身并没有被重新分配。source rank 需要保留足够的 permutation / routing metadata，才能在合并后恢复原 token order。</div>
         <p>top-k 大于 1 时，一个逻辑 token 会产生多个 <strong>token–expert assignments</strong>。这些assignments 可以被送到不同expert owners；合并阶段不仅要把结果送回来，还要按routing weights 合并多个expert outputs。于是通信规模更接近“assignment count”，而不是只数原始 token 数。</p>
       </section>
 
       <section class="article-section" id="dispatch">
         <div class="section-no">04 · 当前 All-to-All dispatcher 实际做什么</div>
         <h2>EP-only 心智图很重要，但当前 Megatron 的 All-to-All dispatcher还明确区分 EP 通信与expert TP 通信。</h2>
-        <p>当前 <code>MoEAlltoAllTokenDispatcher</code> 的源码注释把 workflow 写得很清楚：preprocess / permute → <code>A2A(EP)</code> → 如果expert-TP大于 1，再做 <code>AG(TP)</code> 并整理 local expert chunks → expert计算 → 合并前做 <code>RS(TP)</code> → <code>A2A(EP)</code> → unpermute。</p>
+        <p>当前 <code>MoEAlltoAllTokenDispatcher</code> 的源码注释把 workflow 写得很清楚：preprocess / permute（维度重排：改变 tensor 各维度的顺序） → <code>A2A(EP)</code> → 如果expert-TP大于 1，再做 <code>AG(TP)</code> 并整理 local expert chunks → expert计算 → 合并前做 <code>RS(TP)</code> → <code>A2A(EP)</code> → unpermute。</p>
         <div class="mini-code-map"><div class="mini-code-row"><code>dispatch_preprocess</code><span>本地计算 destination counts、permutation 等元数据；尽量不要在这里偷偷混入额外通信，以便后续重叠执行。</span></div><div class="mini-code-row"><code>token_dispatch</code><span>主跨设备 transport。All-to-All 路径先在 EP group 做 destination-specific 交换。</span></div><div class="mini-code-row"><code>dispatch_postprocess</code><span>必要时处理expert TP 的 gather / chunk sorting，并整理成 local experts 可以消费的 contiguous token groups。</span></div><div class="mini-code-row"><code>token_combine</code><span>expert outputs 反向跨设备交换；All-to-All dispatcher把结果送回原 source rank，随后合并 postprocess / unpermute 恢复原逻辑位置。</span></div></div>
         <div class="precision-note"><strong>为什么主图标了expert TP=1？</strong>因为这样一张图只回答 EP 的核心问题，不把 TP 的 gather/reduce-scatter 叠在同一个画布里。真正读源码时，再把expert TP 当第二层通信轴加进去。</div>
         <div class="source-note">当前源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/token_dispatcher.py">core/transformer/moe/token_dispatcher.py</a>。类注释明确列出A2A(EP)、AG(TP)、RS(TP)、reverse A2A 与 unpermute 的顺序。</div>
@@ -109,7 +109,7 @@
         <div class="section-no">09 · EP 为什么更依赖通信重叠</div>
         <h2>Token 交换很重，工程优化会尽量把它藏进其它可并行计算窗口。</h2>
         <div class="mini-code-map"><div class="mini-code-row"><code>overlap_moe_expert_parallel_comm</code><span>启用expert communication与其它计算的重叠执行路径。</span></div><div class="mini-code-row"><code>delay_wgrad_compute</code><span>延后部分 weight-梯度工作，为通信暴露可利用的计算窗口。</span></div><div class="mini-code-row"><code>moe_shared_expert_overlap</code><span>让 shared-expert compute与支持的 alltoall/flex dispatcher通信并发。</span></div></div>
-        <p>这些选项高度版本相关，不能只背CLI名称。05.8 的核心方法仍然是：先画 dependency，再看 async launch / 流 / 等待，最后用 profiler 证明时间区间是否真的重叠。</p>
+        <p>这些选项高度版本相关，不能只背CLI（命令行界面：通过终端参数和命令配置、启动或调试程序的接口）名称。05.8 的核心方法仍然是：先画 dependency，再看 async launch / 流 / 等待，最后用 profiler 证明时间区间是否真的重叠。</p>
       </section>
 
       <section class="article-section" id="source">
@@ -129,9 +129,9 @@
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
         <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
-        <tr><td><code>EP</code></td><td>Expert Parallel</td><td>专家并行</td><td>把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>

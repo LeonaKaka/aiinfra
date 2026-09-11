@@ -31,9 +31,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Transformer Block</span></div>
       <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约55 min</span></div>
       <h1>Transformer Block：Attention、MLP、Residual 和 Norm 怎么拼起来？</h1>
-      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做Norm、residual connection 和 MLP。把这些模块拼起来，你第一次能看见“一个 Transformer 层到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张图形处理器（GPU）。</p>
+      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做Norm、residual connection（残差连接：把子层输入直接加回输出以稳定深层网络） 和 MLP。把这些模块拼起来，你第一次能看见“一个 Transformer 层到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张图形处理器（GPU）。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的pre-norm decoder block的完整数据流。</li><li>理解 residual connection 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的 position 信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出张量并行、流水线并行和 KV Cache 分别会落在 Transformer Block 的什么位置。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的pre-norm decoder block（块：KV Cache 等系统中固定粒度的内存管理单位）的完整数据流。</li><li>理解 residual connection 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的 position 信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出张量并行、流水线并行和 KV Cache 分别会落在 Transformer Block 的什么位置。</li></ul></div>
 
       <section class="article-section" id="big-picture">
         <div class="section-no">01 · 先看完整 Transformer Block</div>
@@ -64,7 +64,7 @@ y = h + MLP(Norm(h))</code></pre></div>
       <section class="article-section" id="norm">
         <div class="section-no">03 · LayerNorm / RMSNorm</div>
         <h2>归一化不负责“理解语言”，它主要让数值尺度更可控。</h2>
-        <p>你会在模型里看到LayerNorm、RMSNorm等。现在不用背公式，只要知道它们通常沿隐藏维度对每个token的向量做归一化/缩放相关操作，输出形状不变：</p>
+        <p>你会在模型里看到LayerNorm（层归一化：按特征维对单个样本的表示做归一化）、RMSNorm（均方根归一化：用均方根尺度归一化表示的常见方法）等。现在不用背公式，只要知道它们通常沿隐藏维度对每个token的向量做归一化/缩放相关操作，输出形状不变：</p>
         <div class="shape-flow"><div><small>BEFORE NORM</small><code>[B,S,H]</code></div><span>→</span><div><small>NORMALIZE</small><code>per token hidden vector</code></div><span>→</span><div><small>AFTER NORM</small><code>[B,S,H]</code></div></div>
         <p>现代LLM中RMSNorm很常见，但具体选择属于模型架构。对Infra来说，先记住两点：它是一个额外 kernel/op；它不像大线性层那样有巨大 <code>H×H</code> 权重矩阵，却会参与每层的数据流和kernel scheduling。</p>
       </section>
@@ -118,7 +118,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <section class="article-section" id="position-semantics">
         <div class="section-no">06 · 位置信息也是 Attention 状态的一部分</div>
         <h2>同一个token出现在第10位和第100位，Attention不能把它们当成同一件事。</h2>
-        <p>decoder不只需要知道“token是什么”，还需要知道“token在序列的什么位置”。很多现代LLM使用旋转位置编码（RoPE）：在常见实现里，Query和Key会根据 <code>positions</code> 做位置相关变换，再进入Attention。Value通常不做同样的旋转。</p>
+        <p>decoder不只需要知道“token是什么”，还需要知道“token在序列的什么位置”。很多现代LLM使用RoPE（旋转位置编码：把位置信息注入 Query/Key 的常见位置编码方法）：在常见实现里，Query和Key会根据 <code>positions</code> 做位置相关变换，再进入Attention。Value通常不做同样的旋转。</p>
         <div class="code-block"><div class="code-head"><span>mental model</span><span>position-conditioned attention</span></div><pre><code>hidden states
     │
     ├─→ Q ─┐
@@ -135,7 +135,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <section class="article-section" id="stack">
         <div class="section-no">07 · 从一个 Block 堆成模型</div>
         <h2>大模型，就是把这种块重复很多层，再加上入口和出口。</h2>
-        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM HEAD</small><b>logits</b></div></div>
+        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM（语言模型：对 token 序列概率或下一 token 分布进行建模的模型） HEAD</small><b>logits</b></div></div>
         <p>所以以后看到“80-layer model”，不是80个完全不同的概念，而是同一种块结构使用不同参数重复80次。也因此，单层里一点点显存、通信或kernel scheduling浪费，乘上几十层后都会很明显。</p>
       </section>
 
@@ -163,7 +163,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>MODULE 02</span></div><h2>能把一个块画出来，Transformer地基才算完成。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么Attention分支输出通常要回到 <code>[B,S,H]</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为需要和residual路径上的输入逐元素相加；主hidden形状一致也让多个blocks可以连续堆叠。</div></div><div class="quiz-item"><div class="quiz-q">2. 标准两层 <code>H → 4H → H</code> MLP忽略bias大约有多少权重？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>H×4H + 4H×H = 8H²</code>。这是一个教学估算，现代gated MLP的结构和intermediate size可能不同。</div></div><div class="quiz-item"><div class="quiz-q">3. Pipeline Parallel和Tensor Parallel最直观的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在这里的第一层直觉是：Pipeline Parallel更像把不同Transformer layers分给不同阶段；Tensor Parallel则在同一层内部切分大线性层 / 注意力头等张量计算。后面会正式推导通信。</div></div><div class="quiz-item"><div class="quiz-q">4. 为什么远端拿到形状完全正确的KV，仍然不代表一定可以安全复用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为KV还依赖生成它时的模型、layer/头布局、token prefix、position/RoPE语义和cache format。字节数正确只是必要条件，不是语义兼容的充分条件。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">

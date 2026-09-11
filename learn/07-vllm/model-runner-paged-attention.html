@@ -23,7 +23,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>ModelRunner / Paged Attention</span></div>
       <div class="lesson-kicker"><span>LESSON 07.4 · VLLM</span><span>约 80 min</span></div>
       <h1>ModelRunner 与 Paged Attention：调度器给出的块 ID，最后怎样变成 GPU Attention？</h1>
-      <p class="dek">上一课停在控制层：request A 的逻辑块被映射到物理 ID，例如 <code>[8, 2, 19, 5]</code>。但图形处理器（GPU） Attention 内核不会自己去问 Python 侧的 <code>KVCacheManager</code>。执行层必须把这些信息整理成设备侧的batch tensors、block tables、slot mapping 和 Attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
+      <p class="dek">上一课停在控制层：request A 的逻辑块被映射到物理 ID，例如 <code>[8, 2, 19, 5]</code>。但图形处理器（GPU） Attention 内核不会自己去问 Python 侧的 <code>KVCacheManager</code>。执行层必须把这些信息整理成设备侧的batch tensors、block tables、slot mapping（槽位映射：把本轮 token 映射到具体 KV 写入位置） 和 Attention metadata。这个转换过程正是读 <code>GPUModelRunner</code> 的关键入口。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 <code>SchedulerOutput</code> 到 GPU 执行之间还需要一次“metadata packing / transfer”。</li><li>知道 <code>InputBatch / GPUInputBatch</code>、<code>BlockTable/BlockTables</code> 和slot mapping在执行路径里分别解决什么。</li><li>解释分页式 KV Attention 如何让 Attention 读取不连续的physical KV blocks。</li><li>知道“PagedAttention”是核心思想，但当前 vLLM 会根据平台/模型选择不同 Attention backend，不能把系统等同于某一个fixed kernel。</li><li>理解新 token 的 K/V 怎样写入 allocated slot，Q 又怎样按 block table 读取历史 KV。</li><li>知道“所有缓存组都必须用同一套 token→KV 槽位的应用程序接口（API）”不是稳定事实；不同缓存/状态类型会有不同寻址语义。</li><li>知道当前上游同时存在 V1/V2 GPU ModelRunner 路径，先从 <code>gpu_worker.py</code> 看本配置实际选择哪一个。</li></ul></div>
 
@@ -118,7 +118,7 @@
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.4</span></div><h2>能解释“写哪、读哪”，Paged KV 才真正落地。</h2><div class="quiz-item"><div class="quiz-q">1. 对标准 Attention KV，block table 和slot mapping分别解决什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Block table 主要告诉 attention 一个 request 的 logical history blocks对应哪些physical blocks，用于读取历史 KV；slot mapping / addressing metadata则把本轮 scheduled tokens 映射到具体 KV 写入位置。</div></div><div class="quiz-item"><div class="quiz-q">2. Paged KV 会改变 Attention 数学吗？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不会。Attention 仍对逻辑上的历史 K/V 做相同计算；改变的是这些 K/V 在 GPU 显存中的存储与寻址方式。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么现在读源码不能只记住 <code>gpu_input_batch.py</code> 和 <code>worker/block_table.py</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为当前上游同时保留 V1/V2 runner。V2 runner使用 <code>worker/gpu/input_batch.py</code> 与 <code>worker/gpu/block_table.py</code>；旧 V1 runner仍使用重构前的路径。先看 <code>gpu_worker.py</code> 的选择逻辑，再沿被选中的runner imports 读。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">

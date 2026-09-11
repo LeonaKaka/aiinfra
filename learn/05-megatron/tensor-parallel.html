@@ -54,7 +54,7 @@ W2_local = shard(W2, dim=<span class="num">input</span>)
 y_partial = h_local @ W2_local
 
 <span class="comment"># SP disabled: every TP rank receives the summed output</span>
-y = all_reduce_sum(y_partial)</code></pre></div><p>真实 Megatron 会处理 bias、autograd、随机数生成器（RNG）、Transformer Engine、8 位浮点（FP8）、async 重叠执行、序列 parallel 等。这个伪代码故意标成 <strong>SP off</strong>，避免以后看到 reduce-scatter 时误以为源码“和 TP 理论矛盾”。</p></section>
+y = all_reduce_sum(y_partial)</code></pre></div><p>真实 Megatron 会处理 bias、autograd、RNG（随机数生成器：dropout、初始化和采样等操作依赖的随机状态）、Transformer Engine、8 位浮点（FP8）、async 重叠执行、序列 parallel 等。这个伪代码故意标成 <strong>SP off</strong>，避免以后看到 reduce-scatter 时误以为源码“和 TP 理论矛盾”。</p></section>
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.2</span></div><h2>不看答案，自己推一遍两张 GPU。</h2><div class="quiz-item"><div class="quiz-q">1. <code>W=[H,4H]</code> 做Column Parallel，TP=2 后每张 GPU 的 local weight 是什么 shape？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">沿输出维切，所以每张是 <code>[H,2H]</code>。基础 TP 里输入 X 可以保持完整，每张卡得到一半 output features；启用 SP 后输入生命周期还会多出序列 gather/scatter 边界。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 FC1 Column Parallel后通常不急着 all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 FC2 可以用Row Parallel，直接让每个 rank 消费自己那份中间特征分片。这样中间无需恢复完整 4H 激活值，减少一次collective communication和显存复制。</div></div><div class="quiz-item"><div class="quiz-q">3. Row Parallel为什么需要 SUM，而序Column Parallel又可能让你看见 reduce-scatter？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">沿输入维拆开后，各 rank 得到的是同一输出坐标的 partial contribution，所以数学上必须 SUM。SP 只是把“SUM 后的输出如何分布”也纳入collective communication：用 reduce-scatter 一边求和、一边只保留各自序列分片。</div></div></section>
 
       <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A1 · Mini Megatron TP</strong><br />把Column Parallel → Row Parallel的 forward 分片、local GEMM 与最终 reduction 跑一遍。 <a href="../../labs/mini-megatron.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A2 · Mini TP Backward</strong><br />继续追 dW、dX，确认 backward 的通信边界为什么和 forward 不完全相同。 <a href="../../labs/mini-tp-backward.html">打开实验 →</a></p></div></section>
@@ -66,8 +66,8 @@ y = all_reduce_sum(y_partial)</code></pre></div><p>真实 Megatron 会处理 bia
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
         <tr><td><code>QKV</code></td><td>Query-Key-Value</td><td>查询-键-值</td><td>Attention 中 Q、K、V 三类投影/状态的合称。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>

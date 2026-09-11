@@ -116,7 +116,7 @@
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.3</span></div><h2>把序列和物理内存分开想。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么一个请求的逻辑 KV 序列可以连续，但physical block不连续？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为系统维护block IDs / block table，把logical blocks索引映射到任意物理 KV 块。Attention 后端按映射读取，所以物理地址不必连续。</div></div><div class="quiz-item"><div class="quiz-q">2. KVCacheManager 和 BlockPool 的职责有什么差别？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">KVCacheManager 更面向请求：计算命中/需要多少块、组织分配；BlockPool 更面向物理资源：哪些块空闲、谁被引用、哈希对应谁、谁可以被回收。</div></div><div class="quiz-item"><div class="quiz-q">3. Paging 是否完全没有内存浪费？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不是。它显著减少为最大长度预留和外部碎片，但请求的最后一个块可能未填满，形成内部碎片；block size 本身就是 trade-off。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">

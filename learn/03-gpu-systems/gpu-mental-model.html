@@ -31,15 +31,15 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>GPU Mental Model</span></div>
       <div class="lesson-kicker"><span>LESSON 03.1 · GPU SYSTEMS</span><span>约 45 min</span></div>
       <h1>GPU 心智模型：模型到底在哪里算、数据又在哪里放？</h1>
-      <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在CPU host memory 还是 GPU device memory？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NVIDIA 集体通信库（NCCL）、张量并行、vLLM 性能优化的地基。</p>
+      <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在CPU host memory（主机内存：CPU 侧的系统内存） 还是 GPU device memory（设备显存：GPU 直接访问的本地设备内存）？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NVIDIA 集体通信库（NCCL）、张量并行、vLLM 性能优化的地基。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU <code>host memory</code> 与 GPU <code>device memory</code> 的角色，并知道高带宽内存（HBM）和 GDDR 是具体显存技术。</li><li>知道 PyTorch 的 CUDA 操作最终会启动 GPU kernel，而不是 Python 自己在算矩阵。</li><li>理解流式多处理器（SM）、Tensor Core、GPU 显存、高速外设组件互连（PCIe）/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要显式同步（例如 <code>torch.cuda.synchronize()</code>）。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU <code>host memory</code> 与 GPU <code>device memory</code> 的角色，并知道高带宽内存（HBM）和 GDDR（图形双倍数据速率存储器：很多消费级/工作站 GPU 使用的显存技术） 是具体显存技术。</li><li>知道 PyTorch 的 CUDA 操作最终会启动 GPU kernel，而不是 Python 自己在算矩阵。</li><li>理解流式多处理器（SM）、Tensor Core、GPU 显存、高速外设组件互连（PCIe）/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要显式同步（例如 <code>torch.cuda.synchronize()</code>）。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
 
       <section class="article-section" id="machine">
         <div class="section-no">01 · 一台机器里有两套内存世界</div>
         <h2>先把一台 AI 机器想成 CPU 世界和 GPU 世界。</h2>
         <div class="machine-map">
-          <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · 调度器 · dataloader</span><div class="memory-box"><small>HOST MEMORY</small><strong>随机存取存储器（RAM）</strong></div></div>
+          <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · 调度器 · dataloader</span><div class="memory-box"><small>HOST MEMORY</small><strong>RAM（随机存取存储器：这里通常指主机侧系统内存）</strong></div></div>
           <div class="link-box"><span>PCIe / platform interconnect</span><i></i></div>
           <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · 通用矩阵乘法（GEMM） · attention</span><div class="memory-box"><small>DEVICE MEMORY</small><strong>HBM or GDDR</strong></div></div>
         </div>
@@ -47,8 +47,8 @@
         <div class="code-block"><div class="code-head"><span>python</span><span>device move</span></div><pre><code>x = torch.randn(<span class="num">1024</span>, <span class="num">1024</span>)   <span class="comment"># CPU memory</span>
 x = x.to(<span class="comment">'cuda:0'</span>)              <span class="comment"># move/copy to GPU 0</span>
 print(x.device)                    <span class="comment"># cuda:0</span></code></pre></div>
-        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>显存（VRAM） 常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
-        <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器/个人电脑（PC） 常通过 PCIe 连接 CPU 与 GPU；NVLink/NVSwitch 更常用于高带宽 GPU↔GPU 互连，也存在带更紧密 CPU-GPU 互连的特定平台。后面会按具体拓扑再讲。</p></div>
+        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>VRAM（显存：工程语境里常泛指 GPU device memory） 常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
+        <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器/PC（个人电脑：这里指普通个人电脑/工作站语境） 常通过 PCIe 连接 CPU 与 GPU；NVLink/NVSwitch 更常用于高带宽 GPU↔GPU 互连，也存在带更紧密 CPU-GPU 互连的特定平台。后面会按具体拓扑再讲。</p></div>
       </section>
 
       <section class="article-section" id="inside">
@@ -68,7 +68,7 @@ print(x.device)                    <span class="comment"># cuda:0</span></code><
 Y = torch.nn.functional.gelu(Y)</code></pre></div>
         <p>Python 本身并没有拿一个 for-loop 去乘几十亿次。PyTorch 会调用底层 CUDA/library 实现，让 GPU 执行适合这些操作的 kernels。矩阵乘法通常会落到底层高度优化的 GEMM 实现；激活函数又可能是另一个 kernel。</p>
         <div class="launch-flow"><div><small>PYTHON / CPU</small><b>torch.matmul</b></div><span>launch →</span><div><small>CUDA / LIBRARY</small><b>GPU kernel(s)</b></div><span>execute →</span><div><small>GPU</small><b>many threads</b></div></div>
-        <div class="concept-note"><p><strong>Kernel = 在 GPU 上并行执行的函数/程序实例。</strong>以后说 kernel fusion，基本就是想把原本多个独立 kernel 的工作尽可能合并，减少中间读写与 launch overhead。</p></div>
+        <div class="concept-note"><p><strong>Kernel = 在 GPU 上并行执行的函数/程序实例。</strong>以后说 kernel fusion，基本就是想把原本多个独立 kernel 的工作尽可能合并，减少中间读写与 launch overhead（启动开销：提交 kernel 等工作本身带来的固定成本）。</p></div>
       </section>
 
       <section class="article-section" id="tensor-core">
@@ -99,7 +99,7 @@ y = x @ w
 
 torch.cuda.synchronize()   <span class="comment"># wait for this queued work to finish</span>
 elapsed = time.perf_counter() - start</code></pre></div>
-        <p>前面的同步让计时窗口不被更早排队的 CUDA 工作污染，后面的同步保证目标工作真的完成。正式 benchmark 更常使用 CUDA Events、warm-up、多次迭代等方法；这里先建立“GPU execution 可以和 CPU 控制流异步”的概念。</p>
+        <p>前面的同步让计时窗口不被更早排队的 CUDA 工作污染，后面的同步保证目标工作真的完成。正式 benchmark（基准测试：在固定条件下测量和比较系统性能） 更常使用 CUDA Events、warm-up、多次迭代等方法；这里先建立“GPU execution 可以和 CPU 控制流异步”的概念。</p>
       </section>
 
       <section class="article-section" id="multi-gpu">
@@ -120,14 +120,14 @@ elapsed = time.perf_counter() - start</code></pre></div>
       <section class="article-section" id="bridge">
         <div class="section-no">09 · 把这一课接回整条路线</div>
         <h2>把今天的硬件词，放回我们的两条终点路线。</h2>
-        <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → scheduler feeds kernels → KV 传输 across devices/nodes</span></div></div>
-        <p>之后再看到 “NCCL all-reduce”“GPUDirect 远程直接内存访问（RDMA）”“NVIDIA 推理传输库（NIXL）”，不要把它们当成凭空冒出来的新技术。它们都在解决同一个非常具体的问题：<strong>让 data 在正确的时间到达正确的 device / memory location。</strong></p>
+        <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → scheduler（调度器：决定每轮哪些 requests 推进以及推进多少 token） feeds kernels → KV 传输 across devices/nodes</span></div></div>
+        <p>之后再看到 “NCCL all-reduce”“GPUDirect 远程直接内存访问（RDMA）”“NIXL（NVIDIA 推理传输库：为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象）”，不要把它们当成凭空冒出来的新技术。它们都在解决同一个非常具体的问题：<strong>让 data 在正确的时间到达正确的 device / memory location。</strong></p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.1</span></div><h2>先把 GPU 画成一个系统，而不是一块“加速卡”。</h2><div class="quiz-item"><div class="quiz-q">1. <code>torch.randn(...)</code> 默认在 CPU，为什么要 <code>.to('cuda:0')</code> 才能让 GPU 直接使用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为常见离散 GPU 系统里 CPU 内存与 GPU device memory 是不同的内存空间，张量必须位于对应 device 可使用的位置；移动数据本身也有成本。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么一行 <code>X @ W</code> 不等于“Python 在做矩阵乘法”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">PyTorch 是高层入口。CUDA 张量的矩阵乘法会调用底层 CUDA/library 实现并在 GPU 上执行 kernel；Python 主要负责组织和发起这些操作。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么直接用 CPU timer 量一个 CUDA 操作可能不准？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 CUDA 工作常异步提交，CPU 可能在 GPU 真正完成前就继续执行。简单计时要控制计时窗口前后的同步；严谨 benchmark 通常使用 CUDA Events、warm-up 等。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
