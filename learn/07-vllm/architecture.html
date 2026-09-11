@@ -36,7 +36,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 vLLM V1 粗分成请求/控制层、调度与 KV 管理层、执行层。</li><li>知道 <code>EngineCore</code>、<code>Scheduler</code>、<code>KVCacheManager</code>、执行器/工作进程、<code>GPUModelRunner</code> 的职责边界。</li><li>理解 <code>SchedulerOutput</code> 为什么是“控制层给执行层的本轮计划”。</li><li>知道模型执行完成后，<code>ModelRunnerOutput</code> 还要通过 <code>scheduler.update_from_output(...)</code> 更新请求状态。</li><li>区分“请求的逻辑状态”与“GPU 上真正执行的张量批次”。</li><li>知道当前 GPU 工作进程会在 V2/V1 <code>ModelRunner</code> 实现之间选择，源码阅读先看选择逻辑，再进入对应实现。</li></ul></div>
 
       <section class="article-section" id="one-line">
-        <div class="section-no">01 · ONE 请求 THROUGH ONE ENGINE 执行轮次</div>
+        <div class="section-no">01 · 一个请求的一轮系统执行</div>
         <h2>把 vLLM 先看成一个闭环：控制平面决定工作，执行平面把计划变成 GPU 工作，结果再回来改请求状态。</h2>
         <p>下面这张图只保留第一次读源码最重要的边界。上半部分是请求状态、调度与 KV 归属关系；下半部分是执行器/工作进程/运行器与 GPU 执行。中间真正穿过边界的是 <code>SchedulerOutput</code>，而执行完成后的结果必须回到 <code>update_from_output</code> 才算闭环。</p>
         <div class="vllm-core-wrap"><div class="vllm-core-meta"><span>vLLM V1 · 请求 LOOP</span><span>控制层 → 执行 plane → state update</span></div><img class="vllm-core-svg" src="./vllm-architecture-request-loop.svg" alt="vLLM V1 request loop 架构图：Internal Request 进入 EngineCore，Scheduler 与 KVCacheManager 决定本轮 token work 和 physical KV blocks，产生 SchedulerOutput；计划跨到 Model Executor 与 GPU Worker，GPU Worker 根据 use_v2_model_runner 选择 V2 或 V1 GPUModelRunner，执行产生 ModelRunnerOutput，再回到 EngineCore 和 scheduler.update_from_output 更新 request state。" /></div>
@@ -45,14 +45,14 @@
       </section>
 
       <section class="article-section" id="control-data">
-        <div class="section-no">02 · CONTROL PLANE VS GPU EXECUTION</div>
+        <div class="section-no">02 · 控制面与 GPU 执行面</div>
         <h2>先分清“决定算什么”和“真正把张量算掉”。</h2>
         <div class="control-plane"><div class="control-card"><small>CONTROL SIDE</small><b>请求 / 调度器 / KV 元数据</b><span>这里主要处理逻辑状态：谁在 waiting、谁 running、已有多少 computed tokens、需要多少新块、本轮 token budget 还剩多少。</span></div><div class="control-card"><small>EXECUTION SIDE</small><b>工作进程 / ModelRunner / 内核s</b><span>这里把调度器的计划变成 GPU 张量、块 tables、attention 元数据，然后真正运行模型、Attention 后端和采样。</span></div></div>
         <p>这条边界很重要。以后你看到一个性能问题，要先判断它发生在调度器的决策、中央处理器（CPU）→GPU 元数据准备，还是实际 CUDA 内核执行。三种问题的优化方向完全不同。</p>
       </section>
 
       <section class="article-section" id="enginecore">
-        <div class="section-no">03 · ENGINECORE OWNS THE LOOP</div>
+        <div class="section-no">03 · EngineCore 管理主循环</div>
         <h2><code>EngineCore.step()</code> 把 schedule → execute → update 串成一次 engine 执行轮次。</h2>
         <p>当前 vLLM V1 的 <code>vllm/v1/engine/core.py</code> 可以直接看到：有请求时先调用 <code>scheduler.schedule(...)</code>，把得到的 <code>scheduler_output</code> 交给 <code>model_executor.execute_model(..., non_block=True)</code>；模型结果回来后，再调用 <code>scheduler.update_from_output(scheduler_output, model_output)</code>。这不是教学伪代码，而是当前主循环的实际骨架。</p>
         <div class="request-life"><div><small>STEP 1</small><b>has 请求?</b><span>EngineCore 判断调度器是否还有工作。</span></div><div><small>STEP 2</small><b>schedule()</b><span>生成 SchedulerOutput。</span></div><div><small>STEP 3</small><b>execute_model()</b><span>执行器 / 工作进程运行设备工作。</span></div><div><small>STEP 4</small><b>model output</b><span>取得执行/采样结果。</span></div><div><small>STEP 5</small><b>update_from_output()</b><span>状态写回，再进入下一执行轮次。</span></div></div>
@@ -60,7 +60,7 @@
       </section>
 
       <section class="article-section" id="scheduler-output">
-        <div class="section-no">04 · SCHEDULEROUTPUT IS A CONTRACT</div>
+        <div class="section-no">04 · SchedulerOutput 是执行契约</div>
         <h2>调度器不负责 GEMM；它负责告诉执行层“这一轮应该怎么组工作”。</h2>
         <p>调度器的核心产物不是一串 CUDA 内核，而是一份本轮计划。它表达哪些请求是新来的/已经缓存的、每个请求要推进多少 token、KV 块 state、可能的 encoder input、spec decode 信息等。</p>
         <div class="shape-flow"><div><small>请求 STATE</small><code>waiting / running / cached</code></div><span>→</span><div><small>调度器</small><code>token + KV budgets</code></div><span>→</span><div><small>OUTPUT</small><code>SchedulerOutput</code></div></div>
@@ -68,7 +68,7 @@
       </section>
 
       <section class="article-section" id="kv-manager">
-        <div class="section-no">05 · KVCACHEMANAGER LIVES NEXT TO THE 调度器</div>
+        <div class="section-no">05 · KVCacheManager 为什么靠近调度器</div>
         <h2>调度器想推进 token，必须先证明“有地方放这些 token 的 KV”。</h2>
         <p>当前 V1 的 <code>KVCacheManager</code> 是调度器一侧的内存管理组件。它回答 prefix 命中、已有 computed 块、新块分配与 free；调度器再据此决定本轮请求能否真的推进。</p>
         <div class="control-plane"><div class="control-card"><small>调度器 ASKS</small><b>这个请求已经缓存多少？还要推进多少？</b><span>先做 prefix/computed-块查询，再计算本轮新增 KV 容量。</span></div><div class="control-card"><small>KV MANAGER ANSWERS</small><b>这些物理块 IDs 可以给你。</b><span>如果块不够，调度器不能假装显存无限；必须改变本轮计划或进入抢占/resource-management 路径。</span></div></div>
@@ -76,7 +76,7 @@
       </section>
 
       <section class="article-section" id="runner">
-        <div class="section-no">06 · GPU 工作进程 SELECTS THE ACTUAL MODELRUNNER PATH</div>
+        <div class="section-no">06 · GPU 工作进程如何选择真正的 ModelRunner 路径</div>
         <h2>不要再把 <code>GPUModelRunner</code> 绑定到一个永久文件名。</h2>
         <p>当前 <code>vllm/v1/worker/gpu_worker.py</code> 保存 <code>self.use_v2_model_runner = vllm_config.use_v2_model_runner</code>。构造运行器时，为 true 会导入 <code>vllm/v1/worker/gpu/model_runner.py</code> 的 <code>GPUModelRunner</code>；否则导入 <code>vllm/v1/worker/gpu_model_runner.py</code> 的旧 V1 运行器。两条实现会继续演化，但稳定职责仍是：把 <code>SchedulerOutput</code> 变成设备执行所需张量/元数据并运行模型。</p>
         <div class="runner-contract"><div><b>输入：逻辑计划</b><span>请求 IDs、scheduled token counts、KV 块 IDs、sampling/structured/spec decode 等执行信息。</span></div><div><b>输出：模型结果</b><span>模型/采样结果以及让调度器能继续更新请求状态的信息。</span></div></div>
@@ -84,7 +84,7 @@
       </section>
 
       <section class="article-section" id="source-map">
-        <div class="section-no">07 · CURRENT V1 ENGINE SOURCE MAP</div>
+        <div class="section-no">07 · 当前 V1 引擎源码地图</div>
         <h2>第一次打开 vLLM，只先认这些职责和入口。</h2>
         <div class="source-map-vllm">
           <div class="source-card"><small>ENGINE LOOP</small><b>EngineCore</b><code>vllm/v1/engine/core.py</code><span>schedule → execute → update 的主循环。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">打开源码 ↗</a></div>
@@ -99,7 +99,7 @@
       </section>
 
       <section class="article-section" id="one-request">
-        <div class="section-no">08 · WALK ONE 请求</div>
+        <div class="section-no">08 · 跟踪一个请求</div>
         <h2>最后用一个 1000-token prompt，把前面的组件串一次。</h2>
         <div class="cost-panel"><div><small>ARRIVAL</small><b>请求被转换成内部请求，初始处在等待状态。</b></div><div><small>SCHEDULE</small><b>调度器决定先给它多少 prefill tokens，并检查 token budget / KV 容量。</b></div><div><small>ALLOCATE</small><b>KVCacheManager 返回这批 tokens 将写入的块。</b></div><div><small>EXECUTE</small><b>当前被选中的 ModelRunner 根据 SchedulerOutput 构造 input 张量与块-table/addressing 元数据，跑本轮工作。</b></div><div><small>UPDATE</small><b>ModelRunnerOutput 回来后，调度器更新 computed-token 进度与请求状态。</b></div><div><small>REPEAT</small><b>下一轮可能继续 prefill chunk，也可能进入 baseline decode；spec decode 等模式会改变单步 token 数。</b></div></div>
       </section>
