@@ -36,12 +36,12 @@
       <h1>流水线并行：把 Transformer 层按深度分到不同 GPU。</h1>
       <p class="dek">张量并行是“一个层内大家一起算”，流水线并行则换了一个维度：前几层放在流水线阶段 0，中间几层放在流水线阶段 1，后几层继续往后。这样单张图形处理器（GPU）不再保存整模型深度，但代价是前向激活值要沿流水线向后续阶段传递，反向梯度则沿相反方向返回。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释流水线并行（PP）与张量并行（TP）的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个流水线阶段。</li><li>理解前向激活值发送与反向梯度发送的点对点通信（P2P）数据流。</li><li>解释为什么不切微批次会产生严重流水线气泡。</li><li>理解一前向一反向（1F1B）的预热 / 稳态 / 收尾三个阶段。</li><li>知道 Megatron 的 非交错 / 交错流水线调度对应哪些源码入口。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释流水线并行（PP）与张量并行（TP）的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个流水线阶段。</li><li>理解前向激活值发送与反向梯度发送的点对点通信（P2P）数据流。</li><li>解释为什么不切微批次会产生严重流水线气泡。</li><li>理解一前向一反向（1F1B）的预热 / 稳态 / 收尾三个阶段。</li><li>知道 Megatron 的非交错 / 交错流水线调度对应哪些源码入口。</li></ul></div>
 
       <section class="article-section" id="depth">
         <div class="section-no">01 · SPLIT THE MODEL DEPTH</div>
         <h2>24 层 Transformer，PP=4：每个流水线阶段先放 6 层。</h2>
-        <div class="layer-stack"><div class="s0"><small>STAGE 0</small><b>Layers 1–6</b></div><div class="s1"><small>STAGE 1</small><b>Layers 7–12</b></div><div class="s2"><small>STAGE 2</small><b>Layers 13–18</b></div><div class="s3"><small>STAGE 3</small><b>Layers 19–24</b></div></div>
+        <div class="layer-stack"><div class="s0"><small>阶段 0</small><b>Layers 1–6</b></div><div class="s1"><small>阶段 1</small><b>Layers 7–12</b></div><div class="s2"><small>阶段 2</small><b>Layers 13–18</b></div><div class="s3"><small>阶段 3</small><b>Layers 19–24</b></div></div>
         <p>每个流水线阶段只保存自己负责的 Transformer 层及相关参数/优化器状态/激活值s。这样模型深度带来的显存被分摊到多个各个 rank。</p>
         <div class="pipeline-line"><div class="pipeline-stage"><small>PP RANK 0</small><b>L1–L6</b><code>input → hidden₆</code></div><div class="pipeline-stage"><small>PP RANK 1</small><b>L7–L12</b><code>hidden₆ → hidden₁₂</code></div><div class="pipeline-stage"><small>PP RANK 2</small><b>L13–L18</b><code>hidden₁₂ → hidden₁₈</code></div><div class="pipeline-stage"><small>PP RANK 3</small><b>L19–L24</b><code>hidden₁₈ → logits/loss</code></div></div>
         <p>和 TP 不同，PP 流水线阶段之间通常不是每一层做 all-reduce，而是在流水线阶段边界通过 point-to-point 通信传激活值。</p>
@@ -50,22 +50,22 @@
       <section class="article-section" id="p2p">
         <div class="section-no">02 · FORWARD SENDS ACTIVATIONS, BACKWARD SENDS GRADIENTS</div>
         <h2>Pipeline 的接口就是流水线阶段边界那块激活值张量。</h2>
-        <div class="p2p-pair"><div><small>FORWARD</small><b>Stage 0 → Stage 1</b><span>发送流水线阶段 0 的输出激活值</span></div><span>激活值 →<br/>← dActivation</span><div><small>BACKWARD</small><b>Stage 1 → Stage 0</b><span>把对边界激活值的梯度传回去</span></div></div>
+        <div class="p2p-pair"><div><small>FORWARD</small><b>阶段 0 → 阶段 1</b><span>发送流水线阶段 0 的输出激活值</span></div><span>激活值 →<br/>← dActivation</span><div><small>BACKWARD</small><b>阶段 1 → 阶段 0</b><span>把对边界激活值的梯度传回去</span></div></div>
         <p>因此 PP 的核心通信 primitive 更接近 <code>send / recv</code>，而不是 TP 那种层-internal 集合通信。Megatron Core 当前的 <code>P2PCommunicator</code> 就专门管理相邻流水线流水线阶段的张量交换s。</p>
         <div class="source-note">官方应用程序编程接口（API）：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.流水线_parallel.p2p_通信</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive 流水线流水线阶段之间张量交换的通信器。</div>
       </section>
 
       <section class="article-section" id="bubble">
         <div class="section-no">03 · THE NAIVE PIPELINE BUBBLE</div>
-        <h2>如果一次只送一个大 batch，后面的 GPU 一开始全在等。</h2>
-        <p>先只看 forward。一个 batch 必须先经过流水线阶段 0，流水线阶段 1 才能开始；流水线阶段 2 又要等流水线阶段 1。于是流水线在“灌满”之前有大量 idle：</p>
+        <h2>如果一次只送一个大批次，后面的 GPU 一开始全在等。</h2>
+        <p>先只看 forward。一个批次必须先经过流水线阶段 0，流水线阶段 1 才能开始；流水线阶段 2 又要等流水线阶段 1。于是流水线在“灌满”之前有大量 idle：</p>
         <div class="bubble-chart"><div class="schedule-grid"><div class="axis"></div><div class="axis">t1</div><div class="axis">t2</div><div class="axis">t3</div><div class="axis">t4</div><div class="axis">t5</div><div class="axis">t6</div><div class="axis">t7</div><div class="axis">t8</div><div class="axis">S0</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S1</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S2</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S3</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div></div></div>
-        <p>这就是流水线气泡：昂贵 GPU 因为依赖关系暂时没有工作可做。解决方向不是“去掉依赖”，而是把 batch 切成多个微批次es，让不同流水线阶段同时处理不同微批次es。</p>
+        <p>这就是流水线气泡：昂贵 GPU 因为依赖关系暂时没有工作可做。解决方向不是“去掉依赖”，而是把批次切成多个微批次es，让不同流水线阶段同时处理不同微批次es。</p>
       </section>
 
       <section class="article-section" id="microbatch">
         <div class="section-no">04 · MICROBATCHES FILL THE PIPELINE</div>
-        <h2>一个 batch 切成很多小块，流水线阶段 0 送走 MB0 后马上开始 MB1。</h2>
+        <h2>一个批次切成很多小块，流水线阶段 0 送走 MB0 后马上开始 MB1。</h2>
         <div class="microbatch-row"><div class="micro-card"><small>MB0</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB1</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB2</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB3</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB4</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB5</small><b>samples</b><code>micro batch</code></div></div>
         <p>当流水线阶段 1 在算 MB0 时，流水线阶段 0 已经可以算 MB1；流水线阶段 2 算 MB0 时，流水线阶段 1 算 MB1，流水线阶段 0 算 MB2。流水线逐渐被填满。</p>
         <div class="bubble-chart"><div class="schedule-grid"><div class="axis"></div><div class="axis">t1</div><div class="axis">t2</div><div class="axis">t3</div><div class="axis">t4</div><div class="axis">t5</div><div class="axis">t6</div><div class="axis">t7</div><div class="axis">t8</div><div class="axis">S0</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S1</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="schedule-cell idle">idle</div><div class="axis">S2</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="axis">S3</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div></div></div>
@@ -115,14 +115,14 @@
         <div class="section-no">08 · PP AND TP COMBINE NATURALLY</div>
         <h2>一个流水线流水线阶段本身可以不是一张 GPU，而是一整个 TP 进程组。</h2>
         <p>例如 PP=4、TP=2，一份模型就需要 8 张 GPU。每个流水线阶段由两张 GPU 共同完成内部张量并行：</p>
-        <div class="pp-tp-grid"><div class="pp-tp-stage"><small>PP STAGE 0</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP STAGE 1</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP STAGE 2</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP STAGE 3</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div></div>
+        <div class="pp-tp-grid"><div class="pp-tp-stage"><small>PP 阶段 0</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP 阶段 1</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP 阶段 2</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP 阶段 3</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div></div>
         <p>流水线阶段内是 TP 集合通信s，流水线阶段间是 PP P2P。于是同一个 rank 同时处在张量-model-parallel 进程组和流水线-model-parallel 进程组中。05.1 的“一个 world，多种进程组s”现在真正开始工作。</p>
       </section>
 
       <section class="article-section" id="tradeoff">
         <div class="section-no">09 · WHAT PP BUYS AND WHAT IT COSTS</div>
-        <h2>PP 不是“免费把层分开”，它把问题从显存转成流水线 scheduling。</h2>
-        <div class="trade-table"><div class="trade-row head"><b>维度</b><span>收益</span><span>代价</span></div><div class="trade-row"><b>Parameter memory</b><span>每个流水线阶段只保存部分层。</span><span>流水线阶段划分不均会导致 memory / compute imbalance。</span></div><div class="trade-row"><b>Compute</b><span>不同流水线阶段可并行处理不同微批次es。</span><span>fill / drain 会产生 bubble。</span></div><div class="trade-row"><b>Communication</b><span>不需要像 TP 那样每层频繁全组集合通信。</span><span>流水线阶段 boundary 激活值 / 梯度必须 P2P 传输。</span></div><div class="trade-row"><b>Scheduling</b><span>1F1B / interleaving 可提高利用率。</span><span>微批次数、virtual 流水线阶段、recompute 都会相互影响。</span></div></div>
+        <h2>PP 不是“免费把层分开”，它把问题从显存转成流水线调度。</h2>
+        <div class="trade-table"><div class="trade-row head"><b>维度</b><span>收益</span><span>代价</span></div><div class="trade-row"><b>Parameter 内存</b><span>每个流水线阶段只保存部分层。</span><span>流水线阶段划分不均会导致内存 / 计算 imbalance。</span></div><div class="trade-row"><b>计算</b><span>不同流水线阶段可并行处理不同微批次es。</span><span>fill / drain 会产生 bubble。</span></div><div class="trade-row"><b>Communication</b><span>不需要像 TP 那样每层频繁全组集合通信。</span><span>流水线阶段 boundary 激活值 / 梯度必须 P2P 传输。</span></div><div class="trade-row"><b>调度</b><span>1F1B / interleaving 可提高利用率。</span><span>微批次数、virtual 流水线阶段、recompute 都会相互影响。</span></div></div>
       </section>
 
       <section class="article-section" id="source">
