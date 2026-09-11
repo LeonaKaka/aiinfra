@@ -34,6 +34,32 @@ siteNav?.querySelectorAll('a').forEach((link) => {
   });
 });
 
+const uiLabelMap = new Map([
+  ['Labs', '实验'],
+  ['Source Map', '源码地图'],
+  ['Glossary', '术语表'],
+]);
+siteNav?.querySelectorAll('a').forEach((link) => {
+  const translated = uiLabelMap.get(link.textContent.trim());
+  if (translated) link.textContent = translated;
+});
+
+const labSidebar = document.querySelector('.course-sidebar.lab-sidebar');
+if (labSidebar) {
+  const sideLabel = labSidebar.querySelector('.side-label');
+  if (sideLabel?.textContent.trim() === 'LAB MAP') sideLabel.textContent = '实验地图';
+  const sideHome = labSidebar.querySelector('.side-home');
+  if (sideHome?.textContent.includes('Hands-on Labs')) sideHome.textContent = '← 动手实验';
+  labSidebar.querySelectorAll('.module-name.lab-side-name').forEach((node) => {
+    node.innerHTML = node.innerHTML
+      .replace(/\bTraining\b/g, '训练')
+      .replace(/\bInference\b/g, '推理');
+  });
+}
+document.querySelectorAll('.toc > strong').forEach((node) => {
+  if (node.textContent.trim() === 'ON THIS PAGE') node.textContent = '本页内容';
+});
+
 const lessonPreviewButton = document.querySelector('.lesson-preview button');
 if (lessonPreviewButton) {
   lessonPreviewButton.disabled = false;
