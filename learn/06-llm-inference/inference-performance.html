@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="description" content="AI Infra from Zero 06.4：从权重、KV Cache、显存带宽与计算量做推理性能估算，再用当前 vLLM Benchmark CLI 学会正确比较 TTFT、ITL、TPOT、吞吐量与尾延迟。"/>
+  <meta name="theme-color" content="#f7f7f3"/>
+  <title>06.4 推理性能：先估算，再 Benchmark · AI Infra from Zero</title>
+  <link rel="stylesheet" href="../../styles.css"/>
+  <link rel="stylesheet" href="../../lesson.css"/>
+  <link rel="stylesheet" href="../../lesson-terms.css"/>
+  <link rel="stylesheet" href="./inference.css"/>
+</head>
+<body class="lesson-body">
+<div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
+<header class="site-header lesson-header">
+  <a class="brand" href="../../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 06.4</small></span></a>
+  <nav class="site-nav" id="siteNav"><a href="../../index.html#roadmap">课程地图</a><a href="../../labs/index.html">Labs</a><a href="../../source-map/index.html">Source Map</a><a href="../../glossary/index.html">Glossary</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav>
+</header>
+
+<div class="lesson-shell">
+<aside class="course-sidebar">
+  <div class="side-label">COURSE MAP</div>
+  <a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+  <div class="module-block">
+    <div class="module-name"><b>06</b> LLM Inference</div>
+    <a class="lesson-link" href="./autoregressive-generation.html">06.1 自回归生成</a>
+    <a class="lesson-link" href="./prefill-decode.html">06.2 Prefill 与 Decode</a>
+    <a class="lesson-link" href="./kv-cache.html">06.3 KV Cache</a>
+    <a class="lesson-link current" href="./inference-performance.html">06.4 性能估算与基准测试</a>
+  </div>
+  <div class="module-block">
+    <div class="module-name"><b>07</b> vLLM</div>
+    <a class="lesson-link" href="../07-vllm/architecture.html">07.1 Architecture</a>
+    <a class="lesson-link" href="../07-vllm/scheduler-continuous-batching.html">07.2 Scheduler / Continuous Batching</a>
+    <a class="lesson-link" href="../07-vllm/kv-cache-manager.html">07.3 KV Cache Manager</a>
+  </div>
+</aside>
+
+<main class="article">
+  <div class="mobile-course-bar"><span>06 · LLM Inference</span><a href="../../index.html#roadmap">课程地图 →</a></div>
+  <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>LLM Inference</span><span>/</span><span>性能估算与基准测试</span></div>
+  <div class="lesson-kicker"><span>LESSON 06.4 · PERFORMANCE</span><span>约 55 min</span></div>
+
+  <h1>推理性能：先估算，再测；先问“快在哪里”，再看一个吞吐数字。</h1>
+  <p class="dek">到这里你已经知道自回归生成、Prefill / Decode 和键-值（KV）缓存。现在补上进入 vLLM 前最重要的一层工程能力：先用容量、计算量和图形处理器（GPU）显存带宽做数量级估算，再用一致的工作负载测首 Token 延迟（TTFT）、Token 间延迟（ITL）、每输出 Token 时间（TPOT）、吞吐量和尾延迟。没有这一步，“优化了 30%”通常只是一个缺少上下文的数字。</p>
+
+  <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul>
+    <li>区分“放得下”“算得动”“服务得快”三个不同问题。</li>
+    <li>估算模型权重与单请求 KV Cache 的数量级。</li>
+    <li>用“数据量 ÷ 有效带宽”理解显存带宽给出的理想下界。</li>
+    <li>知道为什么提高并发和批次可能增加吞吐量，却同时恶化用户延迟。</li>
+    <li>设计一个可比较的推理基准测试，而不是只记录一个 tokens/s。</li>
+    <li>读到性能宣称时，主动检查工作负载、分位数、缓存状态和服务级目标（SLO）。</li>
+  </ul></div>
+
+  <section class="article-section" id="faster">
+    <div class="section-no">01 · “更快”不是一个指标</div>
+    <h2>同一个优化，可以让系统吞吐更高，也可以让某些用户等得更久。</h2>
+    <div class="metric-grid">
+      <div><small>TTFT</small><b>首 Token 延迟</b><span>从客户端发出请求，到收到第一个非空输出。长输入、排队和 Prefill 都会影响它。</span></div>
+      <div><small>ITL</small><b>Token 间延迟</b><span>流式输出之间的时间间隔。它更接近用户看到文字连续出现时的“顺不顺”。</span></div>
+      <div><small>TPOT</small><b>每输出 Token 时间</b><span>按请求把第一个 token 之后的生成时间摊到剩余输出 token 上。</span></div>
+    </div>
+    <p>当前 vLLM 的 <code>vllm bench serve</code> 会同时报告请求吞吐量、输出 token 吞吐量、总 token 吞吐量，以及 TTFT、TPOT、ITL 的均值、中位数和高分位数。更重要的是，vLLM 文档明确提醒：不同工具对这些指标的命名和测量点并不完全统一，跨工具比较时要看公式和采样位置，不能只看缩写。</p>
+    <div class="concept-note"><p><strong>第一条规则：</strong>以后看到“性能提高 40%”，先问：提高的是吞吐量、TTFT、ITL，还是单位成本？其它指标有没有变差？</p></div>
+    <div class="source-note">当前口径：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM · Benchmark CLI</a>。本站按 2026-09 的文档复查本节的指标定义。</div>
+  </section>
+
+  <section class="article-section" id="capacity">
+    <div class="section-no">02 · 先算容量账</div>
+    <h2>“模型权重能塞进显存”只说明第一关过了。</h2>
+    <p>最粗的权重占用可以先按下面这条式子心算：</p>
+    <div class="shape-rule"><code>权重字节数 ≈ 参数量 × 每个参数的字节数</code></div>
+    <p>例如 70B 参数模型如果仅按 <code>BF16</code> 权重估算，每个参数约 2 bytes，仅权重就是约 140 GB。NVIDIA 当前 H200 的标称显存是 141 GB。这个数字看起来“刚好能装”，但真实服务还需要 KV Cache、临时张量、运行时工作区、内存碎片和框架本身的占用，所以“140 &lt; 141”绝不等于“单卡 H200 可以舒服地服务这个 70B 模型”。</p>
+
+    <p>KV Cache 则要从模型结构和上下文长度估：</p>
+    <div class="shape-rule"><code>KV bytes ≈ 2 × layers × tokens × KV heads × head_dim × bytes/element</code></div>
+    <p>前面的 2 表示 K 和 V 两份状态。举一个只用于练心算的例子：32 层、8 个 KV heads、<code>head_dim=128</code>、32K tokens、每个元素 2 bytes，那么单请求 KV Cache 大约就是 4 GiB。并发请求一多，动态 KV 占用很快就会和权重一样成为容量问题。</p>
+
+    <div class="cost-panel">
+      <div><small>WEIGHTS</small><b>模型的静态大块占用</b></div>
+      <div><small>KV CACHE</small><b>随请求数与上下文长度增长</b></div>
+      <div><small>RUNTIME</small><b>临时张量、工作区、碎片等不能忽略</b></div>
+    </div>
+    <div class="source-note">硬件锚点：<a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA H200</a> 当前规格页给出 141 GB GPU memory 与 4.8 TB/s memory bandwidth。这里用它做数量级例子，不把理论规格当成实测服务性能。</div>
+  </section>
+
+  <section class="article-section" id="bandwidth">
+    <div class="section-no">03 · 再算“搬数据”的账</div>
+    <h2>Decode 很慢，不一定是算力不够；也可能是在等权重和 KV 从显存里被读出来。</h2>
+    <p>一个非常有用的理想下界是：</p>
+    <div class="shape-rule"><code>时间下界 ≳ 需要搬的数据量 ÷ 有效显存带宽</code></div>
+    <p>仍然拿上面的 140 GB 权重做极端简化：如果某一步真的需要把这 140 GB 权重完整读一遍，而硬件带宽按 H200 标称 4.8 TB/s 计算，光“搬完这些数据”的理论时间下界就约 29 ms。真实程序还会受到 kernel 效率、KV 访问、调度、通信以及没有跑满标称带宽等因素影响，因此实际值只会更复杂。</p>
+    <div class="precision-note"><strong>不要把 29 ms 当成 70B 模型的真实每-token 延迟。</strong>这是故意粗糙的 roofline 式数量级练习：它的用途是判断“带宽有没有可能成为主要瓶颈”，而不是替代 profiler 或 benchmark。</div>
+
+    <p>这也解释了为什么批次会改变 Decode 的效率。同一批里有更多 token 一起经过模型时，读取一次权重可以服务更多计算工作，单位 token 分摊到的权重读取成本会下降；但批次更大通常也意味着更多请求同时竞争资源，用户延迟未必一起变好。</p>
+  </section>
+
+  <section class="article-section" id="compute">
+    <div class="section-no">04 · 计算量只是另一半</div>
+    <h2>先判断“更像算力瓶颈还是带宽瓶颈”，再决定该优化哪里。</h2>
+    <p>对普通 dense Transformer，可以把每个 token 的前向计算量先粗略记成和参数量同阶，常见心算会用 <code>≈ 2 × parameters FLOPs/token</code> 来估线性层主导部分。它不是精确公式：长上下文 Attention、MoE、量化、融合 kernel 和并行策略都会改变实际成本。</p>
+    <div class="request-grid">
+      <div class="request-card"><small>COMPUTE</small><b>算力更紧</b><span>大 Prefill、大矩阵乘更容易把计算单元吃满；这时更高有效 FLOPS 很重要。</span></div>
+      <div class="request-card"><small>MEMORY</small><b>带宽更紧</b><span>小批次 Decode 常更容易受权重/KV 读取影响；这时只看峰值 FLOPS 会误判。</span></div>
+      <div class="request-card"><small>COMMUNICATION</small><b>多卡通信更紧</b><span>张量并行等方案能分摊容量和计算，却会引入跨卡通信；“卡更多”不保证线性加速。</span></div>
+    </div>
+    <p>所以性能分析不是找一个万能公式，而是先建立几条数量级上界/下界，再用 profiler 和真实基准测试确认哪一项真的在主导。</p>
+  </section>
+
+  <section class="article-section" id="contract">
+    <div class="section-no">05 · Benchmark 前先写测试合同</div>
+    <h2>两个结果只有在工作负载可比时，才有资格放进同一张表。</h2>
+    <p>至少固定并记录下面这些条件：</p>
+    <div class="cost-panel">
+      <div><small>MODEL</small><b>模型、权重精度/量化方式、框架与版本</b></div>
+      <div><small>HARDWARE</small><b>GPU 型号、数量、并行配置</b></div>
+      <div><small>INPUT</small><b>输入 token 长度或真实输入分布</b></div>
+      <div><small>OUTPUT</small><b>输出 token 长度或真实输出分布</b></div>
+      <div><small>LOAD</small><b>并发数、请求到达速率、测试时长</b></div>
+      <div><small>FEATURES</small><b>Prefix Cache、Chunked Prefill、投机解码等开关</b></div>
+    </div>
+    <p>还要说明是否流式输出、有没有预热、数据集是什么、采样参数是否一致。否则“系统 A 比系统 B 快 20%”很可能只是输入更短、并发更高或缓存命中了。</p>
+  </section>
+
+  <section class="article-section" id="vllm-bench">
+    <div class="section-no">06 · 用当前 vLLM 的基准测试工具落地</div>
+    <h2><code>vllm bench serve</code> 测的是在线服务，不是一个孤立 kernel 的速度。</h2>
+    <div class="code-block"><div class="code-head"><span>shell</span><span>示意命令 · 参数按你的模型与数据集调整</span></div><pre><code>vllm bench serve \
+  --backend vllm \
+  --model YOUR_MODEL \
+  --dataset-name sharegpt \
+  --dataset-path YOUR_DATASET.json \
+  --num-prompts 100 \
+  --save-result</code></pre></div>
+    <p>当前 vLLM 会从 benchmark 客户端测量 TTFT，并分别统计 ITL 与 TPOT。标准逐 token 解码时两者通常接近；但投机解码可能在一次流式返回里带回多个 token，这时 ITL 记录“流式返回之间的间隔”，TPOT 则把解码时间按所有输出 token 摊开，因此两者不应该被强行当成同一个量。</p>
+    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个 server 跑同一组 prompt，可能命中前一次留下的 Prefix Cache，从而把吞吐量测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置/重启 server，或使用会在 sweep 间重置 server cache 的工具。</p></div>
+    <div class="source-note">当前实现与命令入口：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM Benchmark CLI</a> 与 <a href="https://docs.vllm.ai/en/stable/api/vllm/entrypoints/cli/benchmark/serve/">vLLM bench serve API reference</a>。</div>
+  </section>
+
+  <section class="article-section" id="curve">
+    <div class="section-no">07 · 不要只找“最高吞吐”</div>
+    <h2>真正的部署问题通常是：在延迟目标不被破坏时，最多能服务多少流量？</h2>
+    <div class="time-sequence">
+      <div class="time-row"><small>LOW LOAD</small><span class="decode">低延迟</span><span class="wait">GPU 可能没吃满</span></div>
+      <div class="time-row"><small>USEFUL RANGE</small><span class="prefill">吞吐持续上升</span><span class="decode">延迟仍在目标内</span></div>
+      <div class="time-row"><small>SATURATION</small><span class="wait">排队增长</span><span class="wait">p95 / p99 延迟恶化</span></div>
+    </div>
+    <p>因此更有意义的比较方式，是扫一组并发或请求到达速率，画出“吞吐量—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种 latency–throughput trade-off，而不是只汇报单个峰值数字。</p>
+    <div class="source-note">补充阅读：<a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">NVIDIA · LLM Inference Benchmarking: Fundamental Concepts</a>。这篇适合核对指标与测试口径，不作为本站当前 vLLM 实现细节的权威来源。</div>
+  </section>
+
+  <section class="article-section" id="claims">
+    <div class="section-no">08 · 以后看到性能宣称，按这张清单拆</div>
+    <h2>“优化了 30%”至少要追问七件事。</h2>
+    <div class="check-list">
+      <div>① 提高的是请求吞吐量、token 吞吐量，还是 TTFT / ITL？</div>
+      <div>② 输入和输出 token 分布是否相同？</div>
+      <div>③ 并发数或请求到达速率是否相同？</div>
+      <div>④ GPU、精度、并行度、框架版本是否相同？</div>
+      <div>⑤ 平均值之外，p95 / p99 有没有恶化？</div>
+      <div>⑥ Prefix Cache、Chunked Prefill、投机解码等功能是否改变？</div>
+      <div>⑦ 在同一个 SLO 下，哪一个方案能承载更多真实流量？</div>
+    </div>
+    <p>做到这里，你才真正具备进入 vLLM 的前置视角：07 模块不再只是“这个调度器有哪些功能”，而是去追问这些机制究竟在改容量、计算、带宽、调度还是尾延迟。</p>
+  </section>
+
+  <section class="article-section" id="reading">
+    <div class="section-no">09 · 延伸阅读，不作为课程依赖</div>
+    <h2>老文章可以读方法，但本站不把旧实现当作当前事实。</h2>
+    <div class="source-map-vllm">
+      <div class="source-card"><small>CURRENT</small><b>vLLM Benchmark CLI</b><span>当前指标定义、命令、Prefix Cache benchmark 陷阱以这里为准。</span><a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">打开当前文档 ↗</a></div>
+      <div class="source-card"><small>METHOD</small><b>Transformer Inference Arithmetic</b><span>适合学习“先估算再实验”的思路；文章发表于 2022 年，具体硬件与模型例子不要当成今天的数据。</span><a href="https://kipply.github.io/blog/transformer-inference-arithmetic/">选读 ↗</a></div>
+      <div class="source-card"><small>METRICS</small><b>NVIDIA Benchmarking Concepts</b><span>适合补充 TTFT、ITL、吞吐与测试口径的统一视图。</span><a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">选读 ↗</a></div>
+    </div>
+  </section>
+
+  <section class="checkpoint" id="checkpoint">
+    <div class="checkpoint-head"><span>CHECKPOINT</span><span>06.4</span></div>
+    <h2>能把“估算”和“实测”分开，才进入 vLLM。</h2>
+    <div class="quiz-item"><div class="quiz-q">1. 70B BF16 权重约 140 GB，而 GPU 标称显存 141 GB，为什么不能直接说“能单卡部署”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为服务还需要 KV Cache、临时张量、运行时工作区与内存碎片等；权重刚好放得下只通过了容量账的第一关。</div></div>
+    <div class="quiz-item"><div class="quiz-q">2. 为什么“吞吐量提高”不能自动推出“用户体验更好”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更高并发和更大批次常能提高设备利用率与总吞吐，但也可能增加排队和每个请求等待时间，所以必须同时看 TTFT、ITL 和尾延迟。</div></div>
+    <div class="quiz-item"><div class="quiz-q">3. 为什么重复跑同一套 prompt 可能让 benchmark 失真？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果服务端保留了 Prefix Cache，同样的前缀可能直接复用历史 KV，测到的是“带缓存复用”的性能，而不是原本想比较的冷启动工作负载。</div></div>
+    <div class="quiz-item"><div class="quiz-q">4. 比较两个推理方案时，最少要把哪些条件固定？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">模型与精度、硬件与并行配置、输入/输出长度分布、并发或请求速率、关键缓存/调度功能、流式与采样设置，以及相同的测试时长/预热口径。</div></div>
+  </section>
+
+  <section class="lesson-terms" id="lesson-terms">
+    <div class="section-no">TERMS · 本课术语表</div>
+    <h2>本课出现的缩写与术语</h2>
+    <p class="lesson-terms-intro">正文优先使用 <strong>中文名（缩写）</strong> 建立概念；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
+    <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+      <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+      <tbody>
+        <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
+        <tr><td><code>ITL</code></td><td>Inter-Token Latency</td><td>Token 间延迟</td><td>流式生成时相邻可见输出 token 之间的时间间隔。</td></tr>
+        <tr><td><code>TPOT</code></td><td>Time Per Output Token</td><td>每输出 Token 时间</td><td>生成阶段按输出 token 聚合后的平均耗时指标。</td></tr>
+        <tr><td><code>SLO</code></td><td>Service Level Objective</td><td>服务级目标</td><td>系统希望达到的延迟、可用性或吞吐目标。</td></tr>
+        <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <a class="next-lesson" href="../07-vllm/architecture.html">
+    <div><small>NEXT · 07.1</small><br/><strong>进入 vLLM：这些容量、带宽和延迟问题，真实系统怎么调度？</strong></div><span>→</span>
+  </a>
+</main>
+
+<aside class="toc"><strong>ON THIS PAGE</strong>
+  <a href="#faster">什么叫更快</a>
+  <a href="#capacity">容量账</a>
+  <a href="#bandwidth">带宽账</a>
+  <a href="#compute">计算量</a>
+  <a href="#contract">测试合同</a>
+  <a href="#vllm-bench">vLLM Benchmark</a>
+  <a href="#curve">吞吐—延迟曲线</a>
+  <a href="#claims">拆性能宣称</a>
+  <a href="#reading">延伸阅读</a>
+  <a href="#checkpoint">Checkpoint</a>
+</aside>
+</div>
+
+<script src="../../app.js"></script>
+<script>
+document.querySelectorAll('.quiz-toggle').forEach((button) => {
+  button.addEventListener('click', () => {
+    const item = button.closest('.quiz-item');
+    item.classList.toggle('open');
+    button.textContent = item.classList.contains('open') ? '收起答案' : '看答案';
+  });
+});
+</script>
+</body>
+</html>
