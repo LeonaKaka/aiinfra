@@ -352,7 +352,7 @@ def term_section(abbreviations: list[str]) -> str:
         rows.append("        <tr><td>—</td><td>—</td><td>—</td><td>本课没有需要额外展开的技术缩写。</td></tr>")
     return (
         '<section class="lesson-terms" id="lesson-terms">\n'
-        '        <div class="section-no">TERMS · 本课术语表</div>\n'
+        '        <div class="section-no">术语表 · 本课词汇</div>\n'
         '        <h2>本课出现的缩写与术语</h2>\n'
         '        <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>\n'
         '        <div class="lesson-terms-scroll"><table class="lesson-terms-table">\n'
