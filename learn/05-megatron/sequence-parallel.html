@@ -101,8 +101,8 @@
       <section class="article-section" id="layers">
         <div class="section-no">06 · 真实 Linear 实现怎样感知 SP</div>
         <h2>序列并行不是外面套个 split 就完了，Linear 的 backward 也要配合。</h2>
-        <p>Megatron Core 当前 <code>LinearWithGradAccumulationAndAsyncCommunication</code> 文档里明确区分了普通 TP 与序列 parallel：启用序列 parallel 时，forward 输入会 all-gather，而 backward 的 input 梯度会 reduce-scatter；同时还能与 weight-梯度计算做异步重叠执行。</p>
-        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>FORWARD</small><b>激活值 all-gather</b><span>从序列分片恢复 TP Linear 所需输入。</span></div><div class="parallel-axis dp"><small>BACKWARD</small><b>dgrad reduce-scatter</b><span>把 input-梯度 reduction 与序列分片一起完成。</span></div><div class="parallel-axis pp"><small>OPTIMIZATION</small><b>通信重叠执行</b><span>真实 Megatron 会尝试把集合通信与独立 GEMM 工作重叠，而不是串行等待。</span></div></div>
+        <p>Megatron Core 当前 <code>LinearWithGradAccumulationAndAsyncCommunication</code> 文档里明确区分了普通 TP 与 Sequence Parallel：启用 Sequence Parallel 时，forward input 会 all-gather，而 backward 的 input gradient 会 reduce-scatter；同时还能与 weight-gradient compute做async overlap。</p>
+        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>FORWARD</small><b>activation all-gather</b><span>从sequence shard 恢复 TP Linear 所需输入。</span></div><div class="parallel-axis dp"><small>BACKWARD</small><b>dgrad reduce-scatter</b><span>把 input-gradient reduction 与序列分片一起完成。</span></div><div class="parallel-axis pp"><small>OPTIMIZATION</small><b>communication overlap</b><span>真实 Megatron 会尝试把collective 与独立 GEMM overlap，而不是串行等待。</span></div></div>
         <div class="source-note">官方应用程序编程接口（API）参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html">core.张量_parallel.层</a>。其中序列_parallel 参数的说明直接写明 forward all-gather 与 backward reduce-scatter。</div>
       </section>
 
