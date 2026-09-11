@@ -32,12 +32,12 @@
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV 传输</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区描述符</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
     <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
@@ -46,7 +46,7 @@
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Profiler-ready 重叠</span></div>
     <div class="lab-kicker">LAB A7 · PROVE THE 重叠</div>
     <h1><code>async_op=True</code> 只能制造机会。<br />Profiler 才能告诉你机会有没有变成真实重叠。</h1>
-    <p class="dek">A5 已经把 W2 通信桶 的 reduce-scatter 提前到 W1 反向传播 之前，A6 又加入 TP×DP process groups。现在补上最重要的证据层：脚本用 <code>torch.profiler</code> 和 <code>record_function()</code> 把 前向计算、梯度-ready、collective 启动、继续 反向传播、等待 全部标到时间线上。CPU/Gloo 只验证事件顺序；只有 GPU/NCCL 时间线 真正出现通信 kernel 与 compute kernel 时间区间重叠，才可以说 重叠 发生了。</p>
+    <p class="dek">A5 已经把 W2 通信桶的 reduce-scatter 提前到 W1 反向传播之前，A6 又加入 TP×DP process groups。现在补上最重要的证据层：脚本用 <code>torch.profiler</code> 和 <code>record_function()</code> 把前向计算、梯度-ready、collective 启动、继续反向传播、等待全部标到时间线上。CPU/Gloo 只验证事件顺序；只有 GPU/NCCL 时间线真正出现通信 kernel 与计算 kernel 时间区间重叠，才可以说重叠发生了。</p>
 
     <section class="lab-section" id="markers"><div class="lab-kicker">01 · MARK THE DEPENDENCIES</div><h2>先标“语义边界”，再去看底层 kernel。</h2>
       <div class="command"><div class="command-head"><span>TRACE RANGE ORDER</span><span>per rank</span></div><pre>forward
@@ -55,7 +55,7 @@ launch_reduce_scatter_w2
 backward_hidden_and_w1
 launch_reduce_scatter_w1
 wait_for_gradient_shards</pre></div>
-      <p>这些 range 不是为了美化 trace，而是给你一把尺子：<strong>W2 collective 启动 之后，到最终 等待 之前，中间确实存在一段不依赖 W2 分片 的 反向传播 compute。</strong>这段区间就是通信可能被隐藏的窗口。</p>
+      <p>这些 range 不是为了美化 trace，而是给你一把尺子：<strong>W2 collective 启动之后，到最终等待之前，中间确实存在一段不依赖 W2 分片的反向传播计算。</strong>这段区间就是通信可能被隐藏的窗口。</p>
     </section>
 
     <section class="lab-section" id="run"><div class="lab-kicker">02 · RUN + EXPORT TRACE</div><h2>同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</h2>
@@ -73,22 +73,22 @@ PASS</pre></div>
     </section>
 
     <section class="lab-section" id="gpu"><div class="lab-kicker">03 · WHAT COUNTS AS PROOF</div><h2>GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</h2>
-      <div class="result-grid"><div class="result-card"><small>启动</small><b>collective returns early</b><span>W2 reduce-scatter 被发起后，CPU/host 没有立即在同一位置把整个操作等完。</span></div><div class="result-card"><small>时间线</small><b>NCCL ∩ compute</b><span>NCCL reduce-scatter kernel 与后续 反向传播 GEMM / elementwise kernel 在时间轴上真的有重叠区间。</span></div><div class="result-card"><small>关键路径</small><b>等待 shrinks</b><span>最终 等待 不再承担完整通信时间；最好再比较同步版本与 重叠 版本的 单步时间。</span></div></div>
-      <p>如果只看到异步 API，却没有第二条 stream 上的 NCCL kernel 与 compute 同时存在，就只能说“代码允许异步”，不能说“性能上隐藏了通信”。</p>
+      <div class="result-grid"><div class="result-card"><small>启动</small><b>collective returns early</b><span>W2 reduce-scatter 被发起后，CPU/host 没有立即在同一位置把整个操作等完。</span></div><div class="result-card"><small>时间线</small><b>NCCL ∩ 计算</b><span>NCCL reduce-scatter kernel 与后续反向传播 GEMM / elementwise kernel 在时间轴上真的有重叠区间。</span></div><div class="result-card"><small>关键路径</small><b>等待 shrinks</b><span>最终等待不再承担完整通信时间；最好再比较同步版本与重叠版本的单步时间。</span></div></div>
+      <p>如果只看到异步 API，却没有第二条 stream 上的 NCCL kernel 与计算同时存在，就只能说“代码允许异步”，不能说“性能上隐藏了通信”。</p>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO CURRENT MEGATRON</div><h2>Megatron 的 通信桶 进程组 正是在追踪“什么时候 ready、什么时候 分发、什么时候 等待”。</h2>
-      <div class="source-bridge"><div><small>OUR LAB</small><b>W2 ready → 异步 RS → later 等待</b><code>record_function + Work handle</code></div><span>same scheduling question →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket group · register_grad_ready · start_grad_sync · finish_grad_sync</code></div></div>
-      <p>当前 Megatron 源码会在 通信桶 进程组 的参数梯度全部 ready 后发起 梯度 reduction；启用 distributed 优化器 时是 reduce-scatter，否则是 all-reduce。<code>overlap_grad_reduce</code> 决定通信是否异步 分发。读这里时应把 A7 的时间线放在脑子里，而不是只看函数调用。</p>
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO CURRENT MEGATRON</div><h2>Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</h2>
+      <div class="source-bridge"><div><small>OUR LAB</small><b>W2 ready → 异步 RS → later 等待</b><code>record_function + Work handle</code></div><span>same 调度 question →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket group · register_grad_ready · start_grad_sync · finish_grad_sync</code></div></div>
+      <p>当前 Megatron 源码会在通信桶进程组的参数梯度全部 ready 后发起梯度 reduction；启用 distributed 优化器时是 reduce-scatter，否则是 all-reduce。<code>overlap_grad_reduce</code> 决定通信是否异步分发。读这里时应把 A7 的时间线放在脑子里，而不是只看函数调用。</p>
     </section>
 
     <section class="lab-section" id="close"><div class="lab-kicker">05 · TRAINING SOFTWARE CAPSTONE</div><h2>到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</h2>
-      <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认 backend=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与 反向传播 compute 是否重叠。</div><div>③ 再把 A6 的 TP×DP 进程组 加进 profiler，区分 TP collective 与 DP reduce-scatter。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对 重叠 window 的影响。</div></div>
+      <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认后端=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与反向传播计算是否重叠。</div><div>③ 再把 A6 的 TP×DP 进程组加进 profiler，区分 TP collective 与 DP reduce-scatter。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对重叠 window 的影响。</div></div>
     </section>
 
     <nav class="lab-footer-nav"><a href="./mini-tp-dp-2d.html">← Lab A6 · TP × DP Topology</a><a href="../source-map/index.html#megatron">进入 Megatron Source Map →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#markers">先标“语义边界”，再去看底层 kernel。</a><a href="#run">同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</a><a href="#gpu">GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</a><a href="#source">Megatron 的 通信桶 进程组 正是在追踪“什么时候 ready、什么时候 分发、什么时候 等待”。</a><a href="#close">到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#markers">先标“语义边界”，再去看底层 kernel。</a><a href="#run">同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</a><a href="#gpu">GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</a><a href="#source">Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</a><a href="#close">到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
