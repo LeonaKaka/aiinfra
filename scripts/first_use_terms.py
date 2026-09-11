@@ -100,6 +100,15 @@ SOURCE_TERMS = {
     "warp": ("线程束", "NVIDIA GPU 中一组按同一指令路径并行执行的线程"),
     "NVLink": ("GPU 高速互连", "NVIDIA GPU 之间常见的专用高带宽连接"),
     "NVSwitch": ("GPU 互连交换芯片", "把多条 NVLink 连接组织成更大规模 GPU 互连"),
+    "workspace": ("工作区", "kernel 或 library 为一次计算临时申请的辅助内存"),
+    "CUDA context": ("CUDA 上下文", "进程在 GPU 上执行时维护的运行环境与资源状态"),
+    "allocator": ("内存分配器", "负责申请、缓存和复用内存块的组件"),
+    "caching allocator": ("缓存分配器", "保留释放后的显存块以便后续快速复用的 allocator"),
+    "nvidia-smi": ("NVIDIA GPU 状态工具", "查看 GPU、显存和进程状态的命令行工具"),
+    "quantization": ("量化", "用更低精度表示权重或激活以降低存储和计算成本"),
+    "offload": ("卸载", "把部分状态移到 CPU 或主机内存以降低 GPU 占用"),
+    "concurrency": ("并发量", "系统同时保持活跃的 request 数量"),
+    "Sequence Parallel": ("序列并行", "沿 sequence 维减少部分 activation 的重复存储与通信"),
 
     # 04 · Distributed
     "process": ("进程", "独立运行程序并拥有自己状态的执行实例"),
