@@ -50,7 +50,7 @@
     <li>估算模型权重与单请求 KV Cache 的数量级。</li>
     <li>用“数据量 ÷ 有效带宽”理解显存带宽给出的理想下界。</li>
     <li>知道为什么提高并发和批次可能增加吞吐量，却同时恶化用户延迟。</li>
-    <li>设计一个可比较的推理基准测试，而不是只记录一个 tokens/s。</li>
+    <li>设计一个可比较的推理基准测试，而不是只记录一个孤立的吞吐数字。</li>
     <li>读到性能宣称时，主动检查工作负载、分位数、缓存状态和服务级目标（SLO）。</li>
   </ul></div>
 
@@ -100,17 +100,17 @@
   <section class="article-section" id="compute">
     <div class="section-no">04 · 计算量只是另一半</div>
     <h2>先判断“更像算力瓶颈还是带宽瓶颈”，再决定该优化哪里。</h2>
-    <p>对普通 dense Transformer，可以把每个 token 的前向计算量先粗略记成和参数量同阶，常见心算会用 <code>≈ 2 × parameters FLOPs/token</code> 来估线性层主导部分。它不是精确公式：长上下文 Attention、MoE、量化、融合 kernel 和并行策略都会改变实际成本。</p>
+    <p>对普通 dense Transformer，可以把每个 token 的前向计算量先粗略记成和参数量同阶，常见心算会用 <code>≈ 2 × parameters FLOPs/token</code> 来估线性层主导部分。它不是精确公式：长上下文 Attention、混合专家模型、量化、融合 kernel 和并行策略都会改变实际成本。</p>
     <div class="request-grid">
-      <div class="request-card"><small>COMPUTE</small><b>算力更紧</b><span>大 Prefill、大矩阵乘更容易把计算单元吃满；这时更高有效 FLOPS 很重要。</span></div>
-      <div class="request-card"><small>MEMORY</small><b>带宽更紧</b><span>小批次 Decode 常更容易受权重/KV 读取影响；这时只看峰值 FLOPS 会误判。</span></div>
+      <div class="request-card"><small>COMPUTE</small><b>算力更紧</b><span>大 Prefill、大矩阵乘更容易把计算单元吃满；这时更高的有效浮点计算能力很重要。</span></div>
+      <div class="request-card"><small>MEMORY</small><b>带宽更紧</b><span>小批次 Decode 常更容易受权重/KV 读取影响；这时只看峰值浮点计算能力会误判。</span></div>
       <div class="request-card"><small>COMMUNICATION</small><b>多卡通信更紧</b><span>张量并行等方案能分摊容量和计算，却会引入跨卡通信；“卡更多”不保证线性加速。</span></div>
     </div>
     <p>所以性能分析不是找一个万能公式，而是先建立几条数量级上界/下界，再用 profiler 和真实基准测试确认哪一项真的在主导。</p>
   </section>
 
   <section class="article-section" id="contract">
-    <div class="section-no">05 · Benchmark 前先写测试合同</div>
+    <div class="section-no">05 · 跑基准测试前先写测试合同</div>
     <h2>两个结果只有在工作负载可比时，才有资格放进同一张表。</h2>
     <p>至少固定并记录下面这些条件：</p>
     <div class="cost-panel">
@@ -134,9 +134,9 @@
   --dataset-path YOUR_DATASET.json \
   --num-prompts 100 \
   --save-result</code></pre></div>
-    <p>当前 vLLM 会从 benchmark 客户端测量 TTFT，并分别统计 ITL 与 TPOT。标准逐 token 解码时两者通常接近；但投机解码可能在一次流式返回里带回多个 token，这时 ITL 记录“流式返回之间的间隔”，TPOT 则把解码时间按所有输出 token 摊开，因此两者不应该被强行当成同一个量。</p>
-    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个 server 跑同一组 prompt，可能命中前一次留下的 Prefix Cache，从而把吞吐量测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置/重启 server，或使用会在 sweep 间重置 server cache 的工具。</p></div>
-    <div class="source-note">当前实现与命令入口：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM Benchmark CLI</a> 与 <a href="https://docs.vllm.ai/en/stable/api/vllm/entrypoints/cli/benchmark/serve/">vLLM bench serve API reference</a>。</div>
+    <p>当前 vLLM 会从基准测试客户端测量 TTFT，并分别统计 ITL 与 TPOT。标准逐 token 解码时两者通常接近；但投机解码可能在一次流式返回里带回多个 token，这时 ITL 记录“流式返回之间的间隔”，TPOT 则把解码时间按所有输出 token 摊开，因此两者不应该被强行当成同一个量。</p>
+    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个服务实例跑同一组 prompt，可能命中前一次留下的 Prefix Cache，从而把吞吐量测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置/重启服务实例，或使用会在 sweep 间重置服务端缓存 的工具。</p></div>
+    <div class="source-note">当前实现与命令入口：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM Benchmark CLI</a> 与 <a href="https://docs.vllm.ai/en/stable/api/vllm/entrypoints/cli/benchmark/serve/">vLLM bench serve 接口文档</a>。</div>
   </section>
 
   <section class="article-section" id="curve">
@@ -181,7 +181,7 @@
     <h2>能把“估算”和“实测”分开，才进入 vLLM。</h2>
     <div class="quiz-item"><div class="quiz-q">1. 70B BF16 权重约 140 GB，而 GPU 标称显存 141 GB，为什么不能直接说“能单卡部署”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为服务还需要 KV Cache、临时张量、运行时工作区与内存碎片等；权重刚好放得下只通过了容量账的第一关。</div></div>
     <div class="quiz-item"><div class="quiz-q">2. 为什么“吞吐量提高”不能自动推出“用户体验更好”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更高并发和更大批次常能提高设备利用率与总吞吐，但也可能增加排队和每个请求等待时间，所以必须同时看 TTFT、ITL 和尾延迟。</div></div>
-    <div class="quiz-item"><div class="quiz-q">3. 为什么重复跑同一套 prompt 可能让 benchmark 失真？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果服务端保留了 Prefix Cache，同样的前缀可能直接复用历史 KV，测到的是“带缓存复用”的性能，而不是原本想比较的冷启动工作负载。</div></div>
+    <div class="quiz-item"><div class="quiz-q">3. 为什么重复跑同一套 prompt 可能让基准测试失真？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果服务端保留了 Prefix Cache，同样的前缀可能直接复用历史 KV，测到的是“带缓存复用”的性能，而不是原本想比较的冷启动工作负载。</div></div>
     <div class="quiz-item"><div class="quiz-q">4. 比较两个推理方案时，最少要把哪些条件固定？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">模型与精度、硬件与并行配置、输入/输出长度分布、并发或请求速率、关键缓存/调度功能、流式与采样设置，以及相同的测试时长/预热口径。</div></div>
   </section>
 
@@ -199,6 +199,8 @@
         <tr><td><code>TPOT</code></td><td>Time Per Output Token</td><td>每输出 Token 时间</td><td>生成阶段按输出 token 聚合后的平均耗时指标。</td></tr>
         <tr><td><code>SLO</code></td><td>Service Level Objective</td><td>服务级目标</td><td>系统希望达到的延迟、可用性或吞吐目标。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
+        <tr><td><code>GiB</code></td><td>Gibibyte</td><td>GiB 二进制容量单位</td><td>二进制容量单位，1 GiB = 2^30 bytes。</td></tr>
       </tbody>
     </table></div>
   </section>
