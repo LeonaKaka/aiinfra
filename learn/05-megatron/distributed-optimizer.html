@@ -113,7 +113,7 @@
       <section class="article-section" id="tp-vs-do">
         <div class="section-no">09 · 不要和张量并行混淆</div>
         <h2>TP 和 Distributed Optimizer 都在“分片”，但分片的对象和执行时机完全不同。</h2>
-        <div class="dist-vs-tp"><div><small>TENSOR PARALLEL</small><b>sharded model computation</b><span>同一个层的 weights / activations 被 TP ranks 分着算；forward 本身依赖 TP 集合通信s。没有这些 peers，这个层就算不完整。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>sharded DP training state</b><span>不同 DP replicas 数学上仍是同一个 model replica；optimizer update 归属关系 / optimizer state 被 sharded，之后再同步 updated params。</span></div></div>
+        <div class="dist-vs-tp"><div><small>TENSOR PARALLEL</small><b>sharded model computation</b><span>同一个层的 weights / activations 被 TP ranks 分着算；forward 本身依赖 TP collectives。没有这些 peers，这个层就算不完整。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>sharded DP training state</b><span>不同 DP replicas 数学上仍是同一个 model replica；optimizer update 归属关系 / optimizer state 被 sharded，之后再同步 updated params。</span></div></div>
         <p>因此它们可以组合：一个 rank 先属于某个 TP 分片，再在“相同 TP/PP 位置的不同 data replicas”之间形成 DP group；Distributed Optimizer 正是在这个 DP group上工作。</p>
       </section>
 
