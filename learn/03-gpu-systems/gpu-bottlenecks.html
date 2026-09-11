@@ -23,7 +23,7 @@
       <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
       <div class="module-block"><div class="module-name"><b>01</b> Foundations</div><a class="lesson-link" href="../01-foundations/tensor.html">01.1–01.4 Foundations</a></div>
       <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1 Attention</a><a class="lesson-link" href="../02-transformer/mha-gqa.html">02.2 MHA / GQA</a><a class="lesson-link" href="../02-transformer/transformer-block.html">02.3 Transformer Block</a></div>
-      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="./gpu-mental-model.html">03.1 GPU 心智模型</a><a class="lesson-link" href="./gpu-memory.html">03.2 显存到底花在哪</a><a class="lesson-link current" href="./gpu-bottlenecks.html">03.3 计算 / 内存 / Communication</a></div>
+      <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="./gpu-mental-model.html">03.1 GPU 心智模型</a><a class="lesson-link" href="./gpu-memory.html">03.2 显存到底花在哪</a><a class="lesson-link current" href="./gpu-bottlenecks.html">03.3 计算 / 访存 / 通信</a></div>
       <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1 进程、rank 与 process group</a><a class="lesson-link" href="../04-distributed/collectives.html">04.2 Collectives</a><a class="lesson-link" href="../04-distributed/nccl-topology.html">04.3 NCCL 与拓扑</a></div>
     </aside>
 
@@ -34,7 +34,7 @@
       <h1>GPU 到底在等什么：计算、访存还是通信？</h1>
       <p class="dek">“图形处理器（GPU）利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做推理基础设施时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 kernel 启动 / 中央处理器（CPU）调度开销。优化方向必须跟瓶颈对上。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释计算受限（compute-bound）、带宽受限（memory-bound）、通信受限（communication-bound）。</li><li>理解算术强度为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解通信与计算重叠的收益上限，并把它连接到 Megatron。</li><li>解释为什么大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释计算受限（<code>compute-bound</code>）、带宽受限（<code>memory-bound</code>）、通信受限（<code>communication-bound</code>）。</li><li>理解算术强度为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解通信与计算重叠的收益上限，并把它连接到 Megatron。</li><li>解释为什么大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
 
       <section class="article-section" id="triad">
         <div class="section-no">01 · THREE DIFFERENT CEILINGS</div>
@@ -59,7 +59,7 @@
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
         <div class="roof-caption"><div><b>左边 · 内存-limited</b><span>每 byte 做的计算太少，性能上限随带宽和算术强度增长。</span></div><div><b>右边 · 计算-limited</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
         <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
-        <div class="source-note">官方延伸阅读：NVIDIA Nsight 计算的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存 hierarchy 的 roof。</div>
+        <div class="source-note">官方延伸阅读：NVIDIA Nsight 计算的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
       </section>
 
       <section class="article-section" id="compute">
@@ -163,7 +163,7 @@
       <div class="next-lesson muted-next"><div><small>NEXT · 04.1</small><br /><strong>进程、rank 与 process group：多张 GPU 先怎么“认识彼此”？</strong></div><span>→</span></div>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#triad">三种瓶颈</a><a href="#intensity">Arithmetic intensity</a><a href="#roofline">Roofline</a><a href="#compute">计算受限</a><a href="#memory">带宽受限</a><a href="#launch">Launch overhead</a><a href="#communication">Communication</a><a href="#overlap">Overlap</a><a href="#prefill-decode">Prefill / Decode</a><a href="#profile">Profiler</a><a href="#bridge">下一模块</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#triad">三种瓶颈</a><a href="#intensity">算术强度</a><a href="#roofline">Roofline</a><a href="#compute">计算受限</a><a href="#memory">带宽受限</a><a href="#launch">内核启动开销</a><a href="#communication">通信</a><a href="#overlap">通信重叠</a><a href="#prefill-decode">Prefill / Decode</a><a href="#profile">性能分析</a><a href="#bridge">下一模块</a><a href="#checkpoint">检查点</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
 </body>
