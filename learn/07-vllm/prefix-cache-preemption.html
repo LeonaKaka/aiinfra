@@ -102,14 +102,14 @@
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>07.5</span></div><h2>完成这一关，你已经具备读 KV Connector 的地基。</h2><div class="quiz-item"><div class="quiz-q">1. Prefix cache 命中主要省的是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">主要省重复的 prefill 计算：相同 prefix 已经有有效 KV，就可以把这些 tokens 当作已计算。共享 KV block本身仍占physical KV memory。</div></div><div class="quiz-item"><div class="quiz-q">2. 当前 V1 preemption默认怎样恢复，而eviction又是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">preemption是请求级调度决定，当前 V1 默认通过 RECOMPUTE 恢复被释放的 KV；eviction是块/cache 层回收无活跃引用的cached block。两者不是同一层级。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么出现 <code>WAITING_FOR_REMOTE_KVS</code> 后，Scheduler已经不再是纯本机问题？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为请求是否可运行还取决于外部 KV 是否存在、是否开始传输、是否完成。远端数据传输状态已经进入请求的调度状态机。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
-        <tr><td><code>APC</code></td><td>Automatic Prefix Caching</td><td>自动prefix cache</td><td>vLLM 通过 prefix hash identity 复用已计算 KV 的机制；普通 full-attention 路径以完整 hash block 为基础心智模型，当前 hybrid/Mamba 路径存在细粒度 partial-hit 例外。</td></tr>
+        <tr><td><code>APC</code></td><td>Automatic Prefix Caching</td><td>自动前缀缓存</td><td>vLLM 通过 prefix hash identity 复用已计算 KV 的机制；普通 full-attention 路径以完整 hash block 为基础心智模型，当前 hybrid/Mamba 路径存在细粒度 partial-hit 例外。</td></tr>
         <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
         <tr><td><code>LoRA</code></td><td>Low-Rank Adaptation</td><td>低秩适配</td><td>用低秩增量参数高效适配预训练模型的方法；也可能进入 prefix-cache identity。</td></tr>
         <tr><td><code>OOM</code></td><td>Out Of Memory</td><td>内存不足/显存不足</td><td>所需内存超过可用容量时的失败状态。</td></tr>
