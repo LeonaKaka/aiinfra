@@ -47,8 +47,8 @@
         <div class="code-block"><div class="code-head"><span>python</span><span>device move</span></div><pre><code>x = torch.randn(<span class="num">1024</span>, <span class="num">1024</span>)   <span class="comment"># CPU memory</span>
 x = x.to(<span class="comment">'cuda:0'</span>)              <span class="comment"># move/copy to GPU 0</span>
 print(x.device)                    <span class="comment"># cuda:0</span></code></pre></div>
-        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>VRAM（显存：工程语境里常泛指 GPU device memory）常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和 topology 时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
-        <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器 / PC（个人电脑：这里指普通个人电脑或工作站语境）常通过 PCIe 连接 CPU 与 GPU；NVLink 更常用于高带宽 GPU↔GPU 互连，NVSwitch（GPU 互连交换芯片：把多条 NVLink 连接组织成更大规模 GPU 互连）可以进一步连接更多 GPU。后面会按具体 topology 再讲。</p></div>
+        <div class="concept-note"><p><strong>“GPU 显存”是角色，HBM / GDDR 是实现。</strong>VRAM（显存：工程语境里常泛指 GPU device memory）常被当作 GPU device memory 的泛称；数据中心加速器常见 HBM，很多消费级 GPU 使用 GDDR。后面谈容量、带宽和硬件拓扑时，要先确认具体 GPU，而不是把 HBM 当作所有 GPU 显存的同义词。</p></div>
+        <div class="concept-note"><p><strong>先别把互连记死。</strong>普通服务器 / PC（个人电脑：这里指普通个人电脑或工作站语境）常通过 PCIe 连接 CPU 与 GPU；NVLink 更常用于高带宽 GPU↔GPU 互连，NVSwitch（GPU 互连交换芯片：把多条 NVLink 连接组织成更大规模 GPU 互连）可以进一步连接更多 GPU。后面会按具体硬件拓扑再讲。</p></div>
       </section>
 
       <section class="article-section" id="inside">
@@ -74,7 +74,7 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
       <section class="article-section" id="tensor-core">
         <div class="section-no">04 · 为什么 Tensor Core 重要</div>
         <h2>大模型里的 GEMM，正好是 Tensor Cores 擅长的工作。</h2>
-        <p>Tensor Cores 针对特定 dtype 和矩阵乘加模式提供很高 throughput。于是模型训练/推理会大量使用 FP16、BF16、FP8（8 位浮点：更低精度的浮点表示，需要硬件与数值策略共同支持）等较低精度格式，并把 Linear、Attention、MLP 尽量变成高效的大矩阵运算。</p>
+        <p>Tensor Cores 针对特定 dtype 和矩阵乘加模式提供很高吞吐。于是模型训练/推理会大量使用 FP16、BF16、FP8（8 位浮点：更低精度的浮点表示，需要硬件与数值策略共同支持）等较低精度格式，并把 Linear、Attention、MLP 尽量变成高效的大矩阵运算。</p>
         <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>查询-键-值（QKV） PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
       </section>
 
@@ -89,7 +89,7 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
       <section class="article-section" id="async">
         <div class="section-no">06 · 异步执行</div>
         <h2>CPU 发出 GPU 工作后，很多 CUDA 操作不会原地傻等 GPU 完成。</h2>
-        <p>在常见 PyTorch CUDA 工作流里，CPU 可以把工作提交到 CUDA stream（CUDA 流：按顺序组织 GPU 异步工作的执行队列），然后继续往下执行。这样 CPU launch 与 GPU execution 能 overlap，但也带来一个新手最容易踩的坑：<strong>直接用 CPU 时钟包住 CUDA 操作，可能只量到“提交工作”的时间。</strong></p>
+        <p>在常见 PyTorch CUDA 工作流里，CPU 可以把工作提交到 CUDA stream（CUDA 流：按顺序组织 GPU 异步工作的执行队列），然后继续往下执行。这样 CPU launch 与 GPU execution 能重叠执行，但也带来一个新手最容易踩的坑：<strong>直接用 CPU 时钟包住 CUDA 操作，可能只量到“提交工作”的时间。</strong></p>
         <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">launch A</span><span class="launch">launch B</span><span class="free">other work</span></div><div class="gpu-line"><small>GPU</small><span class="work a">kernel A</span><span class="work b">kernel B</span></div></div>
         <div class="code-block"><div class="code-head"><span>python</span><span>simple timing idea</span></div><pre><code>import time
 
@@ -106,21 +106,21 @@ elapsed = time.perf_counter() - start</code></pre></div>
         <div class="section-no">07 · 两张 GPU 就是两个独立设备</div>
         <h2><code>cuda:0</code> 和 <code>cuda:1</code> 不是一个更大的共享显存池。</h2>
         <div class="two-gpu"><div><small>GPU 0</small><b>设备显存 0</b><span>X lives here</span></div><div class="gpu-link"><span>NVLink / PCIe / fabric</span><i></i></div><div><small>GPU 1</small><b>设备显存 1</b><span>W lives here</span></div></div>
-        <p>如果某个计算需要 GPU 1 用到 GPU 0 上的 tensor，就必须存在某种数据移动/通信路径。框架、NCCL、P2P（点对点通信：两个 peer/rank 之间直接发送和接收数据的通信模式）以及集合通信都会帮你完成，但代价不会凭空消失。</p>
+        <p>如果某个计算需要 GPU 1 用到 GPU 0 上的 tensor，就必须存在某种数据移动/通信路径。框架、NCCL、P2P（点对点通信：两个设备或进程之间直接发送和接收数据的通信模式）以及集合通信都会帮你完成，但代价不会凭空消失。</p>
         <div class="concept-note"><p><strong>这就是分布式训练的核心矛盾：</strong>多 GPU 给了更多计算和显存，但只要把一个问题拆开，就必须考虑“拆完之后哪些数据还需要彼此交换”。</p></div>
       </section>
 
       <section class="article-section" id="utilization">
         <div class="section-no">08 · 为什么 GPU 看起来会很闲</div>
         <h2>GPU 没跑满，不代表唯一答案是“模型太小”。</h2>
-        <div class="stall-grid"><div><b>CPU / launch</b><span>CPU 没及时提交足够工作</span></div><div><b>内存</b><span>kernel 在等 device memory</span></div><div><b>Communication</b><span>GPU 在等其它 ranks / network</span></div><div><b>Synchronization</b><span>某个 barrier / dependency 阻塞</span></div><div><b>Small kernels</b><span>工作太碎，启动开销占比高</span></div><div><b>Load imbalance</b><span>不同 GPU 工作量不均</span></div></div>
+        <div class="stall-grid"><div><b>CPU / launch</b><span>CPU 没及时提交足够工作</span></div><div><b>内存</b><span>kernel 在等 device memory</span></div><div><b>通信等待</b><span>GPU 在等其它 GPU / 网络</span></div><div><b>同步等待</b><span>某个同步点或依赖关系阻塞</span></div><div><b>小 kernel</b><span>工作太碎，启动开销占比高</span></div><div><b>负载不均</b><span>不同 GPU 工作量不均</span></div></div>
         <p>后面读 Megatron 的通信与计算重叠、读 vLLM 的 batching/调度器，本质上都在想办法减少这些“昂贵 GPU 没在做有效计算”的时间。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">09 · 把这一课接回整条路线</div>
         <h2>把今天的硬件词，放回我们的两条终点路线。</h2>
-        <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → 调度器 feeds kernels → KV 传输 across devices/nodes</span></div></div>
+        <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → 计算通信重叠</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → 调度器 feeds kernels → KV 传输 across devices/nodes</span></div></div>
         <p>之后再看到 NCCL、GPUDirect（GPU 直接数据路径：让 GPU 与其他设备更直接交换数据的一组 NVIDIA 技术）、RDMA（远程直接内存访问：允许远端内存传输减少 CPU 数据搬运参与的网络访问机制）和 NIXL（NVIDIA 推理传输库：为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象），不要把它们当成凭空冒出来的新技术。它们都在解决同一个具体问题：<strong>让 data 在正确的时间到达正确的 device / memory location。</strong></p>
       </section>
 
