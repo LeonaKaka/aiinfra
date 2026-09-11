@@ -35,7 +35,7 @@
       <h1>通信与计算重叠：真正要找的不是第二条 stream，而是“第一次不得不等”的位置。</h1>
       <p class="dek">前面每加一种并行都会出现通信：数据并行要同步梯度或参数，张量并行要交换激活值，流水线并行要在不同阶段之间传数据，专家并行还要搬运路由后的 token。重叠执行的目标不是把这些通信量变没，而是让通信尽早开始、让独立计算继续推进，把真正的等待推迟到数据第一次必须被消费的位置。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“就绪 → 异步启动 → 独立计算 → 等待”四个事件解释重叠执行。</li><li>区分集合通信的总耗时与真正暴露在关键路径上的通信尾部。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解通信桶大小 为什么同时控制“多久才能进入就绪状态”和“单次集合通信的数据量是否足够大”。</li><li>把同一个方法迁移到张量并行（TP）全收集（AG）/归约分散（RS）、流水线并行（PP）点对点通信（P2P）与专家并行（EP）全对全通信（A2A）。</li><li>知道打开重叠开关不等于吞吐量一定提高，最终必须用时间线与单步时间验证。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“就绪 → 异步启动 → 独立计算 → 等待”四个事件解释重叠执行。</li><li>区分集合通信的总耗时与真正暴露在关键路径上的通信尾部。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解通信桶大小为什么同时控制“多久才能进入就绪状态”和“单次集合通信的数据量是否足够大”。</li><li>把同一个方法迁移到张量并行（TP）全收集（AG）/归约分散（RS）、流水线并行（PP）点对点通信（P2P）与专家并行（EP）全对全通信（A2A）。</li><li>知道打开重叠开关不等于吞吐量一定提高，最终必须用时间线与单步时间验证。</li></ul></div>
 
       <section class="article-section" id="mental-model">
         <div class="section-no">01 · THE ONE MENTAL MODEL</div>
