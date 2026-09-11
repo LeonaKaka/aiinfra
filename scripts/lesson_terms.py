@@ -186,6 +186,17 @@ def terminology_equivalent(source: str) -> str:
             continue
         neutral = neutral.replace(english_first_form(abbr), abbr)
         neutral = neutral.replace(normalized_form(abbr), abbr)
+
+    # Row order follows first appearance in prose, which legitimately changes
+    # during Chinese-first rewrites. Compare the term table as a set of canonical
+    # rows so check mode still catches missing/changed definitions without
+    # forcing noisy reorder-only edits.
+    row_re = re.compile(r'<tr><td><code>[^<]+</code></td><td>[^<]*</td><td>[^<]*</td><td>.*?</td></tr>')
+    def canonical_term_section(match: re.Match[str]) -> str:
+        rows = sorted(row_re.findall(match.group(0)))
+        return '__TERM_SECTION__' + ''.join(rows) + '__END_TERM_SECTION__'
+
+    neutral = TERM_SECTION_RE.sub(canonical_term_section, neutral)
     return neutral
 
 
