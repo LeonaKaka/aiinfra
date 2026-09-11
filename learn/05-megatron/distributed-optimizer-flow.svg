@@ -8,39 +8,39 @@
  </style>
 </defs>
 <rect width="760" height="850" fill="#fff"/>
-<text class="mono k" x="28" y="34">DISTRIBUTED OPTIMIZER · DP=4 · ONE PARAMETER BUFFER</text>
-<text class="sans title" x="28" y="66">Optimizer state stays sharded;</text><text class="sans title" x="28" y="91">forward-visible model params are synchronized</text>
-<text class="sans sub" x="28" y="116">The memory saving comes from persistent optimizer/main-param ownership,</text><text class="sans sub" x="28" y="133">not from letting DP ranks use different model weights.</text>
-<text class="mono k" x="28" y="168">1 · EACH DP RANK FINISHES BACKWARD WITH A FULL LOCAL GRADIENT BUFFER</text>
+<text class="mono k" x="28" y="34">分布式优化器 · DP=4 · 一个参数缓冲区</text>
+<text class="sans title" x="28" y="66">优化器状态保持分片；</text><text class="sans title" x="28" y="91">前向计算看到的模型参数保持同步</text>
+<text class="sans sub" x="28" y="116">显存节省来自优化器状态和主参数的持久分片，</text><text class="sans sub" x="28" y="133">不是让不同 DP rank 使用不同模型权重。</text>
+<text class="mono k" x="28" y="168">1 · 每个 DP RANK 完成反向传播后都有完整本地梯度缓冲区</text>
 <g transform="translate(28 186)">
- <rect class="green" width="164" height="82" rx="11"/><text class="mono tiny" x="14" y="22" fill="#255b46">DP RANK 0</text><text class="sans label" x="14" y="45">local grad buffer</text><text class="mono tiny" x="14" y="65">g⁽⁰⁾[0…15]</text>
- <rect class="blue" x="180" width="164" height="82" rx="11"/><text class="mono tiny" x="194" y="22" fill="#315f82">DP RANK 1</text><text class="sans label" x="194" y="45">local grad buffer</text><text class="mono tiny" x="194" y="65">g⁽¹⁾[0…15]</text>
- <rect class="plum" x="360" width="164" height="82" rx="11"/><text class="mono tiny" x="374" y="22" fill="#7d5d6f">DP RANK 2</text><text class="sans label" x="374" y="45">local grad buffer</text><text class="mono tiny" x="374" y="65">g⁽²⁾[0…15]</text>
- <rect class="sand" x="540" width="164" height="82" rx="11"/><text class="mono tiny" x="554" y="22" fill="#7b6a3e">DP RANK 3</text><text class="sans label" x="554" y="45">local grad buffer</text><text class="mono tiny" x="554" y="65">g⁽³⁾[0…15]</text>
+ <rect class="green" width="164" height="82" rx="11"/><text class="mono tiny" x="14" y="22" fill="#255b46">DP RANK 0</text><text class="sans label" x="14" y="45">本地梯度缓冲区</text><text class="mono tiny" x="14" y="65">g⁽⁰⁾[0…15]</text>
+ <rect class="blue" x="180" width="164" height="82" rx="11"/><text class="mono tiny" x="194" y="22" fill="#315f82">DP RANK 1</text><text class="sans label" x="194" y="45">本地梯度缓冲区</text><text class="mono tiny" x="194" y="65">g⁽¹⁾[0…15]</text>
+ <rect class="plum" x="360" width="164" height="82" rx="11"/><text class="mono tiny" x="374" y="22" fill="#7d5d6f">DP RANK 2</text><text class="sans label" x="374" y="45">本地梯度缓冲区</text><text class="mono tiny" x="374" y="65">g⁽²⁾[0…15]</text>
+ <rect class="sand" x="540" width="164" height="82" rx="11"/><text class="mono tiny" x="554" y="22" fill="#7b6a3e">DP RANK 3</text><text class="sans label" x="554" y="45">本地梯度缓冲区</text><text class="mono tiny" x="554" y="65">g⁽³⁾[0…15]</text>
 </g>
-<text class="sans tiny" x="28" y="286">Same parameter layout, different local data → different local gradient values.</text>
+<text class="sans tiny" x="28" y="286">参数布局相同，但本地数据不同 → 本地梯度值也不同。</text>
 <path class="line" d="M110 268 V306 H380" marker-end="url(#a)"/><path class="line" d="M290 268 V306 H380" marker-end="url(#a)"/><path class="line" d="M470 268 V306 H380" marker-end="url(#a)"/><path class="line" d="M650 268 V306 H380" marker-end="url(#a)"/>
 <rect class="collective" x="252" y="306" width="256" height="62" rx="11"/>
-<text class="mono k" x="380" y="330" text-anchor="middle" fill="#c3cec6">REDUCE-SCATTER ACROSS DP</text><text class="sans tiny" x="380" y="352" text-anchor="middle" style="fill:#dbe3dc">SUM/average logically, then keep one reduced shard per rank</text>
-<text class="mono k" x="28" y="410">2 · REDUCED GRADIENT OWNERSHIP MATCHES PERSISTENT OPTIMIZER OWNERSHIP</text>
+<text class="mono k" x="380" y="330" text-anchor="middle" fill="#c3cec6">跨 DP 的 REDUCE-SCATTER</text><text class="sans tiny" x="380" y="352" text-anchor="middle" style="fill:#dbe3dc">逻辑上求和/平均，然后每个 rank 只保留一份归约后的分片</text>
+<text class="mono k" x="28" y="410">2 · 归约梯度的归属与持久优化器状态的归属一致</text>
 <g transform="translate(28 428)">
- <rect class="green" width="164" height="154" rx="11"/><text class="mono tiny" x="14" y="22" fill="#255b46">RANK 0 · SHARD 0</text><text class="sans label" x="14" y="46">reduced grad [0:4]</text><line x1="14" y1="60" x2="150" y2="60" stroke="#c9d7cc"/><text class="sans body" x="14" y="83">FP32 main param shard</text><text class="sans body" x="14" y="104">Adam m / v shard</text><rect class="card" x="14" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="82" y="134" text-anchor="middle">local Adam update</text>
- <rect class="blue" x="180" width="164" height="154" rx="11"/><text class="mono tiny" x="194" y="22" fill="#315f82">RANK 1 · SHARD 1</text><text class="sans label" x="194" y="46">reduced grad [4:8]</text><line x1="194" y1="60" x2="330" y2="60" stroke="#cbd9e1"/><text class="sans body" x="194" y="83">FP32 main param shard</text><text class="sans body" x="194" y="104">Adam m / v shard</text><rect class="card" x="194" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="262" y="134" text-anchor="middle">local Adam update</text>
- <rect class="plum" x="360" width="164" height="154" rx="11"/><text class="mono tiny" x="374" y="22" fill="#7d5d6f">RANK 2 · SHARD 2</text><text class="sans label" x="374" y="46">reduced grad [8:12]</text><line x1="374" y1="60" x2="510" y2="60" stroke="#dcced6"/><text class="sans body" x="374" y="83">FP32 main param shard</text><text class="sans body" x="374" y="104">Adam m / v shard</text><rect class="card" x="374" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="442" y="134" text-anchor="middle">local Adam update</text>
- <rect class="sand" x="540" width="164" height="154" rx="11"/><text class="mono tiny" x="554" y="22" fill="#7b6a3e">RANK 3 · SHARD 3</text><text class="sans label" x="554" y="46">reduced grad [12:16]</text><line x1="554" y1="60" x2="690" y2="60" stroke="#e1d6bd"/><text class="sans body" x="554" y="83">FP32 main param shard</text><text class="sans body" x="554" y="104">Adam m / v shard</text><rect class="card" x="554" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="622" y="134" text-anchor="middle">local Adam update</text>
+ <rect class="green" width="164" height="154" rx="11"/><text class="mono tiny" x="14" y="22" fill="#255b46">RANK 0 · 分片 0</text><text class="sans label" x="14" y="46">归约梯度 [0:4]</text><line x1="14" y1="60" x2="150" y2="60" stroke="#c9d7cc"/><text class="sans body" x="14" y="83">FP32 主参数分片</text><text class="sans body" x="14" y="104">Adam m / v 分片</text><rect class="card" x="14" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="82" y="134" text-anchor="middle">本地 Adam 更新</text>
+ <rect class="blue" x="180" width="164" height="154" rx="11"/><text class="mono tiny" x="194" y="22" fill="#315f82">RANK 1 · 分片 1</text><text class="sans label" x="194" y="46">归约梯度 [4:8]</text><line x1="194" y1="60" x2="330" y2="60" stroke="#cbd9e1"/><text class="sans body" x="194" y="83">FP32 主参数分片</text><text class="sans body" x="194" y="104">Adam m / v 分片</text><rect class="card" x="194" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="262" y="134" text-anchor="middle">本地 Adam 更新</text>
+ <rect class="plum" x="360" width="164" height="154" rx="11"/><text class="mono tiny" x="374" y="22" fill="#7d5d6f">RANK 2 · 分片 2</text><text class="sans label" x="374" y="46">归约梯度 [8:12]</text><line x1="374" y1="60" x2="510" y2="60" stroke="#dcced6"/><text class="sans body" x="374" y="83">FP32 主参数分片</text><text class="sans body" x="374" y="104">Adam m / v 分片</text><rect class="card" x="374" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="442" y="134" text-anchor="middle">本地 Adam 更新</text>
+ <rect class="sand" x="540" width="164" height="154" rx="11"/><text class="mono tiny" x="554" y="22" fill="#7b6a3e">RANK 3 · 分片 3</text><text class="sans label" x="554" y="46">归约梯度 [12:16]</text><line x1="554" y1="60" x2="690" y2="60" stroke="#e1d6bd"/><text class="sans body" x="554" y="83">FP32 主参数分片</text><text class="sans body" x="554" y="104">Adam m / v 分片</text><rect class="card" x="554" y="118" width="136" height="24" rx="6"/><text class="mono tiny" x="622" y="134" text-anchor="middle">本地 Adam 更新</text>
 </g>
 <path class="line" d="M380 368 V392 H110 V428" marker-end="url(#a)"/><path class="line" d="M380 392 H290 V428" marker-end="url(#a)"/><path class="line" d="M380 392 H470 V428" marker-end="url(#a)"/><path class="line" d="M380 392 H650 V428" marker-end="url(#a)"/>
-<text class="sans tiny" x="28" y="611">Long-lived memory win: each rank persists only its optimizer/main-param shard for this DP buffer.</text>
+<text class="sans tiny" x="28" y="611">长期显存节省：每个 rank 只持久保存自己负责的优化器状态和主参数分片。</text>
 <path class="line" d="M110 582 V640 H380" marker-end="url(#a)"/><path class="line" d="M290 582 V640 H380" marker-end="url(#a)"/><path class="line" d="M470 582 V640 H380" marker-end="url(#a)"/><path class="line" d="M650 582 V640 H380" marker-end="url(#a)"/>
 <rect class="collective" x="252" y="640" width="256" height="62" rx="11"/>
-<text class="mono k" x="380" y="664" text-anchor="middle" fill="#c3cec6">PARAMETER ALL-GATHER</text><text class="sans tiny" x="380" y="686" text-anchor="middle" style="fill:#dbe3dc">reconstruct the updated compute/model parameter buffer</text>
-<text class="mono k" x="28" y="740">3 · NEXT FORWARD SEES MATHEMATICALLY SYNCHRONIZED MODEL PARAMS</text>
+<text class="mono k" x="380" y="664" text-anchor="middle" fill="#c3cec6">参数 ALL-GATHER</text><text class="sans tiny" x="380" y="686" text-anchor="middle" style="fill:#dbe3dc">重建更新后的模型参数缓冲区</text>
+<text class="mono k" x="28" y="740">3 · 下一次前向计算看到数学上一致的模型参数</text>
 <g transform="translate(28 758)">
- <rect class="green" width="164" height="58" rx="10"/><text class="sans label" x="82" y="25" text-anchor="middle">rank 0 model params</text><text class="mono tiny" x="82" y="44" text-anchor="middle">all updated shards</text>
- <rect class="blue" x="180" width="164" height="58" rx="10"/><text class="sans label" x="262" y="25" text-anchor="middle">rank 1 model params</text><text class="mono tiny" x="262" y="44" text-anchor="middle">all updated shards</text>
- <rect class="plum" x="360" width="164" height="58" rx="10"/><text class="sans label" x="442" y="25" text-anchor="middle">rank 2 model params</text><text class="mono tiny" x="442" y="44" text-anchor="middle">all updated shards</text>
- <rect class="sand" x="540" width="164" height="58" rx="10"/><text class="sans label" x="622" y="25" text-anchor="middle">rank 3 model params</text><text class="mono tiny" x="622" y="44" text-anchor="middle">all updated shards</text>
+ <rect class="green" width="164" height="58" rx="10"/><text class="sans label" x="82" y="25" text-anchor="middle">rank 0 模型参数</text><text class="mono tiny" x="82" y="44" text-anchor="middle">全部更新后的分片</text>
+ <rect class="blue" x="180" width="164" height="58" rx="10"/><text class="sans label" x="262" y="25" text-anchor="middle">rank 1 模型参数</text><text class="mono tiny" x="262" y="44" text-anchor="middle">全部更新后的分片</text>
+ <rect class="plum" x="360" width="164" height="58" rx="10"/><text class="sans label" x="442" y="25" text-anchor="middle">rank 2 模型参数</text><text class="mono tiny" x="442" y="44" text-anchor="middle">全部更新后的分片</text>
+ <rect class="sand" x="540" width="164" height="58" rx="10"/><text class="sans label" x="622" y="25" text-anchor="middle">rank 3 模型参数</text><text class="mono tiny" x="622" y="44" text-anchor="middle">全部更新后的分片</text>
 </g>
 <path class="line" d="M380 702 V726 H110 V758" marker-end="url(#a)"/><path class="line" d="M380 726 H290 V758" marker-end="url(#a)"/><path class="line" d="M380 726 H470 V758" marker-end="url(#a)"/><path class="line" d="M380 726 H650 V758" marker-end="url(#a)"/>
-<text class="sans tiny" x="28" y="840">Do not conflate the two lifetimes: optimizer/master state can stay sharded while forward-visible DP model parameters remain synchronized.</text>
+<text class="sans tiny" x="28" y="840">不要混淆两类生命周期：优化器/主参数状态可以长期分片，而前向可见的 DP 模型参数仍保持同步。</text>
 </svg>
