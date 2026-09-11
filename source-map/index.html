@@ -86,7 +86,7 @@
           <span class="order">CP</span>
           <div><em class="phase-label">DATA · CONTEXT</em><b>Context Parallel attention</b><code>megatron/core/transformer/attention.py → core/extensions/transformer_engine.py</code></div>
           <p>先在 <code>attention.py</code> 看 <code>cp_comm_type</code> 与 CP 进程组 怎样传给 core attention；再到 Transformer Engine 的 <code>TEDotProductAttention</code> 看 CP group / communication mode 怎样交给后端执行。A10 的 ring P2P 只对应当前 <code>cp_comm_type="p2p"</code> 这一种模式；当前还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，因此不要把 ring 当成 CP 定义本身。</p>
-          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py">attention ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/extensions/transformer_engine.py">TE backend ↗</a><a href="../learn/05-megatron/context-parallel.html">05.6 →</a><a href="../labs/mini-context-parallel.html">A10 →</a></div>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py">attention ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/extensions/transformer_engine.py">TE 后端 ↗</a><a href="../learn/05-megatron/context-parallel.html">05.6 →</a><a href="../labs/mini-context-parallel.html">A10 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">EP</span>
@@ -97,7 +97,7 @@
         <div class="source-row">
           <span class="order">06</span>
           <div><em class="phase-label">STATE · OPTIMIZER</em><b>Distributed optimizer</b><code>megatron/core/optimizer/distrib_optimizer.py</code></div>
-          <p>先找 参数 / 梯度 / 优化器状态 的 shard 与 范围，再看每个 rank 究竟更新哪一段。最后再追 reduce-scatter 与参数 all-gather 的配合。</p>
+          <p>先找 参数 / 梯度 / 优化器状态 的 分片 与 范围，再看每个 rank 究竟更新哪一段。最后再追 reduce-scatter 与参数 all-gather 的配合。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/distrib_optimizer.py">源码 ↗</a><a href="../labs/mini-distributed-optimizer.html">A4 →</a></div>
         </div>
         <div class="source-row">
@@ -124,7 +124,7 @@
         <div class="source-row">
           <span class="order">02</span>
           <div><em class="phase-label">CONTROL · 调度器</em><b>调度器</b><code>vllm/v1/core/sched/scheduler.py</code></div>
-          <p>看 token budget、RUNNING / WAITING、preemption，以及 外部 KV 命中时 调度器 如何决定“本地算多少、外部加载多少、什么时候继续调度”。</p>
+          <p>看 token budget、RUNNING / WAITING、抢占，以及 外部 KV 命中时 调度器 如何决定“本地算多少、外部加载多少、什么时候继续调度”。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">源码 ↗</a><a href="../learn/07-vllm/scheduler-continuous-batching.html">07.2 →</a></div>
         </div>
         <div class="source-row">
