@@ -22,42 +22,42 @@
   <a class="side-home" href="./index.html">← Hands-on Labs</a>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
     <a class="lesson-link lab-side-link" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
-    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
-    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
-    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
-    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP 反向传播</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + 梯度 Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed 优化器</a>
+    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed 异步 Reduce-Scatter</a>
     <a class="lesson-link lab-side-link" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
-    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready 重叠</a>
     <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
-    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini 专家 Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
     <a class="lesson-link lab-side-link current infer-current" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
     <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
-    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini KV Handoff</span></div>
     <div class="lab-kicker">LAB B · PREFILL / DECODE</div>
     <h1>让 Prefill 算 KV，<br />让另一进程直接接着 Decode。</h1>
-    <p class="dek">KV Connector 最核心的 correctness contract 不是“网络很快”，而是：Decode 收到的远端 KV 必须等价于自己对同一 prompt 重新计算出来的 KV。这个实验先把 Scheduler、paged blocks、NIXL、RDMA 全部拿掉，只验证这条最小契约。</p>
+    <p class="dek">KV Connector 最核心的 正确性契约 不是“网络很快”，而是：Decode 收到的远端 KV 必须等价于自己对同一 prompt 重新计算出来的 KV。这个实验先把 调度器、paged blocks、NIXL、RDMA 全部拿掉，只验证这条最小契约。</p>
 
     <section class="lab-section" id="flow">
       <small class="lab-kicker">01 · DATA FLOW</small>
       <h2>两个 rank，分别扮演 Prefill 与 Decode。</h2>
       <div class="stage-flow">
-        <div class="stage-card infer"><small>RANK 0 · PRODUCER</small><b>prompt → K,V</b><span>只对 prompt 做 K/V projection，代表 Prefill 已经完成的状态。</span></div>
+        <div class="stage-card infer"><small>RANK 0 · 生产端</small><b>prompt → K,V</b><span>只对 prompt 做 K/V projection，代表 Prefill 已经完成的状态。</span></div>
         <div class="stage-card comm"><small>P2P HANDOFF</small><b>send K · send V</b><span>当前用 torch.distributed P2P；真实生产系统可替换成 NIXL/RDMA。</span></div>
-        <div class="stage-card infer"><small>RANK 1 · CONSUMER</small><b>received KV → decode</b><span>只计算新 token 的 q/k/v，再让 q attend 已收到的 prompt KV。</span></div>
+        <div class="stage-card infer"><small>RANK 1 · 消费端</small><b>received KV → decode</b><span>只计算新 token 的 q/k/v，再让 q attend 已收到的 prompt KV。</span></div>
       </div>
       <p>Rank 1 同时会偷偷做一遍 dense reference：重新从 prompt 计算 K/V。最后比较两条路径的 attention output。如果 handoff 没破坏状态，最大误差应该接近 0。</p>
     </section>
@@ -73,9 +73,9 @@
 
     <section class="lab-section" id="correctness">
       <small class="lab-kicker">03 · THE REFERENCE CHECK</small>
-      <h2>最重要的一行不是 send，而是 handoff 与 recompute 的比较。</h2>
+      <h2>最重要的一行不是 send，而是 handoff 与 重新计算 的比较。</h2>
       <div class="result-grid">
-        <div class="result-card"><small>REMOTE STATE</small><b>K,V = [S,H]</b><span>Rank 1 预先分配接收 buffer，再从 Rank 0 收到 prompt KV。</span></div>
+        <div class="result-card"><small>REMOTE STATE</small><b>K,V = [S,H]</b><span>Rank 1 预先分配接收 缓冲区，再从 Rank 0 收到 prompt KV。</span></div>
         <div class="result-card"><small>DECODE</small><b>q_new @ Kᵀ</b><span>新 token 的 q 直接消费收到的历史 KV，不重新做 prompt projection。</span></div>
         <div class="result-card"><small>REFERENCE</small><b>max error &lt; 1e-5</b><span>与 Decoder 本地重算 prompt KV 的结果保持一致。</span></div>
       </div>
@@ -91,13 +91,13 @@ PASS</pre></div>
       <small class="lab-kicker">04 · WHAT IS STILL MISSING</small>
       <h2>它证明了 KV handoff 的核心，但还不是 vLLM KV Connector。</h2>
       <div class="check-list">
-        <div>没有 paged KV block / block table：这里直接传连续的 [S,H] tensor。</div>
-        <div>没有 Scheduler-side metadata：两边事先知道 shape、src/dst 和请求身份。</div>
-        <div>没有 async layer-by-layer load/save：send/recv 是显式阻塞式教学路径。</div>
-        <div>没有 remote block lifetime、lease、failure policy、preemption 与 prefix-cache 协调。</div>
-        <div>没有 NIXL memory registration、UCX/RDMA、GPUDirect，也没有异构 TP mapping。</div>
+        <div>没有 paged KV block / 块表：这里直接传连续的 [S,H] tensor。</div>
+        <div>没有 调度器-side 元数据：两边事先知道 shape、src/dst 和请求身份。</div>
+        <div>没有 异步 layer-by-layer load/save：send/recv 是显式阻塞式教学路径。</div>
+        <div>没有 remote block 生命周期、租约、失败 policy、抢占 与 prefix-cache 协调。</div>
+        <div>没有 NIXL 内存注册、UCX/RDMA、GPUDirect，也没有异构 TP mapping。</div>
       </div>
-      <div class="truth-note"><b>这正是实验的用途。</b><p>先让“KV 是模型状态，可以由另一执行实体接着消费”变成亲眼可见的事实；然后 08.2–08.5 里的接口、metadata、block mapping 和 transport 才不会混成一团。</p></div>
+      <div class="truth-note"><b>这正是实验的用途。</b><p>先让“KV 是模型状态，可以由另一执行实体接着消费”变成亲眼可见的事实；然后 08.2–08.5 里的接口、元数据、block mapping 和 transport 才不会混成一团。</p></div>
     </section>
 
     <section class="lab-section" id="source">
@@ -106,9 +106,9 @@ PASS</pre></div>
       <div class="source-bridge">
         <div><small>THIS LAB</small><b>control + data mixed together</b><code>known src/dst · known shape · dist.send/recv</code></div>
         <span>industrialize →</span>
-        <div><small>VLLM V1</small><b>scheduler metadata + worker transfer</b><code>KVConnectorBase_V1 · start_load_kv · save_kv_layer</code></div>
+        <div><small>VLLM V1</small><b>调度器 元数据 + worker transfer</b><code>KVConnectorBase_V1 · start_load_kv · save_kv_layer</code></div>
       </div>
-      <p>真实 Connector 需要回答更多问题：远端有多少 prefix token 可复用？本地 blocks 分到哪里？哪一层可以开始 load？异步 send 什么时候真的完成？request finish 后 blocks 谁负责释放？这些就是 08 模块源码里那些接口存在的原因。</p>
+      <p>真实 Connector 需要回答更多问题：远端有多少 prefix token 可复用？本地 blocks 分到哪里？哪一层可以开始 load？异步 send 什么时候真的完成？请求 finish 后 blocks 谁负责释放？这些就是 08 模块源码里那些接口存在的原因。</p>
     </section>
 
     <section class="lab-section" id="upgrade">
@@ -116,8 +116,8 @@ PASS</pre></div>
       <h2>下一步不是立刻写 RDMA，而是逐层增加真实约束。</h2>
       <div class="check-list">
         <div>① 把 KV 切成固定 token blocks，传 block IDs 而不是一个连续 tensor。</div>
-        <div>② 加 request_id + metadata message，让 consumer 不依赖硬编码 shape。</div>
-        <div>③ 用 batch_isend_irecv / CUDA stream 做异步传输，测 compute-transfer overlap。</div>
+        <div>② 加 request_id + 元数据 message，让 消费端 不依赖硬编码 shape。</div>
+        <div>③ 用 batch_isend_irecv / CUDA stream 做异步传输，测 compute-transfer 重叠。</div>
         <div>④ 在同机 2 GPU 上记录 P2P timing，再区分 PCIe 与 NVLink 拓扑。</div>
         <div>⑤ 最后才换成 vLLM NixlConnector，观察 register_kv_caches、handshake、pull/push worker。</div>
       </div>
@@ -125,7 +125,7 @@ PASS</pre></div>
 
     <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A · Mini Megatron TP</a><a href="../learn/08-kv-connector/production-pd.html">回到 08.5 Production P/D →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#flow">两个 rank，分别扮演 Prefill 与 Decode。</a><a href="#run">同样先从 CPU / Gloo 开始。</a><a href="#correctness">最重要的一行不是 send，而是 handoff 与 recompute 的比较。</a><a href="#not-vllm">它证明了 KV handoff 的核心，但还不是 vLLM KV Connector。</a><a href="#source">把这个简单 send/recv 拆成 vLLM 的两层职责。</a><a href="#upgrade">下一步不是立刻写 RDMA，而是逐层增加真实约束。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#flow">两个 rank，分别扮演 Prefill 与 Decode。</a><a href="#run">同样先从 CPU / Gloo 开始。</a><a href="#correctness">最重要的一行不是 send，而是 handoff 与 重新计算 的比较。</a><a href="#not-vllm">它证明了 KV handoff 的核心，但还不是 vLLM KV Connector。</a><a href="#source">把这个简单 send/recv 拆成 vLLM 的两层职责。</a><a href="#upgrade">下一步不是立刻写 RDMA，而是逐层增加真实约束。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
