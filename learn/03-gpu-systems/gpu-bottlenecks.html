@@ -32,7 +32,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>Bottlenecks</span></div>
       <div class="lesson-kicker"><span>LESSON 03.3 · GPU SYSTEMS</span><span>约 55 min</span></div>
       <h1>GPU 到底在等什么：计算、访存还是通信？</h1>
-      <p class="dek">“图形处理器（GPU） 利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做 AI Infra 时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 kernel 启动 / 中央处理器（CPU）调度开销。优化方向必须跟瓶颈对上。</p>
+      <p class="dek">“图形处理器（GPU） 利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做推理基础设施时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 kernel 启动 / 中央处理器（CPU）调度开销。优化方向必须跟瓶颈对上。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释 计算受限（compute-bound）、带宽受限（memory-bound）、通信受限（communication-bound）。</li><li>理解 算术强度 为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解 通信与计算重叠 的收益上限，并把它连接到 Megatron。</li><li>解释为什么 大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
 
@@ -144,7 +144,6 @@
         <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
-        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>DRAM</code></td><td>Dynamic Random-Access Memory</td><td>动态随机存取存储器</td><td>主机内存和部分设备内存常用的易失性存储技术；容量层级与带宽特征要和缓存、设备显存区分。</td></tr>
         <tr><td><code>SM</code></td><td>Streaming Multiprocessor</td><td>流式多处理器</td><td>NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
