@@ -30,10 +30,10 @@
       <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Transformer Block</span></div>
       <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约55 min</span></div>
-      <h1>Transformer Block：Attention、MLP、残差连接、归一化怎么拼起来？</h1>
-      <p class="dek">到现在我们已经把Attention拆开看过了。但真正的大模型不是只有Attention：每一层还要做归一化、残差连接和多层感知机（MLP）。把这些模块拼起来，你第一次能看见“一个Transformer layer到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张图形处理器（GPU）。</p>
+      <h1>Transformer Block：Attention、MLP、残差连接和归一化怎么拼起来？</h1>
+      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做归一化、残差连接和多层感知机（MLP）。把这些模块拼起来，你第一次能看见“一个 Transformer 层到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张图形处理器（GPU）。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见pre-norm解码器块的完整数据流。</li><li>理解残差连接为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道MLP主要也是大线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释token position如何进入Attention，并理解可复用键-值（KV）还依赖一致的位置与模型语义。</li><li>指出Tensor Parallel、Pipeline Parallel、键-值（KV）Cache分别会落在块的什么位置。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的预归一化（pre-norm）解码器块的完整数据流。</li><li>理解残差连接为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的位置信息如何进入 Attention，并理解可复用的 KV 状态还依赖一致的位置与模型语义。</li><li>指出张量并行、流水线并行和 KV Cache 分别会落在 Transformer Block 的什么位置。</li></ul></div>
 
       <section class="article-section" id="big-picture">
         <div class="section-no">01 · THE WHOLE块</div>
