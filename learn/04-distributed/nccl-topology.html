@@ -78,7 +78,7 @@
       <section class="article-section" id="links">
         <div class="section-no">05 · 不同链路不能当成一回事</div>
         <h2>同一个 GPU↔GPU 逻辑通信，可能落到完全不同的物理路径。</h2>
-        <div class="link-grid"><div class="link-card fast"><small>NVLINK / NVSWITCH</small><b>high-bandwidth GPU fabric</b><span>典型高端训练服务器里用于快速 GPU↔GPU 通信；拓扑和代际决定具体能力。</span></div><div class="link-card mid"><small>PCIE</small><b>general-purpose I/O fabric</b><span>GPU、中央处理器（CPU）、NIC 都可能挂在 PCIe hierarchy 上；GPU↔GPU 可能经过 switch / root complex。</span></div><div class="link-card net"><small>IB（InfiniBand 高速互连：高性能计算（HPC）/AI 集群常见的低延迟高带宽网络技术） / ROCE</small><b>cross-node network</b><span>InfiniBand 或基于 Ethernet 的 RoCE 可承担 node↔node RDMA 网络通信。</span></div></div>
+        <div class="link-grid"><div class="link-card fast"><small>NVLINK / NVSWITCH</small><b>high-bandwidth GPU fabric</b><span>典型高端训练服务器里用于快速 GPU↔GPU 通信；拓扑和代际决定具体能力。</span></div><div class="link-card mid"><small>PCIE</small><b>general-purpose I/O fabric</b><span>GPU、中央处理器（CPU）、NIC 都可能挂在 PCIe hierarchy 上；GPU↔GPU 可能经过 switch / root complex。</span></div><div class="link-card net"><small>IB（InfiniBand 高速互连：HPC（高性能计算：面向大规模并行科学与工程计算的计算领域）/AI 集群常见的低延迟高带宽网络技术） / ROCE</small><b>cross-node network</b><span>InfiniBand 或基于 Ethernet 的 RoCE 可承担 node↔node RDMA 网络通信。</span></div></div>
         <p>这就是为什么“跨节点 TP 通常比单机高速 GPU fabric 上的 TP 贵得多”是很自然的系统结论：layer 内高频 activation 分片现在要穿过 GPU↔NIC 路径与网络。</p>
       </section>
 
