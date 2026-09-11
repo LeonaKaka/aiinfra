@@ -26,17 +26,17 @@
     </style>
   </defs>
 
-  <text class="mono ey" x="34" y="34">COLLECTIVES · BEFORE → CONTRACT → AFTER</text>
-  <text class="sans ttl" x="34" y="67">Read each collective as a state transformation</text>
-  <text class="sans sub" x="34" y="91">Fix one process group. Ask what every rank owns before the call, then what every rank must own after it.</text>
+  <text class="mono ey" x="34" y="34">集合通信 · 调用前 → 语义 → 调用后</text>
+  <text class="sans ttl" x="34" y="67">把每种集合通信理解成一次状态变换</text>
+  <text class="sans sub" x="34" y="91">固定一个进程组：先看调用前每个 rank 有什么，再看调用后必须得到什么。</text>
 
-  <text class="mono head" x="42" y="128">BEFORE · R0 / R1 / R2 / R3</text>
-  <text class="mono head" x="308" y="128">GROUP CONTRACT</text>
-  <text class="mono head" x="510" y="128">AFTER · R0 / R1 / R2 / R3</text>
+  <text class="mono head" x="42" y="128">调用前 · R0 / R1 / R2 / R3</text>
+  <text class="mono head" x="308" y="128">通信语义</text>
+  <text class="mono head" x="510" y="128">调用后 · R0 / R1 / R2 / R3</text>
   <rect class="panel" x="34" y="144" width="692" height="700" rx="14"/>
 
-  <text class="mono op" x="52" y="176" fill="#315f82">01 · BROADCAST</text>
-  <text class="sans small" x="177" y="176">one source owns A</text>
+  <text class="mono op" x="52" y="176" fill="#315f82">01 · 广播</text>
+  <text class="sans small" x="177" y="176">只有源 rank 持有 A</text>
   <g transform="translate(52 194)">
     <g><rect class="blue" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R0</text><text class="mono val" x="26" y="36" text-anchor="middle">A</text></g>
     <g transform="translate(58)"><rect class="box" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R1</text><text class="mono val" x="26" y="36" text-anchor="middle">?</text></g>
@@ -44,8 +44,8 @@
     <g transform="translate(174)"><rect class="box" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R3</text><text class="mono val" x="26" y="36" text-anchor="middle">?</text></g>
   </g>
   <rect class="blue" x="300" y="190" width="166" height="56" rx="9"/>
-  <text class="sans op" x="383" y="214" text-anchor="middle" fill="#315f82">copy source to group</text>
-  <text class="sans tiny" x="383" y="232" text-anchor="middle">no reduction · one-to-many</text>
+  <text class="sans op" x="383" y="214" text-anchor="middle" fill="#315f82">把源数据复制给全组</text>
+  <text class="sans tiny" x="383" y="232" text-anchor="middle">无归约 · 一对多</text>
   <path class="line" d="M278 218 H300" marker-end="url(#arrow)"/><path class="line" d="M466 218 H488" marker-end="url(#arrow)"/>
   <g transform="translate(500 194)">
     <g><rect class="blue" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R0</text><text class="mono val" x="26" y="36" text-anchor="middle">A</text></g>
@@ -55,8 +55,8 @@
   </g>
   <line class="divider" x1="52" y1="274" x2="708" y2="274"/>
 
-  <text class="mono op" x="52" y="306" fill="#255b46">02 · ALL-REDUCE (SUM)</text>
-  <text class="sans small" x="218" y="306">local contributions</text>
+  <text class="mono op" x="52" y="306" fill="#255b46">02 · ALL-REDUCE（求和）</text>
+  <text class="sans small" x="218" y="306">各 rank 的局部贡献</text>
   <g transform="translate(52 324)">
     <g><rect class="green" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R0</text><text class="mono val" x="26" y="36" text-anchor="middle">1</text></g>
     <g transform="translate(58)"><rect class="green" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R1</text><text class="mono val" x="26" y="36" text-anchor="middle">2</text></g>
@@ -64,8 +64,8 @@
     <g transform="translate(174)"><rect class="green" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R3</text><text class="mono val" x="26" y="36" text-anchor="middle">4</text></g>
   </g>
   <rect class="green" x="300" y="320" width="166" height="56" rx="9"/>
-  <text class="sans op" x="383" y="344" text-anchor="middle" fill="#255b46">SUM, then replicate</text>
-  <text class="sans tiny" x="383" y="362" text-anchor="middle">everyone gets the full result</text>
+  <text class="sans op" x="383" y="344" text-anchor="middle" fill="#255b46">先求和，再复制</text>
+  <text class="sans tiny" x="383" y="362" text-anchor="middle">每个 rank 都得到完整结果</text>
   <path class="line" d="M278 348 H300" marker-end="url(#arrow)"/><path class="line" d="M466 348 H488" marker-end="url(#arrow)"/>
   <g transform="translate(500 324)">
     <g><rect class="green" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R0</text><text class="mono val" x="26" y="36" text-anchor="middle">10</text></g>
@@ -76,7 +76,7 @@
   <line class="divider" x1="52" y1="404" x2="708" y2="404"/>
 
   <text class="mono op" x="52" y="436" fill="#7b6a3e">03 · ALL-GATHER</text>
-  <text class="sans small" x="184" y="436">one shard per rank</text>
+  <text class="sans small" x="184" y="436">每个 rank 持有一个分片</text>
   <g transform="translate(52 454)">
     <g><rect class="sand" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R0</text><text class="mono val" x="26" y="36" text-anchor="middle">A</text></g>
     <g transform="translate(58)"><rect class="sand" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R1</text><text class="mono val" x="26" y="36" text-anchor="middle">B</text></g>
@@ -84,8 +84,8 @@
     <g transform="translate(174)"><rect class="sand" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="17" text-anchor="middle">R3</text><text class="mono val" x="26" y="36" text-anchor="middle">D</text></g>
   </g>
   <rect class="sand" x="300" y="450" width="166" height="56" rx="9"/>
-  <text class="sans op" x="383" y="474" text-anchor="middle" fill="#7b6a3e">concatenate shards</text>
-  <text class="sans tiny" x="383" y="492" text-anchor="middle">no reduction · full tensor replicated</text>
+  <text class="sans op" x="383" y="474" text-anchor="middle" fill="#7b6a3e">拼接所有分片</text>
+  <text class="sans tiny" x="383" y="492" text-anchor="middle">无归约 · 每个 rank 都得到完整张量</text>
   <path class="line" d="M278 478 H300" marker-end="url(#arrow)"/><path class="line" d="M466 478 H488" marker-end="url(#arrow)"/>
   <g transform="translate(500 454)">
     <g><rect class="sand" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="16" text-anchor="middle">R0</text><text class="mono tiny" x="26" y="35" text-anchor="middle">ABCD</text></g>
@@ -95,8 +95,8 @@
   </g>
   <line class="divider" x1="52" y1="534" x2="708" y2="534"/>
 
-  <text class="mono op" x="52" y="566" fill="#7d5d6f">04 · REDUCE-SCATTER (SUM)</text>
-  <text class="sans small" x="250" y="566">reduce, then keep one result shard per rank</text>
+  <text class="mono op" x="52" y="566" fill="#7d5d6f">04 · REDUCE-SCATTER（求和）</text>
+  <text class="sans small" x="250" y="566">先归约，再由每个 rank 保留一份结果分片</text>
   <g transform="translate(52 584)">
     <g><rect class="plum" width="52" height="70" rx="7"/><text class="mono rank" x="26" y="16" text-anchor="middle">R0</text><text class="mono tiny" x="26" y="35" text-anchor="middle">1 2</text><text class="mono tiny" x="26" y="50" text-anchor="middle">3 4</text></g>
     <g transform="translate(58)"><rect class="plum" width="52" height="70" rx="7"/><text class="mono rank" x="26" y="16" text-anchor="middle">R1</text><text class="mono tiny" x="26" y="35" text-anchor="middle">10 20</text><text class="mono tiny" x="26" y="50" text-anchor="middle">30 40</text></g>
@@ -104,9 +104,9 @@
     <g transform="translate(174)"><rect class="plum" width="52" height="70" rx="7"/><text class="mono rank" x="26" y="16" text-anchor="middle">R3</text><text class="mono tiny" x="26" y="35" text-anchor="middle">1000 2000</text><text class="mono tiny" x="26" y="50" text-anchor="middle">3000 4000</text></g>
   </g>
   <rect class="plum" x="300" y="584" width="166" height="70" rx="9"/>
-  <text class="sans op" x="383" y="607" text-anchor="middle" fill="#7d5d6f">SUM full vector</text>
+  <text class="sans op" x="383" y="607" text-anchor="middle" fill="#7d5d6f">对完整向量求和</text>
   <text class="mono tiny" x="383" y="627" text-anchor="middle">[1111,2222,3333,4444]</text>
-  <text class="sans tiny" x="383" y="644" text-anchor="middle">then scatter one shard</text>
+  <text class="sans tiny" x="383" y="644" text-anchor="middle">再把结果分片</text>
   <path class="line" d="M278 619 H300" marker-end="url(#arrow)"/><path class="line" d="M466 619 H488" marker-end="url(#arrow)"/>
   <g transform="translate(500 595)">
     <g><rect class="plum" width="52" height="48" rx="7"/><text class="mono rank" x="26" y="16" text-anchor="middle">R0</text><text class="mono tiny" x="26" y="35" text-anchor="middle">1111</text></g>
@@ -116,9 +116,9 @@
   </g>
 
   <rect class="box" x="52" y="686" width="656" height="124" rx="10"/>
-  <text class="mono head" x="70" y="712">THE DISTINCTION TO REMEMBER</text>
-  <text class="sans small" x="70" y="738">All-reduce: reduce + replicate → every rank gets the full reduced result.</text>
-  <text class="sans small" x="70" y="762">Reduce-scatter: reduce + shard → every rank keeps only its assigned part of that result.</text>
-  <text class="sans small" x="70" y="786">All-gather: shard → replicate, but without a mathematical reduction.</text>
-  <text class="sans tiny" x="34" y="868">The concrete values are teaching examples; real collectives operate on tensors and a specific process group.</text>
+  <text class="mono head" x="70" y="712">记住三者区别</text>
+  <text class="sans small" x="70" y="738">All-reduce：归约 + 复制 → 每个 rank 都拿到完整归约结果。</text>
+  <text class="sans small" x="70" y="762">Reduce-scatter：归约 + 分片 → 每个 rank 只保留自己负责的结果。</text>
+  <text class="sans small" x="70" y="786">All-gather：分片 → 复制，但没有数学归约。</text>
+  <text class="sans tiny" x="34" y="868">图中数值只是教学示例；真实集合通信作用于张量和具体进程组。</text>
 </svg>
