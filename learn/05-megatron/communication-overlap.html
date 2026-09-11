@@ -51,14 +51,14 @@
         <h2>不是“整个 backward 做完才 reduce”，而是一个 bucket 的所有 gradients ready 就能 launch。</h2>
         <p>当前 <code>_ParamAndGradBucketGroup</code> 明确维护每个参数的梯度-就绪计数；当 <code>overlap_grad_reduce=True</code> 时，一个bucket group内所有梯度都就绪，就可以分发对应 all-reduce 或 reduce-scatter。使用 Distributed Optimizer 时是 reduce-scatter，否则是 all-reduce。</p>
         <div class="mini-code-map"><div class="mini-code-row"><code>backward hook</code><span>某个 param 梯度就绪，登记到bucket group。</span></div><div class="mini-code-row"><code>start_grad_sync()</code><span>开启重叠执行时async launch AR/RS；此时 caller 不必立刻等集合通信完成。</span></div><div class="mini-code-row"><code>later backward compute</code><span>如果不依赖这个 reduced bucket，就继续执行，形成隐藏窗口。</span></div><div class="mini-code-row"><code>finish_grad_sync()</code><span>在真正需要完成的同步点等待async handle；未被计算覆盖的尾巴在这里暴露。</span></div></div>
-        <div class="source-note">当前源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/distributed/param_and_grad_buffer.py">core/distributed/param_and_grad_缓冲区.py</a>。类注释和 <code>start_grad_sync()</code>/<code>finish_grad_sync()</code> 都直接描述了重叠执行模式下的异步分发与后续等待。</div>
+        <div class="source-note">当前源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/distributed/param_and_grad_buffer.py">core/distributed/param_and_grad_buffer.py</a>。类注释和 <code>start_grad_sync()</code>/<code>finish_grad_sync()</code> 都直接描述了重叠执行模式下的异步分发与后续等待。</div>
       </section>
 
       <section class="article-section" id="bucket">
         <div class="section-no">03 · bucket size是双刃剑</div>
         <h2>太大的bucket启动太晚；太小的bucket又可能掉进延迟 / launch overhead。</h2>
-        <div class="hidden-exposed"><div><small>TOO LARGE</small><b>就绪 late</b><span>必须等很多参数的梯度都完成，通信虽然大，但能覆盖它的剩余 backward 窗口变短。</span></div><i>↔</i><div><small>TOO SMALL</small><b>too many 集合通信s</b><span>更早就绪，却产生大量小消息；collective launch/延迟与低带宽利用可能反过来吃掉收益。</span></div></div>
-        <p>当前 <code>DistributedDataParallelConfig.bucket_size</code> 甚至根据 DP 并行度给出默认规模逻辑：未指定时 MCore 使用 <code>max(40,000,000, 1,000,000 × dp_size)</code> 参数。源码注释给出的理由就是更大 DP 通常需要更大bucket，避免集合通信s 过度延迟-bound。</p>
+        <div class="hidden-exposed"><div><small>TOO LARGE</small><b>就绪 late</b><span>必须等很多参数的梯度都完成，通信虽然大，但能覆盖它的剩余 backward 窗口变短。</span></div><i>↔</i><div><small>TOO SMALL</small><b>too many collectives</b><span>更早就绪，却产生大量小消息；collective launch/延迟与低带宽利用可能反过来吃掉收益。</span></div></div>
+        <p>当前 <code>DistributedDataParallelConfig.bucket_size</code> 甚至根据 DP 并行度给出默认规模逻辑：未指定时 MCore 使用 <code>max(40,000,000, 1,000,000 × dp_size)</code> 参数。源码注释给出的理由就是更大 DP 通常需要更大bucket，避免 collectives 过度 latency-bound。</p>
         <div class="concept-note"><p><strong>所以bucket不是纯显存参数。</strong>它实际上在调“就绪粒度、消息大小、可隐藏窗口”三者之间的平衡。</p></div>
       </section>
 
