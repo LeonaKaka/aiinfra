@@ -2,11 +2,11 @@
 """Normalize and strictly audit first pedagogical use of technical English.
 
 Course rule:
-    shape（形状：表示 tensor 各维度的长度）
+    shape（形状）。它表示 tensor 各维度的长度。
 
-The first substantive teaching occurrence keeps the English/source spelling and
-adds a short Chinese explanation. Later uses stay in English without repeating
-that parenthesis. Headings, navigation, preformatted code, SVGs and lesson term
+The first substantive teaching occurrence keeps the English/source spelling,
+adds only the Chinese term in parentheses, and explains it in nearby normal
+Chinese prose. Later uses stay in English without repeating that parenthesis. Headings, navigation, preformatted code, SVGs and lesson term
 tables do not consume first use. Inline code such as <code>dtype</code> may be
 the first teaching occurrence; its explanation is appended outside the code tag.
 
@@ -203,7 +203,7 @@ SPECS = source_specs() + acronym_specs()
 
 
 def canonical_annotation(spec: dict) -> str:
-    return f"（{spec['chinese']}：{spec['hint']}）"
+    return f"（{spec['chinese']}）"
 
 
 def matching_paren_end(text: str, start: int) -> int | None:
@@ -228,13 +228,15 @@ def terminology_paren(text: str, end: int, spec: dict) -> tuple[str, int] | None
     inside = text[end + 1:close - 1].strip()
     chinese = spec["chinese"]
 
+    if inside == chinese:
+        return "valid", close
+
+    # Legacy format kept the explanation inside the parentheses:
+    # shape（形状：表示 tensor 各维度的长度）
     for sep in ("：", "，"):
         prefix = chinese + sep
-        if inside.startswith(prefix) and len(inside[len(prefix):].strip()) >= 4:
-            return "valid", close
-
-    if inside == chinese:
-        return "simple", close
+        if inside.startswith(prefix) and len(inside[len(prefix):].strip()) >= 1:
+            return "legacy", close
 
     # Migration guard for nested/legacy term annotations, e.g.
     # BF16（BF16（16 位浮点：...） 16 位浮点：...）
@@ -484,8 +486,8 @@ def normalize_body(body: str, seen: set[str]) -> str:
 
                 if spec["key"] not in seen:
                     if has_note and spec["chinese"] in emitted:
-                        # Preserve a valid authored explanation; replace a
-                        # simple/malformed one with the canonical explanation.
+                        # Preserve the canonical Chinese-name parenthesis;
+                        # replace legacy/malformed forms with it.
                         note = terminology_paren(emitted, len(re.match(r"(\s*)", emitted).group(1)), spec)
                         if note and note[0] == "valid":
                             out.append(emitted)
