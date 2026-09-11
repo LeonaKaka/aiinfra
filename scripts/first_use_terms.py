@@ -65,6 +65,8 @@ SOURCE_TERMS = {
     "attention head": ("注意力头", "在一个子空间中独立计算 Attention 的一路表示"),
     "output projection": ("输出投影", "把多头 Attention 结果重新映射回隐藏维度"),
     "KV Cache": ("KV 缓存", "保存历史 token 的 Key/Value，使生成时不必重复计算整段历史"),
+    "KV Connector": ("KV 连接器", "在不同实例之间衔接和传递已有 KV state 的接口层"),
+    "head dimension": ("每头维度", "每个 attention head 内部使用的向量宽度"),
     "FlashAttention": ("高效注意力实现", "通过重排 Attention 的计算与内存读写来降低显存 I/O"),
     "scaled dot-product attention": ("缩放点积注意力", "先缩放 Query-Key 点积，再用 softmax 得到 Attention 权重"),
     "LayerNorm": ("层归一化", "按特征维对单个样本的表示做归一化"),
