@@ -8,57 +8,57 @@
  .ey{font-size:11px;font-weight:700;letter-spacing:1.55px;fill:#8a918a}.ttl{font-size:24px;font-weight:760;fill:#252a25}.subt{font-size:13px;fill:#687069}.sec{font-size:10px;font-weight:700;letter-spacing:1.3px;fill:#8b928b}.label{font-size:11px;font-weight:760;fill:#343c35}.small{font-size:10px;fill:#687069}.tiny{font-size:9px;fill:#687069}.panel{fill:#fcfcfa;stroke:#ccd2cb;stroke-width:1.2}.box{fill:#fff;stroke:#cdd3cc;stroke-width:1.1}.r0{fill:#eaf2ed;stroke:#bfd4c5;stroke-width:1.1}.r1{fill:#edf4f8;stroke:#bfd3e0;stroke-width:1.1}.r2{fill:#faf5ea;stroke:#dfceac;stroke-width:1.1}.r3{fill:#f5eef3;stroke:#dac7d2;stroke-width:1.1}.dark{fill:#222824}.dark2{fill:#2b3530}.line{fill:none;stroke:#747b74;stroke-width:1.3}.divider{stroke:#e2e5df;stroke-width:1}
  </style>
 </defs>
-<text class="mono ey" x="34" y="34">EXPERT PARALLEL · EP=4 · EXPERT-TP=1 · TOP-1 TEACHING SLICE</text>
-<text class="sans ttl" x="34" y="67">Logical token ownership stays fixed;</text>
-<text class="sans ttl" x="34" y="94">execution moves to the expert owner</text>
-<text class="sans subt" x="34" y="119">Dispatch moves hidden states to expert owners; combine returns outputs to the original source order.</text>
+<text class="mono ey" x="34" y="34">专家并行 · EP=4 · EXPERT-TP=1 · TOP-1 教学示意</text>
+<text class="sans ttl" x="34" y="67">token 的逻辑归属保持不变；</text>
+<text class="sans ttl" x="34" y="94">计算移动到专家所在 rank</text>
+<text class="sans subt" x="34" y="119">分发把隐藏状态送到专家所在 rank；合并再把结果恢复到原始 token 顺序。</text>
 
-<text class="mono sec" x="34" y="154">0 · EXPERT PARAMETER OWNERSHIP</text>
+<text class="mono sec" x="34" y="154">0 · 专家参数归属</text>
 <g transform="translate(34 170)">
- <rect class="r0" width="160" height="58" rx="9"/><text class="mono sec" x="16" y="23" fill="#255b46">EP RANK 0</text><text class="sans small" x="16" y="43">resident params: E0 · E1</text>
- <rect class="r1" x="178" width="160" height="58" rx="9"/><text class="mono sec" x="194" y="23" fill="#315f82">EP RANK 1</text><text class="sans small" x="194" y="43">resident params: E2 · E3</text>
- <rect class="r2" x="356" width="160" height="58" rx="9"/><text class="mono sec" x="372" y="23" fill="#7b6a3e">EP RANK 2</text><text class="sans small" x="372" y="43">resident params: E4 · E5</text>
- <rect class="r3" x="534" width="160" height="58" rx="9"/><text class="mono sec" x="550" y="23" fill="#7d5d6f">EP RANK 3</text><text class="sans small" x="550" y="43">resident params: E6 · E7</text>
+ <rect class="r0" width="160" height="58" rx="9"/><text class="mono sec" x="16" y="23" fill="#255b46">EP RANK 0</text><text class="sans small" x="16" y="43">常驻参数：E0 · E1</text>
+ <rect class="r1" x="178" width="160" height="58" rx="9"/><text class="mono sec" x="194" y="23" fill="#315f82">EP RANK 1</text><text class="sans small" x="194" y="43">常驻参数：E2 · E3</text>
+ <rect class="r2" x="356" width="160" height="58" rx="9"/><text class="mono sec" x="372" y="23" fill="#7b6a3e">EP RANK 2</text><text class="sans small" x="372" y="43">常驻参数：E4 · E5</text>
+ <rect class="r3" x="534" width="160" height="58" rx="9"/><text class="mono sec" x="550" y="23" fill="#7d5d6f">EP RANK 3</text><text class="sans small" x="550" y="43">常驻参数：E6 · E7</text>
 </g>
 
-<text class="mono sec" x="34" y="266">1 · SOURCE TOKENS + ROUTER ASSIGNMENTS</text>
+<text class="mono sec" x="34" y="266">1 · 源 TOKEN + 路由分配</text>
 <rect class="panel" x="34" y="282" width="692" height="224" rx="13"/>
-<text class="sans small" x="52" y="308">The source rank remains the logical owner. Router metadata only says where each token–expert assignment must execute.</text>
+<text class="sans small" x="52" y="308">源 rank 仍是逻辑所有者；路由元数据只决定每个 token–expert 分配要去哪里执行。</text>
 <line class="divider" x1="52" y1="326" x2="708" y2="326"/>
-<text class="mono sec" x="52" y="350">SOURCE</text><text class="mono sec" x="170" y="350">TOKEN → EXPERT → DESTINATION</text><text class="mono sec" x="510" y="350">SOURCE-ORDER STATE</text>
+<text class="mono sec" x="52" y="350">源 RANK</text><text class="mono sec" x="170" y="350">TOKEN → 专家 → 目标 RANK</text><text class="mono sec" x="510" y="350">源 RANK-ORDER STATE</text>
 <g class="mono small">
- <text x="52" y="378">rank 0</text><text x="170" y="378">T0 → E0 → rank 0</text><text x="330" y="378">T1 → E4 → rank 2</text><text x="510" y="378">owns T0 · T1</text>
- <text x="52" y="408">rank 1</text><text x="170" y="408">T2 → E2 → rank 1</text><text x="330" y="408">T3 → E7 → rank 3</text><text x="510" y="408">owns T2 · T3</text>
- <text x="52" y="438">rank 2</text><text x="170" y="438">T4 → E1 → rank 0</text><text x="330" y="438">T5 → E5 → rank 2</text><text x="510" y="438">owns T4 · T5</text>
- <text x="52" y="468">rank 3</text><text x="170" y="468">T6 → E3 → rank 1</text><text x="330" y="468">T7 → E6 → rank 3</text><text x="510" y="468">owns T6 · T7</text>
+ <text x="52" y="378">rank 0</text><text x="170" y="378">T0 → E0 → rank 0</text><text x="330" y="378">T1 → E4 → rank 2</text><text x="510" y="378">持有 T0 · T1</text>
+ <text x="52" y="408">rank 1</text><text x="170" y="408">T2 → E2 → rank 1</text><text x="330" y="408">T3 → E7 → rank 3</text><text x="510" y="408">持有 T2 · T3</text>
+ <text x="52" y="438">rank 2</text><text x="170" y="438">T4 → E1 → rank 0</text><text x="330" y="438">T5 → E5 → rank 2</text><text x="510" y="438">持有 T4 · T5</text>
+ <text x="52" y="468">rank 3</text><text x="170" y="468">T6 → E3 → rank 1</text><text x="330" y="468">T7 → E6 → rank 3</text><text x="510" y="468">持有 T6 · T7</text>
 </g>
-<text class="sans tiny" x="52" y="492">For top-k &gt; 1, one logical token creates multiple assignments; combine later merges weighted expert outputs.</text>
+<text class="sans tiny" x="52" y="492">当 top-k &gt; 1 时，一个逻辑 token 会产生多个专家分配；随后按路由权重合并输出。</text>
 
 <path class="line" d="M380 506 V532" marker-end="url(#a)"/>
 <rect class="dark" x="34" y="538" width="692" height="76" rx="11"/>
-<text class="mono sec" x="52" y="563" fill="#b8c2bb">2 · PERMUTE / GROUP BY DESTINATION → A2A(EP) DISPATCH</text>
-<text class="sans label" x="52" y="586" style="fill:#eef2ed">hidden states move to expert-owner ranks</text>
-<text class="sans tiny" x="350" y="586" style="fill:#b8c2bb">expert parameters stay resident · routing metadata preserves return path</text>
+<text class="mono sec" x="52" y="563" fill="#b8c2bb">2 · 重排 / 按目标分组 → A2A(EP) 分发</text>
+<text class="sans label" x="52" y="586" style="fill:#eef2ed">隐藏状态移动到专家所在 rank</text>
+<text class="sans tiny" x="350" y="586" style="fill:#b8c2bb">专家参数保持常驻 · 路由元数据保存返回路径</text>
 
 <path class="line" d="M380 614 V640" marker-end="url(#a)"/>
-<text class="mono sec" x="34" y="670">3 · DESTINATION RANK LANES · LOCAL EXPERT COMPUTE</text>
+<text class="mono sec" x="34" y="670">3 · 目标 RANK · 本地专家计算</text>
 <g transform="translate(34 686)">
- <rect class="r0" width="160" height="126" rx="10"/><text class="mono sec" x="16" y="24" fill="#255b46">RANK 0 · E0 / E1</text><text class="mono small" x="16" y="49">T0:E0 · T4:E1</text><rect class="box" x="16" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="80" y="82" text-anchor="middle">GROUPED GEMM</text><text class="sans tiny" x="80" y="98" text-anchor="middle">resident E0/E1 weights</text><text class="sans tiny" x="16" y="119">temporary compute owner: R0</text>
- <rect class="r1" x="178" width="160" height="126" rx="10"/><text class="mono sec" x="194" y="24" fill="#315f82">RANK 1 · E2 / E3</text><text class="mono small" x="194" y="49">T2:E2 · T6:E3</text><rect class="box" x="194" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="258" y="82" text-anchor="middle">GROUPED GEMM</text><text class="sans tiny" x="258" y="98" text-anchor="middle">resident E2/E3 weights</text><text class="sans tiny" x="194" y="119">temporary compute owner: R1</text>
- <rect class="r2" x="356" width="160" height="126" rx="10"/><text class="mono sec" x="372" y="24" fill="#7b6a3e">RANK 2 · E4 / E5</text><text class="mono small" x="372" y="49">T1:E4 · T5:E5</text><rect class="box" x="372" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="436" y="82" text-anchor="middle">GROUPED GEMM</text><text class="sans tiny" x="436" y="98" text-anchor="middle">resident E4/E5 weights</text><text class="sans tiny" x="372" y="119">temporary compute owner: R2</text>
- <rect class="r3" x="534" width="160" height="126" rx="10"/><text class="mono sec" x="550" y="24" fill="#7d5d6f">RANK 3 · E6 / E7</text><text class="mono small" x="550" y="49">T7:E6 · T3:E7</text><rect class="box" x="550" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="614" y="82" text-anchor="middle">GROUPED GEMM</text><text class="sans tiny" x="614" y="98" text-anchor="middle">resident E6/E7 weights</text><text class="sans tiny" x="550" y="119">temporary compute owner: R3</text>
+ <rect class="r0" width="160" height="126" rx="10"/><text class="mono sec" x="16" y="24" fill="#255b46">RANK 0 · E0 / E1</text><text class="mono small" x="16" y="49">T0:E0 · T4:E1</text><rect class="box" x="16" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="80" y="82" text-anchor="middle">分组 GEMM</text><text class="sans tiny" x="80" y="98" text-anchor="middle">常驻 E0/E1 权重</text><text class="sans tiny" x="16" y="119">临时计算位置：R0</text>
+ <rect class="r1" x="178" width="160" height="126" rx="10"/><text class="mono sec" x="194" y="24" fill="#315f82">RANK 1 · E2 / E3</text><text class="mono small" x="194" y="49">T2:E2 · T6:E3</text><rect class="box" x="194" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="258" y="82" text-anchor="middle">分组 GEMM</text><text class="sans tiny" x="258" y="98" text-anchor="middle">常驻 E2/E3 权重</text><text class="sans tiny" x="194" y="119">临时计算位置：R1</text>
+ <rect class="r2" x="356" width="160" height="126" rx="10"/><text class="mono sec" x="372" y="24" fill="#7b6a3e">RANK 2 · E4 / E5</text><text class="mono small" x="372" y="49">T1:E4 · T5:E5</text><rect class="box" x="372" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="436" y="82" text-anchor="middle">分组 GEMM</text><text class="sans tiny" x="436" y="98" text-anchor="middle">常驻 E4/E5 权重</text><text class="sans tiny" x="372" y="119">临时计算位置：R2</text>
+ <rect class="r3" x="534" width="160" height="126" rx="10"/><text class="mono sec" x="550" y="24" fill="#7d5d6f">RANK 3 · E6 / E7</text><text class="mono small" x="550" y="49">T7:E6 · T3:E7</text><rect class="box" x="550" y="66" width="128" height="38" rx="7"/><text class="mono tiny" x="614" y="82" text-anchor="middle">分组 GEMM</text><text class="sans tiny" x="614" y="98" text-anchor="middle">常驻 E6/E7 权重</text><text class="sans tiny" x="550" y="119">临时计算位置：R3</text>
 </g>
 
 <path class="line" d="M380 812 V836" marker-end="url(#a)"/>
 <rect class="dark2" x="34" y="842" width="692" height="58" rx="10"/>
-<text class="mono sec" x="52" y="866" fill="#c0cac3">4 · REVERSE A2A(EP) → COMBINE / UNPERMUTE</text>
-<text class="sans small" x="52" y="886" style="fill:#eef2ed">expert outputs return to source ranks; routing weights and permutation metadata restore logical token order.</text>
+<text class="mono sec" x="52" y="866" fill="#c0cac3">4 · 反向 A2A(EP) → 合并 / 恢复顺序</text>
+<text class="sans small" x="52" y="886" style="fill:#eef2ed">专家输出返回源 rank；路由权重和重排元数据恢复逻辑 token 顺序。</text>
 
 <path class="line" d="M380 900 V920" marker-end="url(#a)"/>
 <g transform="translate(34 926)">
- <rect class="r0" width="160" height="36" rx="8"/><text class="mono tiny" x="80" y="23" text-anchor="middle">source R0 · T0 T1 restored</text>
- <rect class="r1" x="178" width="160" height="36" rx="8"/><text class="mono tiny" x="258" y="23" text-anchor="middle">source R1 · T2 T3 restored</text>
- <rect class="r2" x="356" width="160" height="36" rx="8"/><text class="mono tiny" x="436" y="23" text-anchor="middle">source R2 · T4 T5 restored</text>
- <rect class="r3" x="534" width="160" height="36" rx="8"/><text class="mono tiny" x="614" y="23" text-anchor="middle">source R3 · T6 T7 restored</text>
+ <rect class="r0" width="160" height="36" rx="8"/><text class="mono tiny" x="80" y="23" text-anchor="middle">源 R0 · 恢复 T0 T1</text>
+ <rect class="r1" x="178" width="160" height="36" rx="8"/><text class="mono tiny" x="258" y="23" text-anchor="middle">源 R1 · 恢复 T2 T3</text>
+ <rect class="r2" x="356" width="160" height="36" rx="8"/><text class="mono tiny" x="436" y="23" text-anchor="middle">源 R2 · 恢复 T4 T5</text>
+ <rect class="r3" x="534" width="160" height="36" rx="8"/><text class="mono tiny" x="614" y="23" text-anchor="middle">源 R3 · 恢复 T6 T7</text>
 </g>
 </svg>
