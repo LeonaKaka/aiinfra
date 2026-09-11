@@ -139,7 +139,7 @@ NIC0    ...   ...   ...   ...    X
       <section class="article-section" id="megatron">
         <div class="section-no">11 · 这会直接影响并行策略怎么选</div>
         <h2>并行策略不是只看“有多少 GPU”，还要看哪些 GPU 彼此最接近。</h2>
-        <div class="collective-table"><div class="collective-table-row head"><b>Parallelism</b><span>通信特征</span><span>拓扑直觉</span></div><div class="collective-table-row"><b>Tensor Parallel</b><span>layer 内高频集合通信，数据量大、延迟敏感</span><span>通常更希望放在高带宽、低延迟的近邻 GPU 进程组</span></div><div class="collective-table-row"><b>Pipeline Parallel</b><span>相邻阶段 P2P，频率/消息取决于 microbatch（微批次：把一个 batch 再切小以形成 Pipeline Parallel） schedule</span><span>可以把stage placement 与节点边界一起规划</span></div><div class="collective-table-row"><b>Data Parallel</b><span>梯度 / param 集合通信s，可 overlap</span><span>经常需要跨节点扩展，因此 network bandwidth 与 topology 很重要</span></div></div>
+        <div class="collective-table"><div class="collective-table-row head"><b>Parallelism</b><span>通信特征</span><span>拓扑直觉</span></div><div class="collective-table-row"><b>Tensor Parallel</b><span>layer 内高频集合通信，数据量大、延迟敏感</span><span>通常更希望放在高带宽、低延迟的近邻 GPU 进程组</span></div><div class="collective-table-row"><b>Pipeline Parallel</b><span>相邻阶段 P2P，频率/消息取决于 microbatch（微批次：把一个 batch 再切小以形成 Pipeline Parallel） schedule</span><span>可以把stage placement 与节点边界一起规划</span></div><div class="collective-table-row"><b>Data Parallel</b><span>梯度 / param collectives，可 overlap</span><span>经常需要跨节点扩展，因此 network bandwidth 与 topology 很重要</span></div></div>
         <p>这就是为什么 Megatron 的 parallel rank mapping、communication overlap、distributed optimizer 不能脱离集群 topology 单独评价。接下来进入 05 Megatron 后，我们会把这套硬件/通信地基真正套到 TP、PP、DP 上。</p>
       </section>
 
