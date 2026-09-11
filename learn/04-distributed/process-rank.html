@@ -34,7 +34,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分进程、全局 rank、总进程数（world size）和本地 rank。</li><li>理解“常见的一进程一 GPU”是部署模式，而不是分布式数学定义。</li><li>看懂 <code>torchrun --nproc-per-node=...</code> 大致做了什么。</li><li>理解 <code>init_process_group()</code> 为什么需要对端进程先完成发现和初始化。</li><li>解释进程组为什么是 Megatron 创建 TP / DP / PP 子通信域的基础。</li><li>知道集合通信调用如果不同 rank 对进程组/顺序理解不一致，为什么容易卡住。</li></ul></div>
 
       <section class="article-section" id="process">
-        <div class="section-no">01 · FIRST: A PROCESS IS A PROGRAM INSTANCE</div>
+        <div class="section-no">01 · 先弄清楚：进程就是程序实例</div>
         <h2>多 GPU 训练里，一个常见模式是启动多个 Python 进程，每个进程绑定一张 GPU。</h2>
         <p>假设一台机器有 4 张 GPU。常见 PyTorch/NVIDIA 集体通信库（NCCL） 训练部署会启动 4 个 Python 进程：</p>
         <div class="rank-grid"><div class="rank-card current"><small>PROCESS</small><b>rank 0</b><code>GPU 0</code></div><div class="rank-card"><small>PROCESS</small><b>rank 1</b><code>GPU 1</code></div><div class="rank-card"><small>PROCESS</small><b>rank 2</b><code>GPU 2</code></div><div class="rank-card"><small>PROCESS</small><b>rank 3</b><code>GPU 3</code></div></div>
@@ -43,14 +43,14 @@
       </section>
 
       <section class="article-section" id="rank">
-        <div class="section-no">02 · RANK IS THE GLOBAL ID</div>
+        <div class="section-no">02 · Rank 是全局身份编号</div>
         <h2>全局 rank 是这个分布式 world 里进程的唯一编号。</h2>
         <div class="rank-legend"><div><b>全局 rank</b><span>某个进程在整个默认 world / 进程组里的唯一编号，通常从 0 到 world_size-1。</span></div><div><b>总进程数（world size）</b><span>这个通信世界里一共有多少个进程。</span></div><div><b>本地 rank</b><span>当前进程在本机上的编号，常用于把进程映射到本机 GPU。</span></div></div>
         <p>单机 4 GPU 时全局 rank 和本地 rank 恰好都可能是 0、1、2、3，所以新手很容易把两者当成同一件事。多机以后这个错觉立刻消失。</p>
       </section>
 
       <section class="article-section" id="multinode">
-        <div class="section-no">03 · GLOBAL RANK ≠ LOCAL RANK</div>
+        <div class="section-no">03 · 全局 Rank 不等于本地 Rank</div>
         <h2>两台机器、每台 4 GPU：本地 rank 会重复，全局 rank 不会。</h2>
         <p>把 launcher、rendezvous、进程 identity、local GPU binding 与进程组s 放在同一张图里：</p>
         <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>PROCESS → IDENTITY → DEVICE → GROUP</span><span>2 nodes · 4 进程 per node</span></div><img class="distributed-core-svg" src="./process-rank-groups.svg" alt="两节点分布式身份图：launcher 与 rendezvous 建立 WORLD_SIZE=8 的默认 world，global ranks 0 到 7 全局唯一；Node A 的 ranks 0 到 3 和 Node B 的 ranks 4 到 7 都各自使用 local ranks 0 到 3，并常见地绑定本机 GPU 0 到 3；process groups 再从 global ranks 中选择子集，例如教学用 TP group [0,1] 或 DP group [0,2,4,6]。" /></div>
@@ -60,7 +60,7 @@
       </section>
 
       <section class="article-section" id="torchrun">
-        <div class="section-no">04 · WHAT TORCHRUN DOES FOR YOU</div>
+        <div class="section-no">04 · torchrun 帮你做了什么</div>
         <h2><code>torchrun</code> 会把同一个脚本启动成多个进程，并给它们分配分布式身份环境。</h2>
         <div class="code-block"><div class="code-head"><span>shell</span><span>single node · 4 GPUs</span></div><pre><code>torchrun --standalone --nproc-per-node=4 hello_dist.py</code></pre></div>
         <p>粗略看，它会启动 4 份 <code>hello_dist.py</code>。每个进程能从环境变量看到自己的身份，例如：</p>
@@ -73,7 +73,7 @@ MASTER_PORT=...</code></pre></div>
       </section>
 
       <section class="article-section" id="init">
-        <div class="section-no">05 · INIT_PROCESS_GROUP</div>
+        <div class="section-no">05 · 初始化进程组</div>
         <h2>启动了多个进程还不够：它们还要加入同一个通信世界。</h2>
         <p>PyTorch 分布式代码通常先初始化默认进程组。对 CUDA GPU 训练，NCCL 是常见后端：</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>04_hello_dist.py</span></div><pre><code>import os
@@ -97,14 +97,14 @@ dist.destroy_process_group()</code></pre></div>
       </section>
 
       <section class="article-section" id="device">
-        <div class="section-no">06 · PROCESS ↔ DEVICE</div>
+        <div class="section-no">06 · 进程怎样绑定设备</div>
         <h2>为什么经常一进程一 GPU？因为身份和设备映射会变得非常清楚。</h2>
         <div class="process-device"><div><small>PROCESS</small><b>全局 rank 5 · 本地 rank 1</b></div><span>bind →</span><div><small>DEVICE ON THIS NODE</small><b>cuda:1</b></div></div>
         <p>“一进程一 GPU”不是 CUDA 的硬限制。一个进程可以看到多个 GPU，一个 GPU 也可能被多个进程使用。但大规模训练里 one-进程-per-GPU 是非常常见、容易组合 NCCL 与分布式数据并行（DDP）/模型并行的部署方式。</p>
       </section>
 
       <section class="article-section" id="group">
-        <div class="section-no">07 · PROCESS GROUPS</div>
+        <div class="section-no">07 · 进程组</div>
         <h2>不是所有全局各个 rank 每一次都必须一起通信。</h2>
         <p>默认进程组可以包含全部 8 个各个 rank。但你还可以创建子进程组，只让其中一部分各个 rank 形成某次通信域。这正是 Megatron 组合多种 parallelism 的基础。</p>
         <div class="group-map"><div class="group-row"><small>GLOBAL</small><span class="on">0</span><span class="on">1</span><span class="on">2</span><span class="on">3</span><span class="on">4</span><span class="on">5</span><span class="on">6</span><span class="on">7</span></div><div class="group-row"><small>TP GROUP A</small><span class="alt">0</span><span class="alt">1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="group-row"><small>TP GROUP B</small><span>0</span><span>1</span><span class="alt">2</span><span class="alt">3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="group-row"><small>DP EXAMPLE</small><span class="on">0</span><span>1</span><span class="on">2</span><span>3</span><span class="on">4</span><span>5</span><span class="on">6</span><span>7</span></div></div>
@@ -113,14 +113,14 @@ dist.destroy_process_group()</code></pre></div>
       </section>
 
       <section class="article-section" id="rendezvous">
-        <div class="section-no">08 · RENDEZVOUS: HOW PEERS MEET</div>
+        <div class="section-no">08 · Rendezvous：进程怎样找到彼此</div>
         <h2>多进程初始化，本质上还需要一个“大家去哪里碰头”的机制。</h2>
         <div class="rendezvous-flow"><div class="rendezvous-step"><small>1</small><b>launcher starts</b><span>启动多个进程。</span></div><div class="rendezvous-step"><small>2</small><b>assign identity</b><span>rank / 总进程数（world size） / 本地 rank。</span></div><div class="rendezvous-step"><small>3</small><b>discover 对端进程</b><span>通过 rendezvous / store / env 配置找到彼此。</span></div><div class="rendezvous-step"><small>4</small><b>build 进程组</b><span>初始化后端与 communicator 状态。</span></div></div>
         <p>现在不需要背 TCPStore、etcd 或 elastic rendezvous 细节。先记住：分布式进程不是天然知道彼此；初始化系统必须解决 peer discovery 与一致的 membership。</p>
       </section>
 
       <section class="article-section" id="hang">
-        <div class="section-no">09 · WHY DISTRIBUTED CODE HANGS</div>
+        <div class="section-no">09 · 分布式代码为什么容易卡住</div>
         <h2>最典型的新手噩梦：一个 rank 在等，另一个 rank 根本没来。</h2>
         <p>Collective 通常要求进程组里的相关各个 rank 以兼容顺序参与。如果 rank 0 调用了某个集合通信，而 rank 1 走了另一条 if 分支没有调用，rank 0 很可能一直等待 peer。</p>
         <div class="hang-warning"><strong>分布式 debugging 的第一反应之一：</strong><p>每个 rank 现在走到哪一行？参与同一个集合通信的各个 rank 是否一致？调用顺序、张量 shape / dtype、进程组是否一致？</p></div>
@@ -128,7 +128,7 @@ dist.destroy_process_group()</code></pre></div>
       </section>
 
       <section class="article-section" id="bridge">
-        <div class="section-no">10 · CONNECT TO MEGATRON AND VLLM</div>
+        <div class="section-no">10 · 接到 Megatron 与 vLLM</div>
         <h2>rank / 进程组是训练与推理系统共同的底层语言。</h2>
         <p>推理侧后面会遇到 Prefill/Decode 分离（P/D）：即使 Prefill 与 Decode 被拆到不同实例，工作进程身份、device mapping 和通信域仍然必须先定义清楚。</p>
         <div class="distributed-truths"><div><b>Megatron</b><span>把全局各个 rank 组织成张量-parallel、pipeline-parallel、data-parallel、context/expert-parallel 进程组s；不同进程组执行不同集合通信s。</span></div><div><b>vLLM / distributed serving</b><span>多 GPU TP 工作进程、跨进程执行器、P/D 节点同样需要明确工作进程身份、device 映射和通信域。</span></div></div>
