@@ -27,10 +27,10 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy">
-        <div class="eyebrow"><span></span> AI INFRA SELF-STUDY MAP</div>
+        <div class="eyebrow"><span></span> AI INFRA 自学路线</div>
         <h1>从零基础开始，<br />直到你敢打开 <em>Megatron</em> 和 <em>vLLM</em> 的源码。</h1>
         <p class="hero-lead">
-          这不是一份名词表，也不是“七天速通”。我们从 Tensor、GPU、通信这些地基开始，
+          这不是一份名词表，也不是“七天速通”。我们从张量、GPU、通信这些地基开始，
           一层一层搭到分布式训练与现代推理系统。每学一个概念，都知道它最终会落到哪段真实源码和哪个可运行实验里。
         </p>
         <div class="hero-actions">
@@ -45,10 +45,10 @@
       </div>
 
       <div class="hero-map" aria-label="AI Infra 学习路线示意图">
-        <div class="map-caption">THE ROUTE</div>
+        <div class="map-caption">学习路线</div>
         <div class="map-node foundation">
           <span class="node-index">01–04</span>
-          <div><strong>Foundations</strong><small>Python · Transformer · GPU · Distributed</small></div>
+          <div><strong>基础</strong><small>Python · Transformer · GPU · 分布式</small></div>
         </div>
         <div class="map-branch">
           <span></span><i></i><span></span>
@@ -56,11 +56,11 @@
         <div class="map-grid">
           <div class="map-node training">
             <span class="node-index">05</span>
-            <div><strong>Training Infra</strong><small>Megatron Core</small></div>
+            <div><strong>训练基础设施</strong><small>Megatron Core</small></div>
           </div>
           <div class="map-node inference">
             <span class="node-index">06–08</span>
-            <div><strong>Inference Infra</strong><small>vLLM · KV Connector</small></div>
+            <div><strong>推理基础设施</strong><small>vLLM · KV Connector</small></div>
           </div>
         </div>
         <div class="map-terminal">
@@ -88,15 +88,15 @@
     <section class="section shell" id="destinations">
       <div class="section-heading split-heading">
         <div>
-          <div class="eyebrow"><span></span> TWO DESTINATIONS</div>
+          <div class="eyebrow"><span></span> 两条主线</div>
           <h2>我们最终要读懂的，不是 PPT。</h2>
         </div>
-        <p>两个终点分别代表训练 Infra 与推理 Infra。前面的所有基础知识，都是为了让你到这里时不再只看见一堆 class 和缩写。</p>
+        <p>两个终点分别代表训练基础设施与推理基础设施。前面的所有基础知识，都是为了让你到这里时不再只看见一堆类、接口和缩写。</p>
       </div>
 
       <div class="destination-grid">
         <article class="destination-card training-card">
-          <div class="card-topline"><span>TRAINING INFRA</span><code>05</code></div>
+          <div class="card-topline"><span>训练基础设施</span><code>05</code></div>
           <h3>Megatron Core</h3>
           <p>从一个矩阵怎么切，走到多维并行、分布式优化器和通信计算重叠。</p>
           <div class="chip-row">
@@ -106,17 +106,17 @@
             <div class="tensor source">W</div>
             <div class="arrow">→</div>
             <div class="gpu-stack"><span>GPU 0 · W₀</span><span>GPU 1 · W₁</span><span>GPU 2 · W₂</span></div>
-            <div class="collective"><b>collective</b><small>all-reduce / all-gather</small></div>
+            <div class="collective"><b>集合通信</b><small>all-reduce / all-gather</small></div>
           </div>
           <footer><span>你最终能回答</span><strong>“为什么这里必须通信？”</strong></footer>
         </article>
 
         <article class="destination-card inference-card">
-          <div class="card-topline"><span>INFERENCE INFRA</span><code>08</code></div>
+          <div class="card-topline"><span>推理基础设施</span><code>08</code></div>
           <h3>vLLM · KV Connector</h3>
           <p>从自回归生成和 KV Cache，走到跨 GPU / 跨节点的 Prefill–Decode 分离。</p>
           <div class="chip-row">
-            <span>KV Cache</span><span>Scheduler</span><span>PagedAttention</span><span>NIXL</span>
+            <span>KV Cache</span><span>调度器</span><span>PagedAttention</span><span>NIXL</span>
           </div>
           <div class="mini-diagram kv-diagram" aria-hidden="true">
             <div class="stage"><small>GPU A</small><b>Prefill</b></div>
@@ -132,7 +132,7 @@
       <div class="shell">
         <div class="section-heading roadmap-heading">
           <div>
-            <div class="eyebrow"><span></span> CURRICULUM</div>
+            <div class="eyebrow"><span></span> 课程路线</div>
             <h2>8 个模块，只保留后面真正用得到的基础。</h2>
           </div>
           <div class="legend"><span class="dot base"></span>地基 <span class="dot train"></span>训练 <span class="dot infer"></span>推理</div>
@@ -143,9 +143,9 @@
             <div class="road-index">01</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>Foundations</h3><span>零基础入口</span></div>
-              <p>只学读 Infra 源码真正需要的 Python、Tensor、PyTorch 与训练循环。</p>
-              <div class="road-tags"><span>class</span><span>tensor shape</span><span>autograd</span><span>optimizer</span></div>
+              <div class="road-title"><h3>基础入门</h3><span>零基础入口</span></div>
+              <p>只学阅读 AI Infra 源码真正需要的 Python、张量、PyTorch 与训练循环。</p>
+              <div class="road-tags"><span>类与对象</span><span>张量形状</span><span>autograd</span><span>优化器</span></div>
               <div class="road-outcome"><small>完成后</small> 能顺着一个最小训练循环追踪数据、参数和梯度。</div>
               <a class="road-enter" href="./learn/01-foundations/tensor.html">进入模块 <span>→</span></a>
             </div>
@@ -155,9 +155,9 @@
             <div class="road-index">02</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>Transformer Fundamentals</h3><span>模型是怎么计算的</span></div>
-              <p>围绕 shape 和数据流理解 Linear、Attention、MHA/GQA 与 Transformer Block。</p>
-              <div class="road-tags"><span>[B,S,H]</span><span>GEMM</span><span>Q/K/V</span><span>attention</span></div>
+              <div class="road-title"><h3>Transformer 基础</h3><span>模型是怎么计算的</span></div>
+              <p>围绕张量形状和数据流理解 Linear、Attention、MHA/GQA 与 Transformer Block。</p>
+              <div class="road-tags"><span>[B,S,H]</span><span>GEMM</span><span>Q/K/V</span><span>Attention</span></div>
               <div class="road-outcome"><small>完成后</small> 知道一个 token 经过 Transformer 时每一步发生了什么。</div>
               <a class="road-enter" href="./learn/02-transformer/attention.html">进入模块 <span>→</span></a>
             </div>
@@ -167,9 +167,9 @@
             <div class="road-index">03</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>GPU Systems</h3><span>算力与显存</span></div>
-              <p>建立 GPU 心智模型：device memory（数据中心卡常见 HBM，消费级 GPU 常见 GDDR）、kernel、Tensor Core，以及 compute / memory / launch 等不同瓶颈。</p>
-              <div class="road-tags"><span>device memory</span><span>CUDA kernel</span><span>memory bound</span><span>compute bound</span></div>
+              <div class="road-title"><h3>GPU 系统</h3><span>算力与显存</span></div>
+              <p>建立 GPU 心智模型：设备显存（数据中心卡常见 HBM，消费级 GPU 常见 GDDR）、GPU 内核、Tensor Core，以及计算、访存、内核启动等不同瓶颈。</p>
+              <div class="road-tags"><span>设备显存</span><span>CUDA kernel</span><span>带宽受限</span><span>计算受限</span></div>
               <div class="road-outcome"><small>完成后</small> 能估算“这个模型为什么塞不进一张 GPU”。</div>
               <a class="road-enter" href="./learn/03-gpu-systems/gpu-mental-model.html">进入模块 <span>→</span></a>
             </div>
@@ -179,8 +179,8 @@
             <div class="road-index">04</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>Distributed Systems for AI</h3><span>多 GPU 怎么协作</span></div>
-              <p>从 process group 到 NCCL，把常见 collective 真正画出来、算一次通信量。</p>
+              <div class="road-title"><h3>AI 分布式系统</h3><span>多 GPU 怎么协作</span></div>
+              <p>从进程组到 NCCL，把常见集合通信真正画出来、算一次通信量。</p>
               <div class="road-tags"><span>all-reduce</span><span>all-gather</span><span>reduce-scatter</span><span>all-to-all</span></div>
               <div class="road-outcome"><small>完成后</small> 面对并行算法会先问：数据在哪、搬多少、谁在等谁。</div>
               <a class="road-enter" href="./learn/04-distributed/process-rank.html">进入模块 <span>→</span></a>
@@ -191,10 +191,10 @@
             <div class="road-index">05</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>Megatron Core</h3><span>Training Infra 主线</span></div>
+              <div class="road-title"><h3>Megatron Core</h3><span>训练主线</span></div>
               <p>不按仓库目录硬啃，而是按“问题 → 并行策略 → 通信 → 源码”逐层进入。</p>
-              <div class="road-tags"><span>Data Parallel</span><span>Tensor Parallel</span><span>Pipeline</span><span>Distributed Optimizer</span><span>Context / Expert</span><span>Overlap</span></div>
-              <div class="road-outcome"><small>阶段项目</small> 从 TP/DP/SP/PP/CP/EP 单机制实验一路做到 A12 Mini Training System，把一次 training step 串起来。</div>
+              <div class="road-tags"><span>数据并行 DP</span><span>张量并行 TP</span><span>流水线并行 PP</span><span>分布式优化器</span><span>上下文 / 专家并行</span><span>通信重叠</span></div>
+              <div class="road-outcome"><small>阶段项目</small> 从 TP/DP/SP/PP/CP/EP 单机制实验一路做到 A12 Mini Training System，把一次训练步骤串起来。</div>
               <a class="road-enter" href="./learn/05-megatron/why-model-parallel.html">进入模块 <span>→</span></a>
             </div>
           </article>
@@ -203,9 +203,9 @@
             <div class="road-index">06</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>LLM Inference</h3><span>从训练切到生成</span></div>
+              <div class="road-title"><h3>大模型推理</h3><span>从训练切到生成</span></div>
               <p>理解自回归生成、Prefill / Decode 与 KV Cache，再学会从容量、带宽和延迟判断推理系统到底快在哪里。</p>
-              <div class="road-tags"><span>Prefill</span><span>Decode</span><span>KV Cache</span><span>TTFT / ITL</span><span>Benchmark</span></div>
+              <div class="road-tags"><span>Prefill</span><span>Decode</span><span>KV Cache</span><span>TTFT / ITL</span><span>基准测试</span></div>
               <div class="road-outcome"><small>完成后</small> 能估算显存与带宽数量级，并知道怎样公平比较两个推理方案。</div>
               <a class="road-enter" href="./learn/06-llm-inference/autoregressive-generation.html">进入模块 <span>→</span></a>
             </div>
@@ -215,10 +215,10 @@
             <div class="road-index">07</div>
             <div class="road-line"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>vLLM</h3><span>Inference Infra 主线</span></div>
-              <p>先理解 Scheduler、Continuous Batching、KV Cache Manager 与 PagedAttention，再读实现。</p>
-              <div class="road-tags"><span>scheduler</span><span>blocks</span><span>continuous batching</span><span>PagedAttention</span></div>
-              <div class="road-outcome"><small>完成后</small> 能沿着一次 request 追踪调度、KV block 分配与生成。</div>
+              <div class="road-title"><h3>vLLM</h3><span>推理主线</span></div>
+              <p>先理解调度器、连续批处理、KV Cache Manager 与 PagedAttention，再读实现。</p>
+              <div class="road-tags"><span>调度器</span><span>KV 块</span><span>连续批处理</span><span>PagedAttention</span></div>
+              <div class="road-outcome"><small>完成后</small> 能沿着一次请求追踪调度、KV 块分配与生成。</div>
               <a class="road-enter" href="./learn/07-vllm/architecture.html">进入模块 <span>→</span></a>
             </div>
           </article>
@@ -227,10 +227,10 @@
             <div class="road-index">08</div>
             <div class="road-line last"><span></span></div>
             <div class="road-content">
-              <div class="road-title"><h3>KV Connector</h3><span>最终 Boss</span></div>
-              <p>从单机 KV 传输一路进入多节点：P/D disaggregation、RDMA、GPUDirect 与 NIXL。</p>
-              <div class="road-tags"><span>KV transfer</span><span>P/D disaggregation</span><span>RDMA</span><span>GPUDirect</span><span>NIXL</span></div>
-              <div class="road-outcome"><small>毕业项目</small> B1–B7 从 raw KV handoff 一路做到 registration、handshake 与 lease/expiry 生命周期。</div>
+              <div class="road-title"><h3>KV Connector</h3><span>最终关</span></div>
+              <p>从单机 KV 传输一路进入多节点：P/D 分离、RDMA、GPUDirect 与 NIXL。</p>
+              <div class="road-tags"><span>KV 传输</span><span>P/D 分离</span><span>RDMA</span><span>GPUDirect</span><span>NIXL</span></div>
+              <div class="road-outcome"><small>毕业项目</small> B1–B7 从原始 KV 交接一路做到内存注册、握手与租约/过期生命周期。</div>
               <a class="road-enter" href="./learn/08-kv-connector/why-move-kv.html">进入模块 <span>→</span></a>
             </div>
           </article>
@@ -241,18 +241,18 @@
     <section class="section shell" id="method">
       <div class="section-heading split-heading">
         <div>
-          <div class="eyebrow"><span></span> HOW EACH LESSON WORKS</div>
+          <div class="eyebrow"><span></span> 每课怎么学</div>
           <h2>每一课固定六层，不靠死记。</h2>
         </div>
         <p>目标不是“看完”，而是让一个抽象概念经过图、数字、最小实现和真实源码后变成可解释的系统组件。</p>
       </div>
       <div class="method-grid">
-        <article><span>01</span><h3>Why</h3><p>先建立问题：它不出现会怎样？</p></article>
-        <article><span>02</span><h3>Picture</h3><p>用数据流和显存图建立直觉。</p></article>
-        <article><span>03</span><h3>Numbers</h3><p>亲手算 shape、显存和通信量。</p></article>
-        <article><span>04</span><h3>Mini Build</h3><p>几十行代码做一个最小版本。</p></article>
-        <article><span>05</span><h3>Source Map</h3><p>把最小实现映射到真实仓库。</p></article>
-        <article><span>06</span><h3>Checkpoint</h3><p>能解释清楚，才进入下一层。</p></article>
+        <article><span>01</span><h3>为什么</h3><p>先建立问题：它不出现会怎样？</p></article>
+        <article><span>02</span><h3>画图</h3><p>用数据流和显存图建立直觉。</p></article>
+        <article><span>03</span><h3>算数</h3><p>亲手算张量形状、显存和通信量。</p></article>
+        <article><span>04</span><h3>最小实现</h3><p>几十行代码做一个最小版本。</p></article>
+        <article><span>05</span><h3>源码地图</h3><p>把最小实现映射到真实仓库。</p></article>
+        <article><span>06</span><h3>检查点</h3><p>能解释清楚，才进入下一层。</p></article>
       </div>
     </section>
 
