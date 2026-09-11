@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Normalize and strictly audit the first pedagogical use of technical English.
+"""Normalize and strictly audit first pedagogical use of technical English.
 
 Course rule:
     shape（形状：表示 tensor 各维度的长度）
 
 The first substantive teaching occurrence keeps the English/source spelling and
-adds a short Chinese explanation. Later uses stay in English. Headings, code,
-paths, SVGs, navigation and lesson term tables do not consume the first use.
+adds a short Chinese explanation. Later uses stay in English without repeating
+that parenthesis. Headings, navigation, preformatted code, SVGs and lesson term
+tables do not consume first use. Inline code such as <code>dtype</code> may be
+the first teaching occurrence; its explanation is appended outside the code tag.
 
-Course order is learn/01-* -> learn/08-*; Labs are scanned afterwards and inherit
-terms already introduced by the lessons.
+Course order is explicit (01.1 -> 08.5), not filename alphabetical order.
+Labs are scanned after lessons and inherit terms already introduced by lessons.
 
 Run:
   python scripts/audit_first_use_terms.py --write
@@ -28,7 +30,47 @@ ROOT = Path(__file__).resolve().parents[1]
 LESSONS = ROOT / "learn"
 LABS = ROOT / "labs"
 
-SKIP_TAGS = {"code", "pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
+COURSE_ORDER = [
+    "learn/01-foundations/tensor.html",
+    "learn/01-foundations/linear.html",
+    "learn/01-foundations/training-loop.html",
+    "learn/01-foundations/autograd-optimizer.html",
+    "learn/02-transformer/attention.html",
+    "learn/02-transformer/mha-gqa.html",
+    "learn/02-transformer/transformer-block.html",
+    "learn/03-gpu-systems/gpu-mental-model.html",
+    "learn/03-gpu-systems/gpu-memory.html",
+    "learn/03-gpu-systems/gpu-bottlenecks.html",
+    "learn/04-distributed/process-rank.html",
+    "learn/04-distributed/collectives.html",
+    "learn/04-distributed/nccl-topology.html",
+    "learn/05-megatron/why-model-parallel.html",
+    "learn/05-megatron/tensor-parallel.html",
+    "learn/05-megatron/sequence-parallel.html",
+    "learn/05-megatron/pipeline-parallel.html",
+    "learn/05-megatron/context-parallel.html",
+    "learn/05-megatron/expert-parallel.html",
+    "learn/05-megatron/distributed-optimizer.html",
+    "learn/05-megatron/communication-overlap.html",
+    "learn/06-llm-inference/autoregressive-generation.html",
+    "learn/06-llm-inference/prefill-decode.html",
+    "learn/06-llm-inference/kv-cache.html",
+    "learn/06-llm-inference/inference-performance.html",
+    "learn/07-vllm/architecture.html",
+    "learn/07-vllm/scheduler-continuous-batching.html",
+    "learn/07-vllm/kv-cache-manager.html",
+    "learn/07-vllm/model-runner-paged-attention.html",
+    "learn/07-vllm/prefix-cache-preemption.html",
+    "learn/08-kv-connector/why-move-kv.html",
+    "learn/08-kv-connector/connector-architecture.html",
+    "learn/08-kv-connector/transfer-lifecycle.html",
+    "learn/08-kv-connector/nixl-rdma.html",
+    "learn/08-kv-connector/production-pd.html",
+]
+
+# Tags whose contents are not prose introductions. Inline <code> is deliberately
+# NOT here; exact one-word/one-term inline code can be introduced and explained.
+BLOCK_TAGS = {"pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
 SKIP_CLASSES = {
     "lesson-kicker", "section-no", "breadcrumb", "mobile-course-bar",
     "lesson-terms", "toc", "next-lesson",
@@ -40,10 +82,13 @@ CLASS_RE = re.compile(r'class\s*=\s*["\']([^"\']*)["\']', re.I)
 
 SOURCE_ALIASES = {
     "tensor": ("tensor", "tensors"),
+    "memory": ("memory",),
     "shape": ("shape", "shapes"),
     "dtype": ("dtype", "dtypes"),
     "device": ("device", "devices"),
     "view": ("view", "views"),
+    "transpose": ("transpose",),
+    "copy": ("copy",),
     "projection": ("projection", "projections"),
     "attention score": ("attention score", "attention scores"),
     "attention head": ("attention head", "attention heads"),
@@ -51,14 +96,20 @@ SOURCE_ALIASES = {
     "kernel": ("kernel", "kernels"),
     "stream": ("stream", "streams"),
     "process": ("process", "processes"),
+    "rank": ("rank", "ranks"),
+    "world size": ("world size", "world_size"),
     "process group": ("process group", "process groups"),
     "collective": ("collective", "collectives"),
+    "all-reduce": ("all-reduce", "all_reduce"),
+    "all-gather": ("all-gather", "all_gather"),
+    "reduce-scatter": ("reduce-scatter", "reduce_scatter"),
     "communicator": ("communicator", "communicators"),
     "shard": ("shard", "shards", "sharded"),
     "replica": ("replica", "replicas", "replicated"),
     "pipeline stage": ("pipeline stage", "pipeline stages"),
     "microbatch": ("microbatch", "microbatches"),
     "bucket": ("bucket", "buckets"),
+    "expert": ("expert", "experts"),
     "router": ("router", "routers"),
     "dispatcher": ("dispatcher", "dispatchers"),
     "assignment": ("assignment", "assignments"),
@@ -104,7 +155,7 @@ def clean_chinese(abbr: str, chinese: str) -> str:
 
 
 def boundary_pattern(alias: str, *, case_sensitive: bool = True) -> re.Pattern[str]:
-    # Do not split source identifiers such as request-level or gpu_worker.
+    # Avoid rewriting inside identifiers such as request-level or gpu_worker.
     flags = 0 if case_sensitive else re.I
     return re.compile(
         rf"(?<![A-Za-z0-9_]){re.escape(alias)}(?![A-Za-z0-9_-])",
@@ -112,23 +163,234 @@ def boundary_pattern(alias: str, *, case_sensitive: bool = True) -> re.Pattern[s
     )
 
 
-def tokenize(body: str):
+def source_case_sensitive(term: str) -> bool:
+    # Product/model/API names with capitals are exact; lower-case engineering
+    # vocabulary is matched case-insensitively.
+    return any(ch.isupper() for ch in term)
+
+
+def source_specs():
+    out = []
+    for term, (chinese, hint) in SOURCE_TERMS.items():
+        out.append({
+            "key": f"source:{term}",
+            "aliases": SOURCE_ALIASES.get(term, (term,)),
+            "chinese": chinese,
+            "hint": hint,
+            "case_sensitive": source_case_sensitive(term),
+            "kind": "source",
+        })
+    return out
+
+
+def acronym_specs():
+    out = []
+    for abbr, (english, chinese, meaning, _) in TERMS.items():
+        out.append({
+            "key": f"abbr:{abbr}",
+            "abbr": abbr,
+            "english": english,
+            "aliases": TERM_ALIASES.get(abbr, (abbr,)),
+            "chinese": clean_chinese(abbr, chinese),
+            "hint": short_hint(meaning),
+            "case_sensitive": True,
+            "kind": "abbr",
+        })
+    return out
+
+
+SPECS = source_specs() + acronym_specs()
+
+
+def canonical_annotation(spec: dict) -> str:
+    return f"（{spec['chinese']}：{spec['hint']}）"
+
+
+def matching_paren_end(text: str, start: int) -> int | None:
+    if start >= len(text) or text[start] != "（":
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "（":
+            depth += 1
+        elif text[i] == "）":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return None
+
+
+def terminology_paren(text: str, end: int, spec: dict) -> tuple[str, int] | None:
+    """Classify immediate Chinese parentheses as valid/simple/malformed term note."""
+    close = matching_paren_end(text, end)
+    if close is None:
+        return None
+    inside = text[end + 1:close - 1].strip()
+    chinese = spec["chinese"]
+
+    for sep in ("：", "，"):
+        prefix = chinese + sep
+        if inside.startswith(prefix) and len(inside[len(prefix):].strip()) >= 4:
+            return "valid", close
+
+    if inside == chinese:
+        return "simple", close
+
+    # Migration guard for nested/legacy term annotations, e.g.
+    # BF16（BF16（16 位浮点：...） 16 位浮点：...）
+    if chinese in inside and len(inside) <= 220:
+        return "malformed", close
+
+    return None
+
+
+def legacy_acronym_matches(text: str, spec: dict, cursor: int):
+    abbr = spec["abbr"]
+    chinese = spec["chinese"]
+    english = spec["english"]
+    patterns = [
+        # Chinese-first: 图形处理器（GPU）
+        re.compile(rf"{re.escape(chinese)}（{re.escape(abbr)}）"),
+        # Old generated English-first with Chinese in the same parentheses.
+        re.compile(
+            rf"{re.escape(english)}\s*\({re.escape(abbr)}[，,]\s*{re.escape(chinese)}\)",
+            re.I,
+        ),
+        # English full name + abbreviation only.
+        re.compile(rf"{re.escape(english)}\s*\(\s*{re.escape(abbr)}\s*\)", re.I),
+    ]
+    matches = []
+    for pat in patterns:
+        m = pat.search(text, cursor)
+        if m:
+            matches.append(m)
+    return matches
+
+
+def raw_matches(text: str, spec: dict, cursor: int):
+    matches = []
+    for alias in spec["aliases"]:
+        m = boundary_pattern(alias, case_sensitive=spec["case_sensitive"]).search(text, cursor)
+        if m:
+            matches.append(m)
+    return matches
+
+
+def next_action(text: str, cursor: int, seen: set[str]):
+    """Return earliest introduction or redundant-annotation cleanup action."""
+    best = None
+
+    for spec in SPECS:
+        key = spec["key"]
+
+        if key not in seen:
+            for m in raw_matches(text, spec, cursor):
+                candidate = (m.start(), -len(m.group(0)), "introduce", m.end(), spec, m.group(0))
+                if best is None or candidate[:2] < best[:2]:
+                    best = candidate
+            if spec["kind"] == "abbr":
+                for m in legacy_acronym_matches(text, spec, cursor):
+                    candidate = (m.start(), -(m.end() - m.start()), "legacy-introduce", m.end(), spec, spec["abbr"])
+                    if best is None or candidate[:2] < best[:2]:
+                        best = candidate
+            continue
+
+        # Term already introduced: only act when a later occurrence still repeats
+        # a terminology parenthesis or an old generated expansion.
+        for m in raw_matches(text, spec, cursor):
+            note = terminology_paren(text, m.end(), spec)
+            if note is None:
+                continue
+            _, close = note
+            candidate = (m.start(), -len(m.group(0)), "strip", close, spec, m.group(0))
+            if best is None or candidate[:2] < best[:2]:
+                best = candidate
+
+        if spec["kind"] == "abbr":
+            for m in legacy_acronym_matches(text, spec, cursor):
+                candidate = (m.start(), -(m.end() - m.start()), "legacy-strip", m.end(), spec, spec["abbr"])
+                if best is None or candidate[:2] < best[:2]:
+                    best = candidate
+
+    return best
+
+
+def normalize_text(text: str, seen: set[str]) -> str:
+    cursor = 0
+    out: list[str] = []
+
+    while cursor < len(text):
+        action = next_action(text, cursor, seen)
+        if action is None:
+            out.append(text[cursor:])
+            break
+
+        start, _, mode, end, spec, lexeme = action
+        out.append(text[cursor:start])
+
+        if mode in {"legacy-introduce", "legacy-strip"}:
+            out.append(spec["abbr"])
+            if mode == "legacy-introduce":
+                out.append(canonical_annotation(spec))
+                seen.add(spec["key"])
+            cursor = end
+            continue
+
+        if mode == "strip":
+            out.append(lexeme)
+            cursor = end
+            continue
+
+        # First raw occurrence.
+        out.append(lexeme)
+        note = terminology_paren(text, end, spec)
+        if note is None:
+            out.append(canonical_annotation(spec))
+            cursor = end
+        else:
+            kind, close = note
+            if kind == "valid":
+                out.append(text[end:close])
+            else:
+                out.append(canonical_annotation(spec))
+            cursor = close
+        seen.add(spec["key"])
+
+    return "".join(out)
+
+
+def lex_body(body: str):
+    """Return HTML tokens with blocked/code context."""
+    tokens = []
     stack: list[tuple[str, bool]] = []
+
     for part in TAG_RE.split(body):
         if not part:
             continue
+
         if not part.startswith("<"):
-            yield "text", part, any(blocked for _, blocked in stack)
+            tokens.append({
+                "kind": "text",
+                "raw": part,
+                "blocked": any(blocked for _, blocked in stack),
+                "in_code": any(tag == "code" for tag, _ in stack),
+            })
             continue
 
         close = CLOSE_TAG_RE.match(part)
         if close:
             tag = close.group(1).lower()
+            tokens.append({
+                "kind": "tag",
+                "raw": part,
+                "tag": tag,
+                "close": True,
+                "blocked": any(blocked for _, blocked in stack),
+            })
             for i in range(len(stack) - 1, -1, -1):
                 if stack[i][0] == tag:
                     del stack[i:]
                     break
-            yield "tag", part, any(blocked for _, blocked in stack)
             continue
 
         op = OPEN_TAG_RE.match(part)
@@ -138,171 +400,123 @@ def tokenize(body: str):
             m = CLASS_RE.search(op.group(2))
             if m:
                 classes = set(m.group(1).split())
-            blocked = tag in SKIP_TAGS or bool(classes & SKIP_CLASSES)
-            stack.append((tag, blocked))
-        yield "tag", part, any(blocked for _, blocked in stack)
+            blocked_here = tag in BLOCK_TAGS or bool(classes & SKIP_CLASSES)
+            tokens.append({
+                "kind": "tag",
+                "raw": part,
+                "tag": tag,
+                "close": False,
+                "blocked": any(blocked for _, blocked in stack) or blocked_here,
+            })
+            stack.append((tag, blocked_here))
+        else:
+            tokens.append({
+                "kind": "tag",
+                "raw": part,
+                "tag": None,
+                "close": False,
+                "blocked": any(blocked for _, blocked in stack),
+            })
+
+    return tokens
 
 
-def source_case_sensitive(term: str) -> bool:
-    # Capitalized product/model names must not accidentally match ordinary words
-    # such as "linear algebra" when we mean the PyTorch Linear layer.
-    return any(ch.isupper() for ch in term)
-
-
-def source_specs():
-    specs = []
-    for term, (chinese, hint) in SOURCE_TERMS.items():
-        aliases = SOURCE_ALIASES.get(term, (term,))
-        specs.append({
-            "key": f"source:{term}",
-            "aliases": aliases,
-            "chinese": chinese,
-            "hint": hint,
-            "case_sensitive": source_case_sensitive(term),
-            "kind": "source",
-        })
-    return specs
-
-
-def acronym_specs():
-    specs = []
-    for abbr, (english, chinese, meaning, _) in TERMS.items():
-        aliases = TERM_ALIASES.get(abbr, (abbr,))
-        specs.append({
-            "key": f"abbr:{abbr}",
-            "abbr": abbr,
-            "english": english,
-            "aliases": aliases,
-            "chinese": clean_chinese(abbr, chinese),
-            "hint": short_hint(meaning),
-            "case_sensitive": True,
-            "kind": "abbr",
-        })
-    return specs
-
-
-SPECS = source_specs() + acronym_specs()
-
-
-def acceptable_annotation(text: str, end: int, chinese: str) -> tuple[bool, int]:
-    """Accept authored explanations using either Chinese colon or comma."""
-    if end >= len(text) or text[end] != "（":
-        return False, end
-    close = text.find("）", end + 1)
-    if close < 0:
-        return False, end
-    inside = text[end + 1:close]
-    for sep in ("：", "，"):
-        prefix = chinese + sep
-        if inside.startswith(prefix) and len(inside[len(prefix):].strip()) >= 4:
-            return True, close + 1
-    return False, end
-
-
-def legacy_acronym_candidates(text: str, spec: dict, cursor: int):
-    abbr = spec["abbr"]
-    chinese = spec["chinese"]
-    english = spec["english"]
-    candidates = []
-
-    # Old Chinese-first form: 图形处理器（GPU）
-    p1 = re.compile(rf"{re.escape(chinese)}（{re.escape(abbr)}）")
-    m = p1.search(text, cursor)
-    if m:
-        candidates.append((m.start(), m.end(), "legacy"))
-
-    # Older English-first generated form: Graphics Processing Unit (GPU，图形处理器)
-    p2 = re.compile(
-        rf"{re.escape(english)}\s*\({re.escape(abbr)}[，,]\s*{re.escape(chinese)}\)",
-        re.I,
-    )
-    m = p2.search(text, cursor)
-    if m:
-        candidates.append((m.start(), m.end(), "legacy"))
-
-    return candidates
-
-
-def next_candidate(text: str, cursor: int, seen: set[str]):
-    best = None
-
+def exact_inline_code_spec(text: str):
+    candidate = text.strip()
+    if not candidate:
+        return None
+    matches = []
     for spec in SPECS:
-        if spec["key"] in seen:
+        for alias in spec["aliases"]:
+            flags = 0 if spec["case_sensitive"] else re.I
+            if re.fullmatch(re.escape(alias), candidate, flags):
+                matches.append((len(alias), spec))
+    if not matches:
+        return None
+    return max(matches, key=lambda item: item[0])[1]
+
+
+def consume_annotation_prefix(text: str, spec: dict):
+    """Return (prefix_to_emit, remainder, has_term_note)."""
+    m = re.match(r"(\s*)", text)
+    lead = m.group(1)
+    start = len(lead)
+    note = terminology_paren(text, start, spec)
+    if note is None:
+        return lead, text[start:], False
+    kind, close = note
+    if kind == "valid":
+        return lead + text[start:close], text[close:], True
+    # simple/malformed is replaced by canonical by caller
+    return lead, text[close:], True
+
+
+def normalize_body(body: str, seen: set[str]) -> str:
+    tokens = lex_body(body)
+    out: list[str] = []
+    i = 0
+
+    while i < len(tokens):
+        tok = tokens[i]
+
+        # Handle simple inline <code>term</code> without changing code contents.
+        if (
+            tok["kind"] == "tag"
+            and tok.get("tag") == "code"
+            and not tok.get("close")
+            and not tok["blocked"]
+            and i + 2 < len(tokens)
+            and tokens[i + 1]["kind"] == "text"
+            and tokens[i + 2]["kind"] == "tag"
+            and tokens[i + 2].get("tag") == "code"
+            and tokens[i + 2].get("close")
+        ):
+            code_text = tokens[i + 1]["raw"]
+            spec = exact_inline_code_spec(code_text)
+            out.extend([tok["raw"], code_text, tokens[i + 2]["raw"]])
+
+            if spec is not None:
+                # An authored parenthesis after </code> is represented by the
+                # immediately following text token.
+                j = i + 3
+                following = tokens[j]["raw"] if j < len(tokens) and tokens[j]["kind"] == "text" else ""
+                emitted, remainder, has_note = consume_annotation_prefix(following, spec)
+
+                if spec["key"] not in seen:
+                    if has_note and spec["chinese"] in emitted:
+                        # Preserve a valid authored explanation; replace a
+                        # simple/malformed one with the canonical explanation.
+                        note = terminology_paren(emitted, len(re.match(r"(\s*)", emitted).group(1)), spec)
+                        if note and note[0] == "valid":
+                            out.append(emitted)
+                        else:
+                            out.append(re.match(r"(\s*)", emitted).group(1) + canonical_annotation(spec))
+                    else:
+                        out.append(canonical_annotation(spec))
+                        if emitted:
+                            out.append(emitted)
+                    seen.add(spec["key"])
+                else:
+                    # Later duplicate explanation is removed.
+                    if emitted and not has_note:
+                        out.append(emitted)
+
+                if j < len(tokens) and tokens[j]["kind"] == "text":
+                    tokens[j]["raw"] = remainder
+
+            i += 3
             continue
 
-        for alias in spec["aliases"]:
-            pat = boundary_pattern(alias, case_sensitive=spec["case_sensitive"])
-            m = pat.search(text, cursor)
-            if not m:
-                continue
-            candidate = (
-                m.start(),
-                -len(m.group(0)),  # longest term wins at the same position
-                m.end(),
-                spec,
-                "raw",
-            )
-            if best is None or candidate[:3] < best[:3]:
-                best = candidate
-
-        if spec["kind"] == "abbr":
-            for start, end, mode in legacy_acronym_candidates(text, spec, cursor):
-                candidate = (start, -(end - start), end, spec, mode)
-                if best is None or candidate[:3] < best[:3]:
-                    best = candidate
-
-    return best
-
-
-def annotate_text(text: str, seen: set[str]) -> str:
-    cursor = 0
-    out: list[str] = []
-
-    while cursor < len(text):
-        candidate = next_candidate(text, cursor, seen)
-        if candidate is None:
-            out.append(text[cursor:])
-            break
-
-        start, _, end, spec, mode = candidate
-        out.append(text[cursor:start])
-        chinese = spec["chinese"]
-        hint = spec["hint"]
-        canonical = f"（{chinese}：{hint}）"
-
-        if mode == "legacy":
-            lexeme = spec["abbr"]
-            out.append(lexeme + canonical)
-            cursor = end
-        else:
-            lexeme = text[start:end]
-            out.append(lexeme)
-            ok, next_pos = acceptable_annotation(text, end, chinese)
-            if ok:
-                out.append(text[end:next_pos])
-                cursor = next_pos
+        if tok["kind"] == "text":
+            if tok["blocked"] or tok["in_code"]:
+                out.append(tok["raw"])
             else:
-                # Replace a bare old Chinese-name-only parenthesis if present.
-                simple = f"（{chinese}）"
-                if text.startswith(simple, end):
-                    cursor = end + len(simple)
-                else:
-                    cursor = end
-                out.append(canonical)
-
-        seen.add(spec["key"])
+                out.append(normalize_text(tok["raw"], seen))
+        else:
+            out.append(tok["raw"])
+        i += 1
 
     return "".join(out)
-
-
-def annotate_body(body: str, seen: set[str]) -> str:
-    parts = []
-    for kind, part, blocked in tokenize(body):
-        if kind == "text" and not blocked:
-            parts.append(annotate_text(part, seen))
-        else:
-            parts.append(part)
-    return "".join(parts)
 
 
 def normalize_page(source: str, seen: set[str]) -> str:
@@ -316,20 +530,37 @@ def normalize_page(source: str, seen: set[str]) -> str:
         before = body[:table.start()]
         term_table = table.group(0)
         after = body[table.end():]
-        body = annotate_body(before, seen) + term_table + annotate_body(after, seen)
+        body = normalize_body(before, seen) + term_table + normalize_body(after, seen)
     else:
-        body = annotate_body(body, seen)
+        body = normalize_body(body, seen)
 
     return source[:m.start()] + m.group("open") + body + m.group("close") + source[m.end():]
 
 
 def teaching_pages() -> list[Path]:
-    # Lessons define the course language. Labs inherit those definitions and only
-    # introduce terms that never appeared in the lessons.
-    return (
-        sorted(p for p in LESSONS.glob("**/*.html") if p.is_file())
-        + sorted(p for p in LABS.glob("*.html") if p.is_file())
+    pages = []
+    missing = []
+    for rel in COURSE_ORDER:
+        path = ROOT / rel
+        if path.exists():
+            pages.append(path)
+        else:
+            missing.append(rel)
+    if missing:
+        raise SystemExit("Missing course page(s): " + ", ".join(missing))
+
+    known = {p.resolve() for p in pages}
+    unexpected = sorted(
+        p for p in LESSONS.glob("**/*.html")
+        if p.is_file() and p.resolve() not in known
     )
+    if unexpected:
+        raise SystemExit(
+            "Lesson exists but is absent from COURSE_ORDER: "
+            + ", ".join(str(p.relative_to(ROOT)) for p in unexpected)
+        )
+
+    return pages + sorted(p for p in LABS.glob("*.html") if p.is_file())
 
 
 def main() -> int:
@@ -358,7 +589,7 @@ def main() -> int:
     if changed:
         print(
             f"First-use terminology audit FAILED: {len(changed)} page(s) "
-            "need first-use explanations."
+            "need first-use normalization or duplicate-explanation cleanup."
         )
         for path in changed:
             print(f"  - {path.relative_to(ROOT)}")
@@ -367,7 +598,7 @@ def main() -> int:
 
     print(
         f"First-use terminology audit passed: {len(seen)} technical terms "
-        "introduced once in course order."
+        "introduced once in pedagogical course order."
     )
     return 0
 
