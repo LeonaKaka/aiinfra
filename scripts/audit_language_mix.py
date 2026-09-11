@@ -119,15 +119,30 @@ REVIEW_ONLY = set(CHINESE_DEFAULT)
 # and concrete: it protects readability without dictating whether a legitimate
 # source term should be English or Chinese in context.
 MALFORMED_PATTERNS = {
+    # Chinese stems accidentally left inside English morphology.
     r"分块ed\b": "mixed Chinese/English suffix",
+    r"分片(?:ed|ing|s)\b": "mixed Chinese/English shard suffix",
     r"规划ning\b": "mixed Chinese/English suffix",
     r"批次ing\b": "mixed Chinese/English suffix",
+    r"进程组s\b": "mixed Chinese/English plural",
+    r"激活值s\b": "mixed Chinese/English plural",
+    r"内核s\b": "mixed Chinese/English plural",
     r"句柄s\b": "mixed Chinese/English plural",
     r"后端s\b": "mixed Chinese/English plural",
     r"传输s\b": "mixed Chinese/English plural",
+
+    # Mechanical identifier / source-path translations. These should never
+    # appear as source anchors because the real code uses the English names.
+    r"(?:调度器|请求|工作进程)\.py\b": "translated Python source filename",
+    r"gpu_工作进程\.py\b": "translated Python source filename",
+    r"块[_-]?table\.py\b": "translated block_table.py filename",
+    r"kv_传输(?:/|\b)": "translated kv_transfer source path",
+    r"句柄_preemptions\b": "translated handle_preemptions identifier",
+    r"\b[A-Za-z_][A-Za-z0-9_]*\.形状\b": "translated code attribute",
+
+    # Known string-corruption signatures from the earlier mechanical pass.
     r"块表S\b": "mechanical plural residue",
     r"槽位映射PING\b": "mechanical suffix residue",
-    r"\bX\.形状\b": "translated code attribute",
     r"\bre形状\b": "broken reshape token",
     r"直接直接内存访问": "duplicated translation",
 }
