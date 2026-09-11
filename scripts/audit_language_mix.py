@@ -120,16 +120,7 @@ REVIEW_ONLY = set(CHINESE_DEFAULT)
 # source term should be English or Chinese in context.
 MALFORMED_PATTERNS = {
     # Chinese stems accidentally left inside English morphology.
-    r"分块ed\b": "mixed Chinese/English suffix",
-    r"分片(?:ed|ing|s)\b": "mixed Chinese/English shard suffix",
-    r"规划ning\b": "mixed Chinese/English suffix",
-    r"批次ing\b": "mixed Chinese/English suffix",
-    r"进程组s\b": "mixed Chinese/English plural",
-    r"激活值s\b": "mixed Chinese/English plural",
-    r"内核s\b": "mixed Chinese/English plural",
-    r"句柄s\b": "mixed Chinese/English plural",
-    r"后端s\b": "mixed Chinese/English plural",
-    r"传输s\b": "mixed Chinese/English plural",
+    r"[\u3400-\u9fff](?:ed|ing|s)\b": "mixed Chinese/English suffix",
 
     # Mechanical identifier / source-path translations. These should never
     # appear as source anchors because the real code uses the English names.
@@ -138,7 +129,8 @@ MALFORMED_PATTERNS = {
     r"块[_-]?table\.py\b": "translated block_table.py filename",
     r"kv_传输(?:/|\b)": "translated kv_transfer source path",
     r"句柄_preemptions\b": "translated handle_preemptions identifier",
-    r"\b[A-Za-z_][A-Za-z0-9_]*\.形状\b": "translated code attribute",
+    r"\b[A-Za-z_][A-Za-z0-9_]*\.[\u3400-\u9fff]{1,8}\b": "translated code attribute",
+    r"(?:[A-Za-z][A-Za-z0-9]*_[\u3400-\u9fff]+|[\u3400-\u9fff]+_[A-Za-z][A-Za-z0-9_]*)": "mixed translated identifier",
 
     # Known string-corruption signatures from the earlier mechanical pass.
     r"块表S\b": "mechanical plural residue",
@@ -186,12 +178,14 @@ def main() -> int:
     review_hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     malformed_hits: dict[str, list[str]] = defaultdict(list)
     paths = list(LESSONS.glob("**/*.html"))
+    paths += list(LESSONS.glob("**/*.svg"))
     paths += list(LABS.glob("*.html"))
+    paths += list((LABS / "code").glob("*.py"))
     paths += [path for path in GLOBAL_PAGES if path.exists()]
 
     for path in sorted(set(paths)):
-        prose = visible_prose(path)
         rel = str(path.relative_to(ROOT))
+        prose = visible_prose(path) if path.suffix == ".html" else ""
 
         for english in CHINESE_DEFAULT:
             count = len(re.findall(
