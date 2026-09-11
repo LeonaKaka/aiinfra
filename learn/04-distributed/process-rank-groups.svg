@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 750" role="img" aria-labelledby="title desc">
-  <title id="title">Process identity, local GPU binding, and process groups</title>
-  <desc id="desc">A two-node distributed job. Launcher and rendezvous form one world of eight processes. Global ranks are unique; local ranks repeat on each node and commonly map to local GPUs. Process groups select subsets of global ranks.</desc>
+  <title id="title">Process identity, 本地 GPU binding, and process groups</title>
+  <desc id="desc">A two-node distributed job. 启动器 and rendezvous form one world of eight processes. Global ranks are unique; 本地 ranks repeat on each node and commonly map to 本地 GPUs. Process groups select subsets of 全局 ranks.</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7c847d"/></marker>
     <style>
@@ -26,33 +26,33 @@
     </style>
   </defs>
 
-  <text class="mono ey" x="34" y="34">PROCESS → IDENTITY → DEVICE → GROUP</text>
-  <text class="sans ttl" x="34" y="67">Global rank is unique; local rank repeats per node</text>
-  <text class="sans sub" x="34" y="91">One-process-per-GPU is a common deployment pattern. Groups are subsets of global ranks.</text>
+  <text class="mono ey" x="34" y="34">进程 → 身份 → 设备 → 进程组</text>
+  <text class="sans ttl" x="34" y="67">全局 rank 唯一；本地 rank 会在不同节点重复</text>
+  <text class="sans sub" x="34" y="91">一进程一 GPU 是常见部署方式；进程组是全局 ranks 的子集。</text>
 
   <rect class="panel" x="34" y="116" width="692" height="105" rx="14"/>
-  <text class="mono sec" x="52" y="141">1 · FORM ONE DISTRIBUTED WORLD</text>
+  <text class="mono sec" x="52" y="141">1 · 组成一个分布式作业</text>
   <rect class="blue" x="54" y="159" width="162" height="44" rx="9"/>
-  <text class="sans label" x="135" y="178" text-anchor="middle">Launcher</text>
-  <text class="sans small" x="135" y="194" text-anchor="middle">starts processes</text>
+  <text class="sans label" x="135" y="178" text-anchor="middle">启动器</text>
+  <text class="sans small" x="135" y="194" text-anchor="middle">启动进程</text>
   <rect class="sand" x="299" y="159" width="162" height="44" rx="9"/>
-  <text class="sans label" x="380" y="178" text-anchor="middle">Rendezvous / store</text>
-  <text class="sans small" x="380" y="194" text-anchor="middle">peer discovery + init</text>
+  <text class="sans label" x="380" y="178" text-anchor="middle">Rendezvous / 存储</text>
+  <text class="sans small" x="380" y="194" text-anchor="middle">发现对端 + 初始化</text>
   <rect class="green" x="544" y="159" width="162" height="44" rx="9"/>
   <text class="sans label" x="625" y="178" text-anchor="middle">WORLD_SIZE = 8</text>
-  <text class="sans small" x="625" y="194" text-anchor="middle">global ranks 0…7</text>
+  <text class="sans small" x="625" y="194" text-anchor="middle">全局 ranks 0…7</text>
   <path class="line" d="M216 181 H299" marker-end="url(#arrow)"/>
   <path class="line" d="M461 181 H544" marker-end="url(#arrow)"/>
 
-  <text class="mono sec" x="34" y="253">2 · LOCAL RANK REPEATS; GLOBAL RANK DOES NOT</text>
+  <text class="mono sec" x="34" y="253">2 · 本地 RANK 会重复；全局 RANK 不会</text>
   <rect class="green" x="34" y="270" width="337" height="278" rx="14"/>
   <rect class="blue" x="389" y="270" width="337" height="278" rx="14"/>
-  <text class="mono label" x="52" y="296" fill="#255b46">NODE A · global 0–3</text>
-  <text class="mono label" x="407" y="296" fill="#315f82">NODE B · global 4–7</text>
+  <text class="mono label" x="52" y="296" fill="#255b46">节点 A · 全局 0–3</text>
+  <text class="mono label" x="407" y="296" fill="#315f82">节点 B · 全局 4–7</text>
 
   <g class="sans">
-    <text class="small" x="52" y="321">global rank</text><text class="small" x="143" y="321">local rank</text><text class="small" x="233" y="321">local GPU</text>
-    <text class="small" x="407" y="321">global rank</text><text class="small" x="498" y="321">local rank</text><text class="small" x="588" y="321">local GPU</text>
+    <text class="small" x="52" y="321">全局 rank</text><text class="small" x="143" y="321">本地 rank</text><text class="small" x="233" y="321">本地 GPU</text>
+    <text class="small" x="407" y="321">全局 rank</text><text class="small" x="498" y="321">本地 rank</text><text class="small" x="588" y="321">本地 GPU</text>
   </g>
 
   <g class="mono">
@@ -69,12 +69,12 @@
       <rect class="box" y="138" width="301" height="38" rx="8"/><text class="rank" x="41" y="162" text-anchor="middle">7</text><text class="rank" x="132" y="162" text-anchor="middle">3</text><text class="rank" x="229" y="162" text-anchor="middle">cuda:3</text>
     </g>
   </g>
-  <text class="sans small" x="52" y="528">local 0…3 repeat on every node</text>
-  <text class="sans small" x="407" y="528">global ranks remain unique across the job</text>
+  <text class="sans small" x="52" y="528">每个节点都会重复本地 0…3</text>
+  <text class="sans small" x="407" y="528">全局 ranks remain unique across the job</text>
 
-  <text class="mono sec" x="34" y="577">3 · PROCESS GROUPS SELECT GLOBAL RANK SUBSETS</text>
+  <text class="mono sec" x="34" y="577">3 · 进程组选择全局 RANK 子集</text>
   <rect class="panel" x="34" y="594" width="692" height="126" rx="14"/>
-  <text class="mono label" x="53" y="625">GLOBAL</text>
+  <text class="mono label" x="53" y="625">全局</text>
   <g class="mono chip" transform="translate(126 608)">
     <g><rect class="muted" width="43" height="29" rx="7"/><text x="21.5" y="19" text-anchor="middle">0</text></g>
     <g transform="translate(48)"><rect class="muted" width="43" height="29" rx="7"/><text x="21.5" y="19" text-anchor="middle">1</text></g>
@@ -87,8 +87,8 @@
   </g>
   <text class="mono label" x="53" y="679" fill="#255b46">TP</text>
   <g class="mono chip" transform="translate(126 662)"><rect class="tp" width="43" height="29" rx="7"/><text x="21.5" y="19" text-anchor="middle">0</text><rect class="tp" x="48" width="43" height="29" rx="7"/><text x="69.5" y="19" text-anchor="middle">1</text></g>
-  <text class="sans small" x="229" y="681">example group [0,1]</text>
+  <text class="sans small" x="229" y="681">示例进程组 [0,1]</text>
   <text class="mono label" x="405" y="679" fill="#315f82">DP</text>
   <g class="mono chip" transform="translate(449 662)"><rect class="dp" width="43" height="29" rx="7"/><text x="21.5" y="19" text-anchor="middle">0</text><rect class="dp" x="48" width="43" height="29" rx="7"/><text x="69.5" y="19" text-anchor="middle">2</text><rect class="dp" x="96" width="43" height="29" rx="7"/><text x="117.5" y="19" text-anchor="middle">4</text><rect class="dp" x="144" width="43" height="29" rx="7"/><text x="165.5" y="19" text-anchor="middle">6</text></g>
-  <text class="sans small" x="34" y="742">Illustrative groups only; real Megatron rank layout depends on parallel sizes and rank ordering.</text>
+  <text class="sans small" x="34" y="742">这里只是示意；Megatron 的真实 rank 布局取决于各并行维度大小与 rank 排序。</text>
 </svg>
