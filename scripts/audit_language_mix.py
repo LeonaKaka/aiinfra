@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Audit learner-visible prose for avoidable English engineering vocabulary.
 
-This is intentionally warning-only while the site is being migrated module by
-module. Proper names, source identifiers and code stay English; ordinary prose
-should prefer Chinese. Once the backlog reaches zero, this audit can become a
-hard CI guard without changing the policy.
+Proper names, source identifiers and code stay English; ordinary teaching prose
+should prefer Chinese. Glossary term cards are an explicit bilingual lookup
+surface and are excluded, while their navigation and explanatory framing remain
+audited. Any discouraged bare engineering term outside these intentional
+surfaces is a CI failure.
 """
 from __future__ import annotations
 
@@ -100,6 +101,8 @@ def visible_prose(path: Path) -> str:
     # Glossary/source tables intentionally keep English lookup anchors; prose/UI
     # around them is the readability target.
     body = re.sub(r"<table\\b.*?</table>", " ", body, flags=re.S | re.I)
+    if path == ROOT / "glossary" / "index.html":
+        body = re.sub(r\'<div class="term">.*?</div>\', " ", body, flags=re.S | re.I)
     chunks = []
     for item in TEXT_TAG_RE.finditer(body):
         text = re.sub(r"<[^>]+>", " ", item.group(1))
@@ -125,14 +128,14 @@ def main() -> int:
         return 0
 
     total = sum(sum(terms.values()) for terms in hits.values())
-    print(f"Language-mix audit: {total} occurrence(s) across {len(hits)} page(s) (warning only during migration).")
+    print(f"Language-mix audit FAILED: {total} occurrence(s) across {len(hits)} page(s).")
     for rel, terms in hits.items():
         summary = ", ".join(
             f"{term}×{count}→{CHINESE_DEFAULT[term]}"
             for term, count in sorted(terms.items())
         )
         print(f"{rel}: {summary}")
-    return 0
+    return 1
 
 
 if __name__ == "__main__":
