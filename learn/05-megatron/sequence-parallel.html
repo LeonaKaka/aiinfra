@@ -36,21 +36,21 @@
       <h1>序列并行（SP）：TP 已经切了权重，为什么激活值还会重复？</h1>
       <p class="dek">上一课的张量并行把大型 Linear 切开了，但 Transformer 里并不是所有操作都天然沿隐藏维/输出维切分。LayerNorm、dropout、残差连接等区域如果仍让每个张量并行（TP）rank 都持有整段序列的激活值，就会留下明显重复。序列并行的核心就是：在这些区域里，把序列维也分给各个 TP rank。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 TP 不等于“所有激活值自动除以 TP 并行度”。</li><li>理解序列并行主要在 TP 进程组内沿序列维分片部分激活值。</li><li>看懂为什么一个 TP all-reduce 可以从概念上拆成 reduce-scatter + all-gather。</li><li>知道 LayerNorm / dropout / 残差连接为什么适合在序列分片上本地计算。</li><li>区分序列并行与上下文并行：两者都切序列，但解决的问题不同。</li><li>打开 Megatron <code>tensor_parallel.mappings</code> 时能认出 gather / reduce-scatter 相关接口。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 TP 不等于“所有activations 自动除以 TP 并行度”。</li><li>理解序列并行主要在 TP group 内沿 sequence dimension shard 部分 activations。</li><li>看懂为什么一个 TP all-reduce 可以从概念上拆成 reduce-scatter + all-gather。</li><li>知道 LayerNorm / dropout / 残差连接为什么适合在序列分片上本地计算。</li><li>区分序列并行与上下文并行：两者都切序列，但解决的问题不同。</li><li>打开 Megatron <code>tensor_parallel.mappings</code> 时能认出 gather / reduce-scatter 相关接口。</li></ul></div>
 
       <section class="article-section" id="leftover">
         <div class="section-no">01 · TP 之后还剩什么显存问题</div>
         <h2>TP 把 Linear 切了，不代表整个 Transformer block 的每一块数据都切了。</h2>
-        <p>假设 TP=4。上一课里，FC1 / 查询-键-值（QKV）等权重和输出特征可以分到四个各个 rank。但一些操作仍然需要处理 hidden size 为 H 的完整 token vectors，例如 LayerNorm、residual connection、dropout。</p>
-        <div class="replica-activation"><div><small>TP RANK 0</small><b>same 激活值</b><code>[S,B,H]</code></div><div><small>TP RANK 1</small><b>same 激活值</b><code>[S,B,H]</code></div><div><small>TP RANK 2</small><b>same 激活值</b><code>[S,B,H]</code></div><div><small>TP RANK 3</small><b>same 激活值</b><code>[S,B,H]</code></div></div>
-        <p>如果这整块激活值在四张卡都复制一份，那么 TP 虽然省了参数和部分通用矩阵乘法（GEMM），但这些“非 TP 区域”的激活值显存并没有跟着降到四分之一。</p>
-        <div class="concept-note"><p><strong>序列并行的出发点不是再切一遍模型权重。</strong>它主要是在 TP 进程组内减少这些重复激活值。</p></div>
+        <p>假设 TP=4。上一课里，FC1 / QKV等权重和输出特征可以分到四个 TP ranks。但一些操作仍然需要处理 hidden size 为 H 的完整 token vectors，例如 LayerNorm、residual connection、dropout。</p>
+        <div class="replica-activation"><div><small>TP RANK 0</small><b>same activation</b><code>[S,B,H]</code></div><div><small>TP RANK 1</small><b>same activation</b><code>[S,B,H]</code></div><div><small>TP RANK 2</small><b>same activation</b><code>[S,B,H]</code></div><div><small>TP RANK 3</small><b>same activation</b><code>[S,B,H]</code></div></div>
+        <p>如果这整块激活值在四张卡都复制一份，那么 TP 虽然省了参数和部分通用矩阵乘法（GEMM），但这些“非 TP 区域”的 activation memory并没有跟着降到四分之一。</p>
+        <div class="concept-note"><p><strong>序列并行的出发点不是再切一遍模型权重。</strong>它主要是在 TP group内减少这些 replicated activations。</p></div>
       </section>
 
       <section class="article-section" id="shard">
-        <div class="section-no">02 · 沿序列维分片</div>
+        <div class="section-no">02 · 沿 sequence dimension shard</div>
         <h2>既然每个 token 的 LayerNorm 可以独立做，那就让每张 GPU 只负责一段 token。</h2>
-        <p>设序列 length <code>S=4096</code>、TP=4。序列并行可以让四个 TP 各个 rank 分别保存大约四分之一序列：</p>
+        <p>设sequence length <code>S=4096</code>、TP=4。序列并行可以让四个 TP 各个 rank 分别保存大约四分之一 sequence：</p>
         <div class="sequence-strip"><div class="seq-shard"><small>RANK 0</small><b>token 0–1023</b><code>[S/4,B,H]</code></div><div class="seq-shard"><small>RANK 1</small><b>token 1024–2047</b><code>[S/4,B,H]</code></div><div class="seq-shard"><small>RANK 2</small><b>token 2048–3071</b><code>[S/4,B,H]</code></div><div class="seq-shard"><small>RANK 3</small><b>token 3072–4095</b><code>[S/4,B,H]</code></div></div>
         <p>LayerNorm 是逐 token 处理 hidden dimension；dropout 和 residual 也可以对本地序列 chunk 做。因此这些操作没必要每张卡都持有全部 S 个 token。</p>
         <div class="memory-ratio"><div><small>WITHOUT 序列并行（SP）</small><b>~ S × B × H</b><span>每个 TP rank 都保留完整序列激活值。</span></div><i>→</i><div><small>WITH SP · TP=p</small><b>~ (S/p) × B × H</b><span>这类可序列-分片的激活值在每个 rank 上约缩小到 1/p。</span></div></div>
@@ -59,9 +59,9 @@
 
       <section class="article-section" id="communication">
         <div class="section-no">03 · 什么时候需要恢复完整序列？</div>
-        <h2>Sequence 分片只在合适的区域长期存在；进入 TP 计算 window 时，完整序列视图会短暂回来。</h2>
-        <p>考虑 TP=2 的一段典型流程。SP 区域里每个 rank 只有 <code>[S/2,B,H]</code>。进入需要完整序列输入的 TP Linear/Attention 路径时，先 all-gather；本地张量-parallel 计算完成后，Row Parallel 的局部输出再通过 reduce-scatter 同时做 SUM 和序列 re分片。</p>
-        <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>SEQUENCE PARALLEL · TP GROUP OF 2</span><span>全收集（AG） → TP 计算 → 归约分散（RS）</span></div>
+        <h2>Sequence 分片只在合适的区域长期存在；进入 TP 计算 window 时，full-sequence view会短暂回来。</h2>
+        <p>考虑 TP=2 的一段典型流程。SP 区域里每个 rank 只有 <code>[S/2,B,H]</code>。进入需要完整序列输入的 TP Linear/Attention 路径时，先 all-gather；本地张量-parallel 计算完成后，Row Parallel 的局部输出再通过 reduce-scatter 同时做 SUM 和sequence re-shard。</p>
+        <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>SEQUENCE PARALLEL · TP GROUP OF 2</span><span>all-gather (AG) → TP compute → reduce-scatter (RS)</span></div>
         <svg class="megatron-core-svg" viewBox="0 0 960 700" role="img" aria-label="Sequence Parallel 两个 TP rank 的生命周期：两边开始只保存各自 S/2 的 activation，all-gather 后各 rank 在 TP compute window 中临时看到完整 sequence，随后 Row Parallel partial outputs 经过 reduce-scatter 做求和并重新切回 S/2，LayerNorm dropout residual 继续在本地 shard 上执行。">
         <defs><marker id="sp-g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#255b46"/></marker><marker id="sp-b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#315f82"/></marker><marker id="sp-p" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7d5d6f"/></marker></defs>
         <text x="24" y="30" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7a7f78" letter-spacing="1">ACTIVATION LIFETIME INSIDE ONE TP GROUP</text><line x1="24" y1="42" x2="936" y2="42" stroke="#ddded7"/>
@@ -74,7 +74,7 @@
         <rect x="350" y="526" width="260" height="58" rx="10" fill="#f2edf0" stroke="#d4c7cf"/><text x="480" y="548" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" font-weight="700" fill="#7d5d6f">REDUCE-SCATTER · SUM + SPLIT</text><text x="480" y="568" text-anchor="middle" font-size="10.5" fill="#6f6170">mathematical reduction + sequence partition</text><path d="M252 468 V510 H420 V526" fill="none" stroke="#255b46" stroke-width="1.5" marker-end="url(#sp-g)"/><path d="M708 468 V510 H540 V526" fill="none" stroke="#315f82" stroke-width="1.5" marker-end="url(#sp-b)"/>
         <rect x="72" y="614" width="360" height="58" rx="11" fill="#eef4ef" stroke="#c1d4c6"/><text x="252" y="637" text-anchor="middle" font-size="11.5" font-weight="700" fill="#254b39">LN · dropout · residual · local tokens</text><text x="252" y="656" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#647169">rank 0 keeps [S/2,B,H]</text><rect x="528" y="614" width="360" height="58" rx="11" fill="#eaf1f6" stroke="#b8cad6"/><text x="708" y="637" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2d526c">LN · dropout · residual · local tokens</text><text x="708" y="656" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#65737d">rank 1 keeps [S/2,B,H]</text><path d="M420 584 V598 H252 V614" fill="none" stroke="#255b46" stroke-width="1.5" marker-end="url(#sp-g)"/><path d="M540 584 V598 H708 V614" fill="none" stroke="#315f82" stroke-width="1.5" marker-end="url(#sp-b)"/>
         </svg></div>
-        <div class="megatron-core-takeaway"><strong>SP 的关键不是“永久把序列切开”。</strong>它把激活值的大部分生命周期留在 <code>[S/p,B,H]</code>；只有进入需要完整序列视图的 TP 计算 window 时才 gather，然后在 Row Parallel 边界用 reduce-scatter 重新回到序列-sharded 状态。</div>
+        <div class="megatron-core-takeaway"><strong>SP 的关键不是“永久把序列切开”。</strong>它把激活值的大部分生命周期留在 <code>[S/p,B,H]</code>；只有进入需要full-sequence view的 TP 计算 window 时才 gather，然后在 Row Parallel 边界用 reduce-scatter 重新回到序列-sharded 状态。</div>
         <p>这也解释了为什么 SP 不只是显存技巧：它重新安排了 TP 集合通信的边界。上一课 Row Parallel 的基础心智模型是 all-reduce；开启 SP 后，这个边界可以直接落成 reduce-scatter，既完成 SUM，又避免每张卡长期物化完整序列输出。</p>
       </section>
 
@@ -95,22 +95,22 @@
         <div class="mini-code-map"><div class="mini-code-row"><code>gather_from_sequence_parallel_region</code><span>Forward: all-gather；Backward: 默认 <code>tensor_parallel_output_grad=True</code> 时 reduce-scatter；若为 false，则只按序列 split 梯度。</span></div><div class="mini-code-row"><code>reduce_scatter_to_sequence_parallel_region</code><span>Forward: reduce-scatter；Backward: all-gather。</span></div><div class="mini-code-row"><code>scatter_to_sequence_parallel_region</code><span>Forward: split；Backward: all-gather。</span></div></div>
         <p><strong>为什么会有这个分支？</strong>如果 gather 后进入 TP computation，不同 TP 分片会对输入梯度产生需要相加的贡献，所以 backward 要 reduce-scatter；如果 gather 后的 computation 是 duplicated，每个 rank 已经在做同一份计算，就不该再多做一次 reduction，只需要把梯度切回各自的序列分片。</p>
         <p>这就是为什么读 Megatron 时不能只搜索 <code>dist.all_gather</code> 然后数调用次数。很多通信被包装在 autograd mapping 里，forward 和 backward 是成对设计的，而且具体 backward 语义还可能由调用上下文/flag 决定。</p>
-        <div class="source-note">源码入口：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">megatron/core/张量_parallel/mappings.py</a>。当前 <code>_GatherFromSequenceParallelRegion.backward()</code> 会检查 <code>tensor_parallel_output_grad</code>，再选择 reduce-scatter 或 plain split。</div>
+        <div class="source-note">源码入口：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">megatron/core/tensor_parallel/mappings.py</a>。当前 <code>_GatherFromSequenceParallelRegion.backward()</code> 会检查 <code>tensor_parallel_output_grad</code>，再选择 reduce-scatter 或 plain split。</div>
       </section>
 
       <section class="article-section" id="layers">
         <div class="section-no">06 · 真实 Linear 实现怎样感知 SP</div>
         <h2>序列并行不是外面套个 split 就完了，Linear 的 backward 也要配合。</h2>
         <p>Megatron Core 当前 <code>LinearWithGradAccumulationAndAsyncCommunication</code> 文档里明确区分了普通 TP 与 Sequence Parallel：启用 Sequence Parallel 时，forward input 会 all-gather，而 backward 的 input gradient 会 reduce-scatter；同时还能与 weight-gradient compute做async overlap。</p>
-        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>FORWARD</small><b>activation all-gather</b><span>从sequence shard 恢复 TP Linear 所需输入。</span></div><div class="parallel-axis dp"><small>BACKWARD</small><b>dgrad reduce-scatter</b><span>把 input-gradient reduction 与序列分片一起完成。</span></div><div class="parallel-axis pp"><small>OPTIMIZATION</small><b>communication overlap</b><span>真实 Megatron 会尝试把collective 与独立 GEMM overlap，而不是串行等待。</span></div></div>
-        <div class="source-note">官方应用程序编程接口（API）参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html">core.张量_parallel.层</a>。其中序列_parallel 参数的说明直接写明 forward all-gather 与 backward reduce-scatter。</div>
+        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>FORWARD</small><b>activation all-gather</b><span>从sequence shard 恢复 TP Linear 所需输入。</span></div><div class="parallel-axis dp"><small>BACKWARD</small><b>dgrad reduce-scatter</b><span>把 input-gradient reduction 与序列分片一起完成。</span></div><div class="parallel-axis pp"><small>OPTIMIZATION</small><b>communication overlap</b><span>真实 Megatron 会尝试把 collective 与独立 GEMM overlap，而不是串行等待。</span></div></div>
+        <div class="source-note">官方应用程序编程接口（API）参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html">core.tensor_parallel.layers</a>。其中sequence_parallel 参数的说明直接写明 forward all-gather 与 backward reduce-scatter。</div>
       </section>
 
       <section class="article-section" id="sp-vs-cp">
         <div class="section-no">07 · 不要把 SP 和 CP 混淆</div>
         <h2>两者都“切序列”，但它们切到 Transformer 的不同深度。</h2>
-        <div class="sp-vs-cp"><div><small>SEQUENCE PARALLEL · SP</small><b>减少 TP 区域之间的激活值副本tion</b><span>主要让 LayerNorm、dropout、残差连接等部分只处理本地序列分片；进入 TP Linear/attention 计算时会通过 gather 等方式满足数据需求。SP 通常依附于 TP 进程组。</span></div><div><small>CONTEXT PARALLEL · 上下文并行（CP）</small><b>让 Attention 本身也跨序列分片s 执行</b><span>用于长上下文，把序列长度真正分到 CP 各个 rank，并交换 K/V 等必要上下文；它直接改变 attention 的数据分布与通信。</span></div></div>
-        <p>所以 SP 不是“长上下文 attention 的最终方案”。它能省一部分激活值内存，但不会仅靠自己把 attention 的长序列问题彻底拆掉。后面的 CP 章节会专门处理这个问题。</p>
+        <div class="sp-vs-cp"><div><small>SEQUENCE PARALLEL · SP</small><b>减少 TP 区域之间的 activation replication</b><span>主要让 LayerNorm、dropout、残差连接等部分只处理local sequence shard；进入 TP Linear/attention 计算时会通过 gather 等方式满足数据需求。SP 通常依附于 TP group。</span></div><div><small>CONTEXT PARALLEL · Context Parallel (CP)</small><b>让 Attention 本身也跨sequence shards 执行</b><span>用于长上下文，把序列长度真正分到 CP 各个 rank，并交换 K/V 等必要上下文；它直接改变 Attention 的 data distribution 与 communication。</span></div></div>
+        <p>所以 SP 不是“长上下文 attention 的最终方案”。它能省一部分activation memory，但不会仅靠自己把 attention 的长序列问题彻底拆掉。后面的 CP 章节会专门处理这个问题。</p>
       </section>
 
       <section class="article-section" id="flag">
@@ -122,14 +122,14 @@
 <span class="comment"># 直觉：</span>
 <span class="comment"># 1) weights / TP compute 沿 tensor dimensions shard</span>
 <span class="comment"># 2) selected activations between TP regions 沿 sequence shard</span></code></pre></div>
-        <p>NVIDIA 当前 Parallelism Guide 直接建议在使用 TP 时启用序列并行，并把它的收益概括为：通过在 LayerNorm 与 Dropout 等位置对序列 dimension 分片，减少激活值内存。</p>
+        <p>NVIDIA 当前 Parallelism Guide 直接建议在使用 TP 时启用序列并行，并把它的收益概括为：通过在 LayerNorm 与 Dropout 等位置对 sequence dimension 做 shard，减少activation memory。</p>
         <div class="source-note">官方指南：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html">Parallelism Strategies Guide</a>，其中序列并行部分建议在 TP 下启用 <code>--sequence-parallel</code>。</div>
       </section>
 
       <section class="article-section" id="mental">
         <div class="section-no">09 · 最后保留的心智模型</div>
         <h2>TP 决定“hidden/features 怎么切”，SP 决定“这些间隙里的 token 怎么分着放”。</h2>
-        <div class="cost-panel"><div><small>TP REGION</small><b>大 Linear / Attention 内部：按张量 dimensions 分工，做 local GEMM。</b></div><div><small>TRANSITION</small><b>reduce-scatter：完成 reduction，同时把序列分回各 rank。</b></div><div><small>SP REGION</small><b>LayerNorm / dropout / 残差连接：每个 rank 只处理自己的 S/p token。</b></div><div><small>NEXT TP REGION</small><b>all-gather：需要时再恢复完整序列视图。</b></div></div>
+        <div class="cost-panel"><div><small>TP REGION</small><b>大 Linear / Attention 内部：按张量 dimensions 分工，做 local GEMM。</b></div><div><small>TRANSITION</small><b>reduce-scatter：完成 reduction，同时把序列分回各 rank。</b></div><div><small>SP REGION</small><b>LayerNorm / dropout / 残差连接：每个 rank 只处理自己的 S/p token。</b></div><div><small>NEXT TP REGION</small><b>all-gather：需要时再恢复full-sequence view。</b></div></div>
         <p>如果你把这四步画得出来，后面看到 <code>sequence_parallel=True</code>、<code>gather_from_sequence_parallel_region</code>、<code>reduce_scatter_to_sequence_parallel_region</code> 就不会再只是认单词。</p>
       </section>
 
