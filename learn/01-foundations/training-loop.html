@@ -175,7 +175,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           <div><small>optimizer</small><b>除了参数和梯度，还可能维护额外优化器状态，占据大量显存。</b></div>
           <div><small>DISTRIBUTED</small><b>多张图形处理器（GPU）各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
         </div>
-        <p>这就是为什么我们先学训练循环再学 AI Infra。以后遇到 activation checkpointing、gradient accumulation、分布式 optimizer、Data Parallel 等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
+        <p>这就是为什么我们先学训练循环再学 AI Infra。以后遇到 activation checkpointing（激活值检查点：不保存全部 activation，而在 backward 时重算以节省显存）、gradient accumulation、分布式 optimizer、Data Parallel 等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
       </section>
 
       <section class="article-section" id="distributed">
@@ -190,7 +190,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           </div>
         </div>
         <p>如果两张GPU都拥有同一份模型参数，却各自只看一半数据，那么反向传播后会得到不同梯度。为了让两份模型继续保持一致，更新参数前通常要把各卡梯度聚合成一致的结果。</p>
-        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 Data Parallel（数据并行：不同 replica 处理不同数据，再同步训练状态）为什么需要梯度同步。具体用什么 collective，后面到 Distributed 再学。</p></div>
+        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 Data Parallel（数据并行：不同模型副本处理不同数据，再同步训练状态）为什么需要梯度同步。具体用什么集合通信操作，后面到 Distributed 再学。</p></div>
       </section>
 
       <section class="checkpoint" id="checkpoint">
@@ -204,7 +204,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         <div class="quiz-item">
           <div class="quiz-q">2. 为什么普通训练循环里要调用 <code>zero_grad()</code>？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为PyTorch默认会累加梯度。如果不清零，本轮梯度会叠到之前的 <code>.grad</code> 上。梯度累积是有意利用这个机制，但普通 training step 通常需要清零。</div>
+          <div class="quiz-a">因为PyTorch默认会累加梯度。如果不清零，本轮梯度会叠到之前的 <code>.grad</code> 上。梯度累积是有意利用这个机制，但普通训练步骤通常需要清零。</div>
         </div>
         <div class="quiz-item">
           <div class="quiz-q">3. 数据并行中，两张GPU各算出自己的梯度以后，为什么通常不能各自直接更新？</div>
