@@ -19,47 +19,47 @@
   <a class="side-home" href="./index.html">← Hands-on Labs</a>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
     <a class="lesson-link lab-side-link" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
-    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
-    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
-    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
-    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP 反向传播</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + 梯度 Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed 优化器</a>
+    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed 异步 Reduce-Scatter</a>
     <a class="lesson-link lab-side-link" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
-    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready 重叠</a>
     <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
-    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini 专家 Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
     <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
     <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
     <a class="lesson-link lab-side-link current infer-current" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
-    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Layer-wise KV Streaming</span></div>
     <div class="lab-kicker">LAB B4 · LAYER-BY-LAYER PIPELINE</div>
     <h1>不要等所有层 KV 都搬完。<br />第 L 层只需要在“用到它之前” ready。</h1>
-    <p class="dek">B3 已经把 transfer 拆成 launch 与 wait，但仍然把整个 KV 当一个阶段。真实模型有几十层，每层都有自己的 KV。当前 vLLM <code>KVConnectorBase_V1</code> 明确提供 <code>start_load_kv()</code> 与 <code>wait_for_layer_load(layer_name)</code>，并说明后者用于 layer-by-layer pipelining。这个实验把那条依赖关系单独做出来。</p>
+    <p class="dek">B3 已经把 transfer 拆成 启动 与 等待，但仍然把整个 KV 当一个阶段。真实模型有几十层，每层都有自己的 KV。当前 vLLM <code>KVConnectorBase_V1</code> 明确提供 <code>start_load_kv()</code> 与 <code>wait_for_layer_load(layer_name)</code>，并说明后者用于 layer-by-layer pipelining。这个实验把那条依赖关系单独做出来。</p>
 
     <section class="lab-section" id="pipeline"><div class="lab-kicker">01 · PER-LAYER DEPENDENCY</div><h2>Prefill 生产得越早，Decode 就越不需要等“整车货物”。</h2>
-      <div class="stage-flow"><div class="stage-card train"><small>PREFILL</small><b>compute KV[L]</b><span>第 L 层 prompt KV 一算完，立即 isend；然后 Prefill 继续算 L+1。</span></div><div class="stage-card comm"><small>TRANSFER</small><b>KV[L] in flight</b><span>后续层的 Prefill compute 与前一层 KV 传输存在并行机会。</span></div><div class="stage-card infer"><small>DECODE</small><b>wait only for layer L</b><span>真正进入 attention layer L 前，才要求 KV[L] 已经 ready。</span></div></div>
-      <p>依赖从“Decode 必须等所有 KV 完成”变成“Decode layer L 只依赖 KV layer L”。这给系统调度出了更多 overlap 空间。</p>
+      <div class="stage-flow"><div class="stage-card train"><small>PREFILL</small><b>compute KV[L]</b><span>第 L 层 prompt KV 一算完，立即 isend；然后 Prefill 继续算 L+1。</span></div><div class="stage-card comm"><small>TRANSFER</small><b>KV[L] in flight</b><span>后续层的 Prefill compute 与前一层 KV 传输存在并行机会。</span></div><div class="stage-card infer"><small>DECODE</small><b>等待 only for layer L</b><span>真正进入 attention layer L 前，才要求 KV[L] 已经 ready。</span></div></div>
+      <p>依赖从“Decode 必须等所有 KV 完成”变成“Decode layer L 只依赖 KV layer L”。这给系统调度出了更多 重叠 空间。</p>
     </section>
 
     <section class="lab-section" id="timeline"><div class="lab-kicker">02 · TWO PIPELINES</div><h2>你要同时想两条流水线：模型层与网络传输。</h2>
-      <div class="command"><div class="command-head"><span>CONCEPTUAL TIMELINE</span><span>P / D</span></div><pre>Prefill:  compute L0 ─ send L0 ─ compute L1 ─ send L1 ─ ...
+      <div class="command"><div class="command-head"><span>CONCEPTUAL 时间线</span><span>P / D</span></div><pre>Prefill:  compute L0 ─ send L0 ─ compute L1 ─ send L1 ─ ...
                          ╲             ╲
 Network:                  transfer L0   transfer L1   ...
                              ╲             ╲
 Decode:                  wait L0 → use L0 → wait L1 → use L1 → ...</pre></div>
-      <p>如果 Decode 到达 L1 时它已经在后台传完，<code>wait_for_layer_load("L1")</code> 可能很短；如果网络跟不上，wait 会直接暴露在关键路径上。性能问题因此会变成“哪一层、哪一段 transfer 没被隐藏”。</p>
+      <p>如果 Decode 到达 L1 时它已经在后台传完，<code>wait_for_layer_load("L1")</code> 可能很短；如果网络跟不上，等待 会直接暴露在关键路径上。性能问题因此会变成“哪一层、哪一段 transfer 没被隐藏”。</p>
     </section>
 
     <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>四层 KV 流式到达，最终 Decode 与“所有 KV 本地已知”的 reference 对齐。</h2>
@@ -71,21 +71,21 @@ decode behavior         : wait(layer L) → consume → next layer
 max final decode error  : 1.490e-07
 PASS</pre></div>
       <a class="code-link" href="./code/mini_layerwise_kv_stream.py"><div><small>FULL SOURCE</small><b>打开 mini_layerwise_kv_stream.py</b></div><span>→</span></a>
-      <div class="truth-note"><b>这里的 layer pipeline 是教学抽象，不等于 vLLM/NIXL 的实际线程、stream 与 transport 结构。</b><p>真正系统还要处理 paged KV layout、request batching、每层 cache group、CUDA stream、registered memory、peer metadata、失败与 preemption。我们这里只验证“per-layer ready dependency”这个最核心的契约。</p></div>
+      <div class="truth-note"><b>这里的 layer pipeline 是教学抽象，不等于 vLLM/NIXL 的实际线程、stream 与 transport 结构。</b><p>真正系统还要处理 paged KV layout、请求 batching、每层 cache 进程组、CUDA stream、registered memory、peer 元数据、失败与 抢占。我们这里只验证“per-layer ready dependency”这个最核心的契约。</p></div>
     </section>
 
     <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO VLLM</div><h2>现在可以直接带着实验里的两个动作去读 Connector base。</h2>
       <div class="source-bridge"><div><small>LAB</small><b>post all receives</b><code>irecv KV[L] → wait immediately before consume</code></div><span>maps to →</span><div><small>VLLM</small><b>KVConnectorBase_V1</b><code>start_load_kv() → wait_for_layer_load(layer_name)</code></div></div>
-      <p>同一文件里的 <code>save_kv_layer()</code> 也允许在模型执行过程中启动 KV 保存，而 <code>wait_for_save()</code> 在 forward 结束前保证所有 save 完成。读这些 API 时，不要只记函数名，要把它们当作<strong>“什么时候允许继续跑模型”的依赖边界</strong>。</p>
+      <p>同一文件里的 <code>save_kv_layer()</code> 也允许在模型执行过程中启动 KV 保存，而 <code>wait_for_save()</code> 在 前向计算 结束前保证所有 save 完成。读这些 API 时，不要只记函数名，要把它们当作<strong>“什么时候允许继续跑模型”的依赖边界</strong>。</p>
     </section>
 
-    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Inference 线下一步才真正进入 NIXL 的 memory registration / handshake。</h2>
-      <div class="check-list"><div>① 为什么远端不能只收到“一个 Python tensor”？</div><div>② memory region 为什么要预先 registration？</div><div>③ peer/agent metadata 里需要交换什么地址与能力信息？</div><div>④ transfer handle、completion 与 request lifetime 如何避免 KV 被提前复用或覆盖？</div></div>
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Inference 线下一步才真正进入 NIXL 的 内存注册 / handshake。</h2>
+      <div class="check-list"><div>① 为什么远端不能只收到“一个 Python tensor”？</div><div>② memory region 为什么要预先 registration？</div><div>③ peer/agent 元数据 里需要交换什么地址与能力信息？</div><div>④ transfer 句柄、完成确认 与 请求 生命周期 如何避免 KV 被提前复用或覆盖？</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-async-kv-transfer.html">← Lab B3 · Async KV Transfer</a><a href="./mini-kv-handshake-lifetime.html">Lab B5 · Handshake + Lifetime →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-async-kv-transfer.html">← Lab B3 · 异步 KV Transfer</a><a href="./mini-kv-handshake-lifetime.html">Lab B5 · Handshake + 生命周期 →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#pipeline">Prefill 生产得越早，Decode 就越不需要等“整车货物”。</a><a href="#timeline">你要同时想两条流水线：模型层与网络传输。</a><a href="#run">四层 KV 流式到达，最终 Decode 与“所有 KV 本地已知”的 reference 对齐。</a><a href="#source">现在可以直接带着实验里的两个动作去读 Connector base。</a><a href="#next">Inference 线下一步才真正进入 NIXL 的 memory registration / handshake。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#pipeline">Prefill 生产得越早，Decode 就越不需要等“整车货物”。</a><a href="#timeline">你要同时想两条流水线：模型层与网络传输。</a><a href="#run">四层 KV 流式到达，最终 Decode 与“所有 KV 本地已知”的 reference 对齐。</a><a href="#source">现在可以直接带着实验里的两个动作去读 Connector base。</a><a href="#next">Inference 线下一步才真正进入 NIXL 的 内存注册 / handshake。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
