@@ -10,50 +10,50 @@
  </style>
 </defs>
 <rect width="760" height="720" fill="#fff"/>
-<text class="mono k" x="28" y="34">CONTEXT PARALLEL · P2P RING · CP=4</text>
-<text class="sans title" x="28" y="68">Q stays local; the KV context rotates through each rank</text>
-<text class="sans sub" x="28" y="91">Logical KV movement is the invariant; useful token pairs still depend on masks</text><text class="sans sub" x="28" y="108">and the current CP token layout.</text>
+<text class="mono k" x="28" y="34">上下文并行 · P2P 环 · CP=4</text>
+<text class="sans title" x="28" y="68">Q 留在本地，KV 上下文沿各 rank 轮转</text>
+<text class="sans sub" x="28" y="91">KV 的逻辑移动是核心；真正有效的 token 配对仍受掩码影响</text><text class="sans sub" x="28" y="108">也受当前 CP 的 token 布局影响。</text>
 <rect class="panel" x="28" y="132" width="704" height="376" rx="16"/>
-<text class="mono k" x="50" y="157">ONE LOGICAL RING ROUND</text>
+<text class="mono k" x="50" y="157">一轮逻辑环通信</text>
 <g transform="translate(52 178)">
  <rect class="green" width="216" height="112" rx="13"/>
- <text class="mono label" x="18" y="26" fill="#255b46">CP RANK 0</text><text class="sans label" x="18" y="50">Q₀ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
- <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₀</text>
+ <text class="mono label" x="18" y="26" fill="#255b46">CP RANK 0</text><text class="sans label" x="18" y="50">Q₀ 留在本地</text><text class="sans body" x="18" y="70">Q 分片不搬走</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">当前 KV</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">累积 A₀</text>
 </g>
 <g transform="translate(492 178)">
  <rect class="blue" width="216" height="112" rx="13"/>
- <text class="mono label" x="18" y="26" fill="#315f82">CP RANK 1</text><text class="sans label" x="18" y="50">Q₁ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
- <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₁</text>
+ <text class="mono label" x="18" y="26" fill="#315f82">CP RANK 1</text><text class="sans label" x="18" y="50">Q₁ 留在本地</text><text class="sans body" x="18" y="70">Q 分片不搬走</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">当前 KV</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">累积 A₁</text>
 </g>
 <g transform="translate(492 370)">
  <rect class="plum" width="216" height="112" rx="13"/>
- <text class="mono label" x="18" y="26" fill="#7d5d6f">CP RANK 2</text><text class="sans label" x="18" y="50">Q₂ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
- <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₂</text>
+ <text class="mono label" x="18" y="26" fill="#7d5d6f">CP RANK 2</text><text class="sans label" x="18" y="50">Q₂ 留在本地</text><text class="sans body" x="18" y="70">Q 分片不搬走</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">当前 KV</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">累积 A₂</text>
 </g>
 <g transform="translate(52 370)">
  <rect class="sand" width="216" height="112" rx="13"/>
- <text class="mono label" x="18" y="26" fill="#7b6a3e">CP RANK 3</text><text class="sans label" x="18" y="50">Q₃ stays local</text><text class="sans body" x="18" y="70">query partition is not shipped</text>
- <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">KV current</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">accum A₃</text>
+ <text class="mono label" x="18" y="26" fill="#7b6a3e">CP RANK 3</text><text class="sans label" x="18" y="50">Q₃ 留在本地</text><text class="sans body" x="18" y="70">Q 分片不搬走</text>
+ <rect class="card" x="18" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="59" y="96" text-anchor="middle">当前 KV</text><rect class="card" x="116" y="82" width="82" height="20" rx="5"/><text class="mono tiny" x="157" y="96" text-anchor="middle">累积 A₃</text>
 </g>
 <rect x="290" y="260" width="180" height="132" rx="14" fill="#f6f7f3" stroke="#c8cdc6"/>
-<text class="mono k" x="380" y="286" text-anchor="middle">REPEAT CP−1 REMOTE ROUNDS</text>
-<text class="sans label" x="380" y="315" text-anchor="middle">receive KV chunk n</text>
+<text class="mono k" x="380" y="286" text-anchor="middle">再执行 CP−1 轮远端通信</text>
+<text class="sans label" x="380" y="315" text-anchor="middle">接收第 n 个 KV 分块</text>
 <text class="sans body" x="380" y="340" text-anchor="middle">Q_local × KVₙ</text>
-<text class="sans body" x="380" y="362" text-anchor="middle">merge into stable attention state</text>
-<text class="mono tiny" x="380" y="381" text-anchor="middle">KV moves</text><text class="mono tiny" x="380" y="394" text-anchor="middle">Q / output stay local</text>
+<text class="sans body" x="380" y="362" text-anchor="middle">合并到稳定的 Attention 状态</text>
+<text class="mono tiny" x="380" y="381" text-anchor="middle">KV 移动</text><text class="mono tiny" x="380" y="394" text-anchor="middle">Q / 输出留在本地</text>
 <path class="line" d="M268 234 H492" marker-end="url(#g)"/><text class="mono tiny" x="380" y="223" text-anchor="middle" fill="#255b46">KV →</text>
 <path class="line" d="M600 290 V370" marker-end="url(#b)"/><text class="mono tiny" x="612" y="334" fill="#315f82">KV ↓</text>
 <path class="line" d="M492 426 H268" marker-end="url(#p)"/><text class="mono tiny" x="380" y="444" text-anchor="middle" fill="#7d5d6f">← KV</text>
 <path class="line" d="M160 370 V290" marker-end="url(#p)"/><text class="mono tiny" x="107" y="334" fill="#7b6a3e">↑ KV</text>
-<text class="mono k" x="28" y="545">RANK 0 · LOGICAL VIEW ACROSS FOUR KV CHUNKS</text>
+<text class="mono k" x="28" y="545">RANK 0 · 跨四个 KV 分块的逻辑视图</text>
 <rect class="panel" x="28" y="563" width="704" height="118" rx="14"/>
 <g transform="translate(48 589)">
- <rect class="green" width="150" height="58" rx="9"/><text class="mono tiny" x="75" y="21" text-anchor="middle" fill="#255b46">ROUND 0 · local</text><text class="sans label" x="75" y="43" text-anchor="middle">Q₀ × KV₀</text>
- <rect class="card" x="168" width="150" height="58" rx="9"/><text class="mono tiny" x="243" y="21" text-anchor="middle">ROUND 1</text><text class="sans label" x="243" y="43" text-anchor="middle">Q₀ × KV₃</text>
- <rect class="card" x="336" width="150" height="58" rx="9"/><text class="mono tiny" x="411" y="21" text-anchor="middle">ROUND 2</text><text class="sans label" x="411" y="43" text-anchor="middle">Q₀ × KV₂</text>
- <rect class="card" x="504" width="150" height="58" rx="9"/><text class="mono tiny" x="579" y="21" text-anchor="middle">ROUND 3</text><text class="sans label" x="579" y="43" text-anchor="middle">Q₀ × KV₁</text>
+ <rect class="green" width="150" height="58" rx="9"/><text class="mono tiny" x="75" y="21" text-anchor="middle" fill="#255b46">第 0 轮 · 本地</text><text class="sans label" x="75" y="43" text-anchor="middle">Q₀ × KV₀</text>
+ <rect class="card" x="168" width="150" height="58" rx="9"/><text class="mono tiny" x="243" y="21" text-anchor="middle">第 1 轮</text><text class="sans label" x="243" y="43" text-anchor="middle">Q₀ × KV₃</text>
+ <rect class="card" x="336" width="150" height="58" rx="9"/><text class="mono tiny" x="411" y="21" text-anchor="middle">第 2 轮</text><text class="sans label" x="411" y="43" text-anchor="middle">Q₀ × KV₂</text>
+ <rect class="card" x="504" width="150" height="58" rx="9"/><text class="mono tiny" x="579" y="21" text-anchor="middle">第 3 轮</text><text class="sans label" x="579" y="43" text-anchor="middle">Q₀ × KV₁</text>
  <path class="line" d="M150 29 H168" marker-end="url(#p)"/><path class="line" d="M318 29 H336" marker-end="url(#p)"/><path class="line" d="M486 29 H504" marker-end="url(#p)"/>
 </g>
-<text class="sans tiny" x="48" y="662">Ring order is illustrative; masked token pairs may do no useful work.</text><text class="sans tiny" x="48" y="677">Current CP partitioning can be zigzag / document-aware / hybrid / contiguous.</text>
-<text class="sans tiny" x="28" y="708">Invariant: each CP rank owns only part of context/query state; attention still needs every required K/V context.</text>
+<text class="sans tiny" x="48" y="662">环顺序只是示意；被掩码的 token 配对可能不会产生有效计算。</text><text class="sans tiny" x="48" y="677">当前 CP 分区可以是 zigzag、文档感知、混合或连续布局。</text>
+<text class="sans tiny" x="28" y="708">不变量：每个 CP rank 只持有部分上下文/Q 状态，但 Attention 仍需要所有必要的 K/V 上下文。</text>
 </svg>
