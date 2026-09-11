@@ -39,7 +39,7 @@
 <text class="mono tiny" x="659" y="365" text-anchor="middle">执行轮次</text><text class="mono tiny" x="659" y="380" text-anchor="middle">执行</text><text class="mono tiny" x="659" y="395" text-anchor="middle">接口契约</text>
 
 <rect class="box" x="232" y="430" width="342" height="48" rx="8"/>
-<text class="mono sec" x="250" y="450">UPDATE_FROM_输出</text>
+<text class="mono sec" x="250" y="450">update_from_output()</text>
 <text class="sans tiny" x="250" y="466">推进请求状态 / 完成</text>
 <path class="bline" d="M232 454 H210 V310 H307 V292" marker-end="url(#ab)"/>
 
@@ -47,7 +47,7 @@
 <rect class="gold" x="267" y="510" width="226" height="32" rx="7"/>
 <text class="mono sec" x="380" y="531" text-anchor="middle" fill="#7b6a3e">控制 / 执行边界</text>
 
-<text class="mono sec" x="34" y="574">2 · EXECUTION PLANE · PLAN → DEVICE WORK → MODELRUNNER输出</text>
+<text class="mono sec" x="34" y="574">2 · EXECUTION PLANE · PLAN → DEVICE WORK → ModelRunner output</text>
 <rect class="plane" x="34" y="590" width="692" height="250" rx="14"/>
 <rect class="purple" x="52" y="626" width="138" height="80" rx="9"/>
 <text class="mono sec" x="70" y="650" fill="#7d5d6f">模型执行器</text><text class="sans label" x="70" y="674">execute_model(...)</text><text class="sans tiny" x="70" y="692">分布式门面层</text>
@@ -66,7 +66,7 @@
 <path class="gline" d="M454 704 V744 H548 V666 H566" marker-end="url(#ag)"/><path class="gline" d="M488 704 V732 H538 V682 H566" marker-end="url(#ag)"/>
 
 <rect class="box" x="566" y="746" width="142" height="64" rx="9"/>
-<text class="mono sec" x="584" y="769">MODELRUNNER输出</text><text class="sans tiny" x="584" y="790">采样 / 模型结果</text>
+<text class="mono sec" x="584" y="769">ModelRunner output</text><text class="sans tiny" x="584" y="790">采样 / 模型结果</text>
 <path class="gline" d="M637 706 V746" marker-end="url(#ag)"/>
 
 <path class="pline" d="M659 418 V558 H121 V626" marker-end="url(#ap)"/>
