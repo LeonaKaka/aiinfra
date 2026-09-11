@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="AI Infra from Zero 第一课：Tensor 到底是什么？从 shape 开始建立 AI Infra 的数据流直觉。" />
   <meta name="theme-color" content="#f7f7f3" />
-  <title>01.1 Tensor 到底是什么？ · AI Infra from Zero</title>
+  <title>01.1 张量 到底是什么？ · AI 基础设施 from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
 </head>
@@ -23,13 +23,13 @@
   <div class="lesson-shell">
     <aside class="course-sidebar" aria-label="课程目录">
       <div class="side-label">COURSE MAP</div>
-      <a class="side-home" href="../../index.html">← AI Infra from Zero</a>
+      <a class="side-home" href="../../index.html">← AI 基础设施 from Zero</a>
       <div class="module-block">
         <div class="module-name"><b>01</b> Foundations</div>
-        <a class="lesson-link current" href="./tensor.html">01.1 Tensor 到底是什么？</a>
-        <a class="lesson-link" href="./linear.html">01.2 Matrix multiply 与 Linear</a>
+        <a class="lesson-link current" href="./tensor.html">01.1 张量 到底是什么？</a>
+        <a class="lesson-link" href="./linear.html">01.2 矩阵乘法 与 Linear</a>
         <a class="lesson-link" href="./training-loop.html">01.3 PyTorch 的最小训练循环</a>
-        <a class="lesson-link" href="./autograd-optimizer.html">01.4 autograd 与 optimizer</a>
+        <a class="lesson-link" href="./autograd-optimizer.html">01.4 autograd 与 优化器</a>
       </div>
       <div class="module-block">
         <div class="module-name"><b>02</b> Transformer</div>
@@ -49,48 +49,48 @@
 
     <main class="article">
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
-      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>Tensor</span></div>
+      <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>张量</span></div>
 
       <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约 35 min</span></div>
-      <h1>Tensor 到底是什么？</h1>
-      <p class="dek">先别急着记 PyTorch Application Programming Interface (API，应用程序编程接口)。Artificial Intelligence (AI，人工智能) Infra 里最先要学会的，其实是一种“看形状”的能力：数据现在是什么 shape、下一步会变成什么 shape、它占多少内存、如果把它切到多张 Graphics Processing Unit (GPU，图形处理器) 上该怎么切。</p>
+      <h1>张量 到底是什么？</h1>
+      <p class="dek">先别急着记 PyTorch 应用程序编程接口（API）。人工智能（AI） Infra 里最先要学会的，其实是一种“看形状”的能力：数据现在是什么 形状、下一步会变成什么 形状、它占多少内存、如果把它切到多张 图形处理器（GPU） 上该怎么切。</p>
 
       <div class="learning-goals">
         <strong>这节课结束时，你应该能做到：</strong>
         <ul>
           <li>看到 <code>[B, S, H]</code> 不再把它当成神秘缩写。</li>
-          <li>区分 scalar、vector、matrix 与更高维 tensor。</li>
-          <li>用一个实际句子解释 batch、sequence length、hidden size。</li>
-          <li>区分 tensor 的逻辑 shape 与底层 storage/layout，理解 view、stride、contiguous 为什么会影响 kernel 与数据搬运。</li>
-          <li>理解为什么以后学 Megatron 时，“沿哪个维度切 tensor”会成为核心问题。</li>
+          <li>区分 标量、向量、矩阵 与更高维 张量。</li>
+          <li>用一个实际句子解释 批次、序列长度、隐藏维度。</li>
+          <li>区分 张量 的逻辑 形状 与底层 存储与布局，理解 视图、步长、连续存储 为什么会影响 kernel 与数据搬运。</li>
+          <li>理解为什么以后学 Megatron 时，“沿哪个维度切 张量”会成为核心问题。</li>
         </ul>
       </div>
 
       <section class="article-section" id="tensor">
-        <div class="section-no">01 · WHAT IS A TENSOR</div>
-        <h2>先把 Tensor 想成“带形状的一块数字”。</h2>
-        <p>如果你只记一句话，就记这句。Tensor 不需要一开始就从抽象数学定义理解。对我们这条 AI Infra 学习路线来说，它首先是一块被组织成某种形状的数据。</p>
+        <div class="section-no">01 · WHAT IS A 张量</div>
+        <h2>先把 张量 想成“带形状的一块数字”。</h2>
+        <p>如果你只记一句话，就记这句。张量 不需要一开始就从抽象数学定义理解。对我们这条 AI 基础设施 学习路线来说，它首先是一块被组织成某种形状的数据。</p>
 
         <div class="dimension-ladder" aria-label="不同维度的数据示例">
-          <div class="dim-card"><small>0D</small><b>Scalar</b><code>3.14</code></div>
-          <div class="dim-card"><small>1D</small><b>Vector</b><code>[0.2, 0.8, -1.1]</code></div>
-          <div class="dim-card"><small>2D</small><b>Matrix</b><code>[[1,2],[3,4]]</code></div>
-          <div class="dim-card"><small>3D+</small><b>Tensor</b><code>[B, S, H]</code></div>
+          <div class="dim-card"><small>0D</small><b>标量</b><code>3.14</code></div>
+          <div class="dim-card"><small>1D</small><b>向量</b><code>[0.2, 0.8, -1.1]</code></div>
+          <div class="dim-card"><small>2D</small><b>矩阵</b><code>[[1,2],[3,4]]</code></div>
+          <div class="dim-card"><small>3D+</small><b>张量</b><code>[B, S, H]</code></div>
         </div>
 
-        <p>严格说，scalar、vector、matrix 也都可以看作 tensor，只是维数分别是 0、1、2。深度学习里我们经常处理 3 维、4 维甚至更高维的数据，所以大家统一叫 tensor。</p>
-        <div class="concept-note"><p><strong>Infra 视角：</strong>Tensor 的“数字是什么”当然重要，但系统工程里你会频繁关心另外三件事：<strong>shape、dtype、device</strong>。</p></div>
+        <p>严格说，标量、向量、矩阵 也都可以看作 张量，只是维数分别是 0、1、2。深度学习里我们经常处理 3 维、4 维甚至更高维的数据，所以大家统一叫 张量。</p>
+        <div class="concept-note"><p><strong>Infra 视角：</strong>张量 的“数字是什么”当然重要，但系统工程里你会频繁关心另外三件事：<strong>形状、数据类型、设备</strong>。</p></div>
       </section>
 
       <section class="article-section" id="shape">
-        <div class="section-no">02 · THE FIRST SHAPE</div>
+        <div class="section-no">02 · THE FIRST 形状</div>
         <h2><code>[B, S, H]</code> 是以后最常见的三维形状。</h2>
-        <p>先看 Transformer 里非常典型的一块数据。假设它的 shape 是：</p>
+        <p>先看 Transformer 里非常典型的一块数据。假设它的 形状 是：</p>
 
         <div class="shape-hero">
-          <div class="shape-expression">X.shape = [<span class="b">B</span>, <span class="s">S</span>, <span class="h">H</span>]</div>
+          <div class="shape-expression">X.形状 = [<span class="b">B</span>, <span class="s">S</span>, <span class="h">H</span>]</div>
           <div class="shape-legend">
-            <div class="b"><b>B · batch</b><small>一次同时处理多少条样本</small></div>
+            <div class="b"><b>B · 批次</b><small>一次同时处理多少条样本</small></div>
             <div class="s"><b>S · sequence</b><small>每条样本有多少个 token</small></div>
             <div class="h"><b>H · hidden</b><small>每个 token 用多少个数字表示</small></div>
           </div>
@@ -100,18 +100,18 @@
 
         <div class="example-grid">
           <div class="example-card">
-            <div class="cap">BATCH ITEM 0</div>
+            <div class="cap">批次 ITEM 0</div>
             <div class="token-row"><span>我</span><span>在</span><span>学</span><span>AI</span><span>Infra</span></div>
             <p>5 个 token，每个 token 背后不是一个数字，而是一条长度为 H 的向量。</p>
           </div>
           <div class="example-card">
-            <div class="cap">BATCH ITEM 1</div>
-            <div class="token-row"><span>GPU</span><span>正在</span><span>计算</span><span>这个</span><span>Tensor</span></div>
-            <p>把两条样本叠在一起，于是最外层多出 batch 这个维度。</p>
+            <div class="cap">批次 ITEM 1</div>
+            <div class="token-row"><span>GPU</span><span>正在</span><span>计算</span><span>这个</span><span>张量</span></div>
+            <p>把两条样本叠在一起，于是最外层多出 批次 这个维度。</p>
           </div>
         </div>
 
-        <p>如果 <code>H = 8</code>，那么每个 token 对应 8 个浮点数；如果现实模型里 <code>H = 4096</code>，每个 token 就会对应 4096 个数。现在先不要管这些数到底代表什么，只要先把 shape 读顺。</p>
+        <p>如果 <code>H = 8</code>，那么每个 token 对应 8 个浮点数；如果现实模型里 <code>H = 4096</code>，每个 token 就会对应 4096 个数。现在先不要管这些数到底代表什么，只要先把 形状 读顺。</p>
       </section>
 
       <section class="article-section" id="pytorch">
@@ -132,16 +132,16 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
 
         <p>现在你第一次看到了我们刚才说的三个系统属性：</p>
         <div class="why-grid">
-          <div class="why-card"><b>shape</b><p>给出各个维度的长度；总元素数由这些维度长度的乘积决定。它决定后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
-          <div class="why-card"><b>dtype</b><p>每个数字用 32-bit Floating Point (FP32，32 位浮点)、16-bit Floating Point (FP16，16 位浮点)、Brain Floating Point 16 (BF16，BF16 16 位浮点) 还是别的格式存。它直接影响显存和计算性能。</p></div>
-          <div class="why-card"><b>device</b><p>这块数据现在在 Central Processing Unit (CPU，中央处理器)、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
+          <div class="why-card"><b>形状</b><p>给出各个维度的长度；总元素数由这些维度长度的乘积决定。它决定后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
+          <div class="why-card"><b>数据类型</b><p>每个数字用 32 位浮点（FP32）、16 位浮点（FP16）、BF16 16 位浮点（BF16） 还是别的格式存。它直接影响显存和计算性能。</p></div>
+          <div class="why-card"><b>设备</b><p>这块数据现在在 中央处理器（CPU）、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
         </div>
       </section>
 
       <section class="article-section" id="memory">
-        <div class="section-no">04 · INFRA VIEW</div>
-        <h2>为什么 Infra 工程师这么在意 shape？</h2>
-        <p>因为 shape 一旦确定，很多系统问题就开始可以计算了。假设 <code>X.shape = [2, 5, 8]</code>，总元素数就是：</p>
+        <div class="section-no">04 · INFRA 视图</div>
+        <h2>为什么 Infra 工程师这么在意 形状？</h2>
+        <p>因为 形状 一旦确定，很多系统问题就开始可以计算了。假设 <code>X.shape = [2, 5, 8]</code>，总元素数就是：</p>
         <div class="code-block">
           <div class="code-head"><span>mental math</span><span>memory</span></div>
           <pre><code>elements = 2 × 5 × 8 = 80
@@ -149,15 +149,15 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
 if FP32: 80 × 4 bytes = 320 bytes
 if FP16: 80 × 2 bytes = 160 bytes</code></pre>
         </div>
-        <p>这个玩具例子当然很小。但当 shape 变成 <code>[8, 131072, 8192]</code> 时，你会立刻意识到：只是 activation 就可能非常大。以后学 Context Parallel、Sequence Parallel 时，本质上都在继续问一个熟悉的问题：</p>
-        <div class="concept-note"><p><strong>这块大 Tensor，能不能沿某个维度切开，让不同 GPU 各保存一部分？</strong></p></div>
+        <p>这个玩具例子当然很小。但当 形状 变成 <code>[8, 131072, 8192]</code> 时，你会立刻意识到：只是 激活值 就可能非常大。以后学 Context Parallel、Sequence Parallel 时，本质上都在继续问一个熟悉的问题：</p>
+        <div class="concept-note"><p><strong>这块大 张量，能不能沿某个维度切开，让不同 GPU 各保存一部分？</strong></p></div>
       </section>
 
       <section class="article-section" id="storage-layout">
-        <div class="section-no">05 · STORAGE / VIEW / STRIDE</div>
-        <h2>同一个 shape，不一定以同一种方式躺在内存里。</h2>
-        <p>到目前为止，我们一直把 tensor 当成“带 shape 的数字块”。这对读模型计算已经够用，但读 AI Infra 还差一层：<strong>shape 描述的是逻辑索引空间，storage/layout 描述这些元素怎样映射到底层内存。</strong>两块 tensor 可以拥有相同 shape，却有不同的 stride，甚至共享同一块 storage。</p>
-        <div class="code-block"><div class="code-head"><span>python</span><span>shape vs layout</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
+        <div class="section-no">05 · 存储 / 视图 / 步长</div>
+        <h2>同一个 形状，不一定以同一种方式躺在内存里。</h2>
+        <p>到目前为止，我们一直把 张量 当成“带 形状 的数字块”。这对读模型计算已经够用，但读 AI 基础设施 还差一层：<strong>形状 描述的是逻辑索引空间，存储与布局 描述这些元素怎样映射到底层内存。</strong>两块 张量 可以拥有相同 形状，却有不同的 步长，甚至共享同一块 存储。</p>
+        <div class="code-block"><div class="code-head"><span>python</span><span>形状 vs 布局</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
 y = x.transpose(0, 1)
 
 print(x.shape, x.stride())  <span class="comment"># [3,4], (4,1)</span>
@@ -167,18 +167,18 @@ print(y.is_contiguous())    <span class="comment"># False</span>
 z = y.contiguous()
 print(z.stride())           <span class="comment"># materialize a contiguous layout</span></code></pre></div>
         <div class="why-grid">
-          <div class="why-card"><b>storage</b><p>底层真正拥有内存的 allocation。多个 tensor/view 可以引用同一块 storage，而不是每次都复制数据。</p></div>
-          <div class="why-card"><b>stride</b><p>某一维索引增加 1 时，在底层 storage 里要跨过多少个元素。它把“逻辑坐标”映射到“物理位置”。</p></div>
-          <div class="why-card"><b>contiguous</b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel 或 transfer path 可以处理任意 stride，另一些路径会要求或更偏好 contiguous buffer。</p></div>
+          <div class="why-card"><b>存储</b><p>底层真正拥有内存的 allocation。多个 张量/视图 可以引用同一块 存储，而不是每次都复制数据。</p></div>
+          <div class="why-card"><b>步长</b><p>某一维索引增加 1 时，在底层 存储 里要跨过多少个元素。它把“逻辑坐标”映射到“物理位置”。</p></div>
+          <div class="why-card"><b>连续存储</b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel 或 transfer path 可以处理任意 步长，另一些路径会要求或更偏好 连续存储 buffer。</p></div>
         </div>
-        <p><code>transpose</code> 常常只改变 view 的 shape/stride，而不立即复制 storage；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 reshape、permute、view、copy 时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
-        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的 block table 和 08.4 的 registered memory / transfer region 都会把“逻辑 tensor”继续落到更具体的地址、offset、stride 与 lifetime。现在先建立一个底线：<strong>logical shape ≠ physical layout</strong>。</p></div>
+        <p><code>transpose</code> 常常只改变 视图 的 形状/步长，而不立即复制 存储；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 reshape、permute、视图、copy 时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
+        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的 block table 和 08.4 的 registered memory / transfer region 都会把“逻辑 张量”继续落到更具体的地址、offset、步长 与 lifetime。现在先建立一个底线：<strong>logical 形状 ≠ physical 布局</strong>。</p></div>
       </section>
 
       <section class="article-section" id="megatron">
         <div class="section-no">06 · WHERE THIS LEADS</div>
         <h2>这就是它和 Megatron 的第一条连接线。</h2>
-        <p>现在你还不用学 Tensor Parallel。但可以先偷看未来的问题。一个 Linear 层通常会出现类似：</p>
+        <p>现在你还不用学 张量 Parallel。但可以先偷看未来的问题。一个 Linear 层通常会出现类似：</p>
         <div class="code-block">
           <div class="code-head"><span>next concept</span><span>linear algebra</span></div>
           <pre><code>X: [B, S, H]
@@ -200,29 +200,29 @@ Y = X @ W
         <div class="quiz-item">
           <div class="quiz-q">1. <code>[4, 1024, 4096]</code> 里的 4096 是什么意思？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">它是 hidden size：当前每个 token 用一个长度为 4096 的向量表示。</div>
+          <div class="quiz-a">它是 隐藏维度：当前每个 token 用一个长度为 4096 的向量表示。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">2. 为什么 FP16 tensor 通常比同 shape 的 FP32 tensor 少一半显存？</div>
+          <div class="quiz-q">2. 为什么 FP16 张量 通常比同 形状 的 FP32 张量 少一半显存？</div>
           <button class="quiz-toggle" type="button">看答案</button>
           <div class="quiz-a">因为元素数量完全相同，但每个 FP32 元素通常占 4 bytes，FP16 占 2 bytes。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">3. 为什么“这块 tensor 在 cuda:0 还是 cuda:1”以后会很重要？</div>
+          <div class="quiz-q">3. 为什么“这块 张量 在 cuda:0 还是 cuda:1”以后会很重要？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为跨 GPU 使用数据往往意味着通信或拷贝。AI Infra 的大量性能问题，就是在研究哪些数据必须移动、移动多少、什么时候移动。</div>
+          <div class="quiz-a">因为跨 GPU 使用数据往往意味着通信或拷贝。AI 基础设施 的大量性能问题，就是在研究哪些数据必须移动、移动多少、什么时候移动。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">4. 两个 tensor 的 shape 一样，是否意味着它们的底层内存布局也一定一样？</div>
+          <div class="quiz-q">4. 两个 张量 的 形状 一样，是否意味着它们的底层内存布局也一定一样？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">不一定。shape 只说明各维长度；transpose/view 等操作可以让 tensor 拥有不同 stride，甚至共享同一 storage。是否 contiguous、是否需要实际 copy，是另一层问题。</div>
+          <div class="quiz-a">不一定。形状 只说明各维长度；transpose/视图 等操作可以让 张量 拥有不同 步长，甚至共享同一 存储。是否 连续存储、是否需要实际 copy，是另一层问题。</div>
         </div>
       </section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
         <h2>本课出现的缩写与术语</h2>
-        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>
+        <p class="lesson-terms-intro">正文优先使用 <strong>中文名（缩写）</strong> 建立概念；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
@@ -238,18 +238,18 @@ Y = X @ W
       </section>
 
       <a class="next-lesson" href="./linear.html">
-        <div><small>NEXT · 01.2</small><br /><strong>Matrix Multiply 与 Linear：模型到底在算什么？</strong></div>
+        <div><small>NEXT · 01.2</small><br /><strong>矩阵乘法 与 Linear：模型到底在算什么？</strong></div>
         <span>→</span>
       </a>
     </main>
 
     <aside class="toc" aria-label="本页目录">
       <strong>ON THIS PAGE</strong>
-      <a href="#tensor">Tensor 是什么</a>
+      <a href="#tensor">张量 是什么</a>
       <a href="#shape">[B,S,H]</a>
       <a href="#pytorch">PyTorch</a>
       <a href="#memory">Infra 视角</a>
-      <a href="#storage-layout">Storage / Stride</a>
+      <a href="#storage-layout">存储 / 步长</a>
       <a href="#megatron">连接 Megatron</a>
       <a href="#checkpoint">Checkpoint</a>
     </aside>
