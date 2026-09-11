@@ -31,9 +31,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>GPU Mental Model</span></div>
       <div class="lesson-kicker"><span>LESSON 03.1 · GPU SYSTEMS</span><span>约 45 min</span></div>
       <h1>GPU 心智模型：模型到底在哪里算、数据又在哪里放？</h1>
-      <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在 中央处理器（CPU） 内存还是 图形处理器（GPU） 显存？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NVIDIA 集体通信库（NCCL）、张量并行、vLLM 性能优化的地基。</p>
+      <p class="dek">前面我们一直写 <code>X @ W</code>，但从现在开始要问更底层的问题：X 和 W 此刻在中央处理器（CPU）内存还是图形处理器（GPU）显存？是谁发起矩阵乘法？真正执行计算的是什么？为什么 GPU 明明很强却还会“等数据”？这套心智模型是后面理解 NVIDIA 集体通信库（NCCL）、张量并行、vLLM 性能优化的地基。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU 主存（host memory） 与 GPU 显存（设备显存） 的角色，并知道 高带宽内存（HBM） / 图形双倍数据速率存储器（GDDR） 是具体显存技术。</li><li>知道 PyTorch CUDA 操作 最终会在 GPU 上触发 kernel，而不是 Python 自己在算矩阵。</li><li>理解 流式多处理器（SM）、Tensor Core、GPU 显存、高速外设组件互连（PCIe）/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要显式同步（例如 <code>torch.cuda.synchronize()</code>）。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU 主存（host memory）与 GPU 显存（device memory）的角色，并知道高带宽内存（HBM）和 GDDR 是具体显存技术。</li><li>知道 PyTorch 的 CUDA 操作最终会启动 GPU 内核（kernel），而不是 Python 自己在算矩阵。</li><li>理解流式多处理器（SM）、Tensor Core、GPU 显存、高速外设组件互连（PCIe）/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要显式同步（例如 <code>torch.cuda.synchronize()</code>）。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
 
       <section class="article-section" id="machine">
         <div class="section-no">01 · ONE MACHINE, TWO MEMORY WORLDS</div>
