@@ -32,12 +32,12 @@
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV 传输</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区描述符</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
     <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
@@ -45,16 +45,16 @@
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini TP 反向传播</span></div>
     <div class="lab-kicker">LAB A2 · 反向传播 COMMUNICATION</div>
-    <h1>前向计算 会切矩阵还不够。<br />反向传播才告诉你通信为什么出现在那里。</h1>
-    <p class="dek">上一实验只验证了 Column Parallel → Row Parallel 的 前向计算。这里把反向传播完整摊开：W1/W2 的梯度天然保持 sharded，但输入梯度 dX 会收到所有 W1 column 分片 的贡献，所以必须跨 TP ranks 求和。理解这一步后，再看 Megatron mappings 里的 前向计算/反向传播 collective 就不再像“魔法”。</p>
+    <h1>前向计算会切矩阵还不够。<br />反向传播才告诉你通信为什么出现在那里。</h1>
+    <p class="dek">上一实验只验证了 Column Parallel → Row Parallel 的前向计算。这里把反向传播完整摊开：W1/W2 的梯度天然保持 sharded，但输入梯度 dX 会收到所有 W1 column 分片的贡献，所以必须跨 TP ranks 求和。理解这一步后，再看 Megatron mappings 里的前向计算/反向传播 collective 就不再像“魔法”。</p>
 
     <section class="lab-section" id="map"><div class="lab-kicker">01 · 反向传播 MAP</div><h2>从 replicated dY 往回走，逐个问：这个梯度属于谁？</h2>
       <div class="stage-flow">
         <div class="stage-card train"><small>ROW-PARALLEL W2</small><b>dW2 stays local</b><span>每个 rank 只更新自己那几行 W2；dHidden 也只对应本 rank 的 hidden 分片。</span></div>
-        <div class="stage-card train"><small>COLUMN-PARALLEL W1</small><b>dW1 stays local</b><span>每个 rank 只拥有 W1 的一组输出列，因此其 dW1 也天然是同一 分片。</span></div>
-        <div class="stage-card comm"><small>REPLICATED INPUT</small><b>dX needs all-reduce</b><span>每个 column 分片 只算出一部分 dX；前一层要完整 dX，就要把这些贡献相加。</span></div>
+        <div class="stage-card train"><small>COLUMN-PARALLEL W1</small><b>dW1 stays local</b><span>每个 rank 只拥有 W1 的一组输出列，因此其 dW1 也天然是同一分片。</span></div>
+        <div class="stage-card comm"><small>REPLICATED INPUT</small><b>dX needs all-reduce</b><span>每个 column 分片只算出一部分 dX；前一层要完整 dX，就要把这些贡献相加。</span></div>
       </div>
-      <p>这类推理比记“某层 反向传播 有 all-reduce”更可靠：只要知道张量是 replicated 还是 sharded，就可以重新推导通信。</p>
+      <p>这类推理比记“某层反向传播有 all-reduce”更可靠：只要知道张量是 replicated 还是 sharded，就可以重新推导通信。</p>
     </section>
 
     <section class="lab-section" id="math"><div class="lab-kicker">02 · MANUAL GRADIENTS</div><h2>脚本故意不用分布式 autograd，把公式写出来。</h2>
@@ -76,7 +76,7 @@ dX = all_reduce_sum(dXᵣ)</pre></div>
       <div class="result-grid">
         <div class="result-card"><small>前向计算</small><b>Y_tp ≈ Y_dense</b><span>先保证前向路径仍然正确。</span></div>
         <div class="result-card"><small>INPUT GRAD</small><b>dX_tp ≈ dX_dense</b><span>验证 all-reduce 后的完整输入梯度。</span></div>
-        <div class="result-card"><small>WEIGHT GRADS</small><b>dW1 / dW2 match</b><span>拼回 分片 后与 PyTorch autograd reference 对齐。</span></div>
+        <div class="result-card"><small>WEIGHT GRADS</small><b>dW1 / dW2 match</b><span>拼回分片后与 PyTorch autograd reference 对齐。</span></div>
       </div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>max forward error : 1.192e-07
 max dX error      : 2.384e-07
@@ -88,12 +88,12 @@ PASS</pre></div>
 
     <section class="lab-section" id="source"><div class="lab-kicker">04 · SOURCE CONNECTION</div><h2>现在最值得读的是 mappings，而不是更大的 model 文件。</h2>
       <div class="source-bridge"><div><small>LAB</small><b>手动决定哪里 SUM</b><code>dX_partial → dist.all_reduce</code></div><span>same semantics →</span><div><small>MEGATRON</small><b>tensor_parallel/mappings.py</b><code>reduce / gather / reduce-scatter + autograd</code></div></div>
-      <p>工业代码把这些 collective 包成 autograd-aware mapping：前向计算 看起来像一个映射函数，反向传播 自动执行对应的逆向通信。你读源码时要同时看它的 <code>forward()</code> 和 <code>backward()</code>，否则会错过一半通信。</p>
+      <p>工业代码把这些 collective 包成 autograd-aware mapping：前向计算看起来像一个映射函数，反向传播自动执行对应的逆向通信。你读源码时要同时看它的 <code>forward()</code> 和 <code>backward()</code>，否则会错过一半通信。</p>
     </section>
 
-    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>下一层才是“训练系统”，而不是更多矩阵公式。</h2><div class="check-list"><div>① 把手写 反向传播 换成 autograd-aware collective，观察计算图里的通信节点。</div><div>② 加 microbatch 梯度累积：什么时候可以延迟同步？</div><div>③ 加 DP 进程组：区分 TP 内的 dX 通信与 DP 的 参数-梯度 同步。</div><div>④ 再进入 Distributed 优化器：为什么 reduce-scatter 比完整 all-reduce 更省状态复制。</div></div></section>
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>下一层才是“训练系统”，而不是更多矩阵公式。</h2><div class="check-list"><div>① 把手写反向传播换成 autograd-aware collective，观察计算图里的通信节点。</div><div>② 加 microbatch 梯度累积：什么时候可以延迟同步？</div><div>③ 加 DP 进程组：区分 TP 内的 dX 通信与 DP 的参数-梯度同步。</div><div>④ 再进入 Distributed 优化器：为什么 reduce-scatter 比完整 all-reduce 更省状态复制。</div></div></section>
 
-    <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A1 · TP 前向计算</a><a href="./mini-block-kv-handoff.html">Lab B2 · Block KV Handoff →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A1 · TP 前向计算</a><a href="./mini-block-kv-handoff.html">Lab B2 · Block KV 交接 →</a></nav>
   </main>
   <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#map">从 replicated dY 往回走，逐个问：这个梯度属于谁？</a><a href="#math">脚本故意不用分布式 autograd，把公式写出来。</a><a href="#run">四项误差全部对 dense autograd。</a><a href="#source">现在最值得读的是 mappings，而不是更大的 model 文件。</a><a href="#next">下一层才是“训练系统”，而不是更多矩阵公式。</a></aside>
 </div>
