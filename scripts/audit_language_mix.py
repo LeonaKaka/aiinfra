@@ -182,6 +182,7 @@ def main() -> int:
     paths += list(LABS.glob("*.html"))
     paths += list((LABS / "code").glob("*.py"))
     paths += [path for path in GLOBAL_PAGES if path.exists()]
+    paths += [ROOT / "app.js"]
 
     for path in sorted(set(paths)):
         rel = str(path.relative_to(ROOT))
