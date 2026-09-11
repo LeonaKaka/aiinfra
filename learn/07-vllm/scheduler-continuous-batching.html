@@ -28,7 +28,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释静态批处理为什么容易被长尾请求拖住。</li><li>准确理解连续批处理：批次成员可以在执行轮次之间持续变化。</li><li>知道当前 V1 <code>Scheduler</code> 内部没有两套独立的 “Prefill 阶段 / Decode 阶段” 调度器，而是围绕 token 进度统一推进请求。</li><li>知道调度器同时受调度 token 预算、输入预算、最大运行中请求数、KV 容量等资源约束。</li><li>理解当前 V1 的分块 Prefill 与运行中请求优先策略怎样细化调度粒度。</li><li>知道当前 V1 的默认抢占恢复方式是重新计算，而不是旧式 SWAP。</li></ul></div>
 
       <section class="article-section" id="static">
-        <div class="section-no">01 · WHY STATIC BATCHES WASTE CAPACITY</div>
+        <div class="section-no">01 · 固定批次为什么浪费资源</div>
         <h2>请求长度不同，最慢的那一个会让固定批次很尴尬。</h2>
         <p>想象 4 个请求同时开始，输出长度分别是 2、4、8、20 tokens。如果规定“这个批次的 4 个槽位直到全部请求结束都不换人”，前两个请求很快完成，但它们留下的槽位会空着。</p>
         <div class="batch-snapshots"><div class="batch-row"><small>step 1</small><span class="run">A</span><span class="run">B</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div><div class="batch-row"><small>step 3</small><span>idle</span><span class="run">B</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div><div class="batch-row"><small>step 5</small><span>idle</span><span>idle</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div></div>
@@ -36,7 +36,7 @@
       </section>
 
       <section class="article-section" id="continuous">
-        <div class="section-no">02 · CONTINUOUS BATCHING</div>
+        <div class="section-no">02 · 连续批处理</div>
         <h2>谁结束，下一轮就可以换新人进来。</h2>
         <p>连续批处理 的核心不是某个神奇内核，而是 <strong>执行轮次-level re-planning</strong>：每轮执行前根据最新请求状态重新决定本轮一起执行哪些请求 / tokens。A 完成后，下一轮就可以把释放出的资源给 E。</p>
         <div class="batch-snapshots"><div class="batch-row"><small>执行轮次 1</small><span class="run">A</span><span class="run">B</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div><div class="batch-row"><small>执行轮次 3</small><span class="new">E</span><span class="run">B</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div><div class="batch-row"><small>执行轮次 5</small><span class="new">E</span><span class="new">F</span><span class="run">C</span><span class="run">D</span><span>—</span><span>—</span><span>—</span><span>—</span></div></div>
@@ -44,7 +44,7 @@
       </section>
 
       <section class="article-section" id="queues">
-        <div class="section-no">03 · ONE 调度执行轮次</div>
+        <div class="section-no">03 · 一次调度执行轮次</div>
         <h2>一次 <code>schedule()</code> 真正在做的事：从 running / waiting 状态出发，在多个预算和 KV 分配约束下生成一份可执行计划。</h2>
         <p>图里故意让 运行队列中可以同时存在类似 Decode 的请求和仍处于 Prefill 的请求。因为当前调度器的核心抽象不是“切换 Prefill 模式 / Decode 模式”，而是：这个请求已计算到哪、还欠多少 token 工作、本轮资源允许推进多少。</p>
         <div class="vllm-core-wrap"><div class="vllm-core-meta"><span>vLLM V1 · 调度器</span><span>运行 / 等待 → 预算 + KV → SchedulerOutput</span></div><img class="vllm-core-svg" src="./scheduler-continuous-batching.svg" alt="vLLM V1 Scheduler 与 continuous batching 架构图：运行中和等待中的请求 进入 调度器；调度器 先推进 running，再在剩余资源允许时接纳 waiting，受 max_num_scheduled_tokens、max_num_batched_tokens、max_num_running_reqs 和 KVCacheManager allocation 共同约束；生成 混合的 SchedulerOutput。KV allocation 失败时可 preempt victim 并释放资源；每轮输出更新后，下一执行轮次 重新组成 batch。"/></div>
@@ -55,14 +55,14 @@
       </section>
 
       <section class="article-section" id="budgets">
-        <div class="section-no">04 · THE 调度器 HAS HARD BUDGETS</div>
+        <div class="section-no">04 · 调度器有哪些硬预算</div>
         <h2>“想跑谁”不够，必须同时满足本轮 token 数、输入规模、并发数和 KV 空间。</h2>
         <div class="budget-grid"><div class="budget-card tokens"><small>SCHEDULED-TOKEN BUDGET</small><b>max_num_scheduled_tokens</b><span>调度器初始化时若该值未单独给出，会使用 <code>max_num_batched_tokens</code>；每轮 <code>token_budget</code> 从这里开始扣。</span></div><div class="budget-card seqs"><small>运行中 请求 LIMIT</small><b>max_num_running_reqs</b><span>当前值来自 <code>scheduler_config.max_num_seqs</code>；waiting admission 不能让运行资源域无限增长。</span></div><div class="budget-card kv"><small>KV BUDGET</small><b>available 块</b><span>即使 token budget 还有，<code>allocate_slots</code> 失败也会改变调度甚至触发抢占。</span></div></div>
         <p>当前 <code>schedule()</code> 同时维护 <code>input_budget = max_num_batched_tokens</code>，并叠加 speculative draft slots、encoder 计算/cache、max model length 等约束。所以调度器不是只看一个“批次 size”。</p>
       </section>
 
       <section class="article-section" id="mix">
-        <div class="section-no">05 · ONE TOKEN-PROGRESS 调度器</div>
+        <div class="section-no">05 · 用 Token 进度统一调度</div>
         <h2>教学上可以说 Prefill 与 Decode 共享机器；源码里更准确的说法是：调度器统一推进每个请求的 token 进度。</h2>
         <div class="batch-snapshots"><div class="batch-row"><small>scheduled</small><span class="run">A +1</span><span class="run">B +1</span><span class="run">C +1</span><span class="prefill">D +chunk</span><span class="prefill">D</span><span class="prefill">D</span><span class="prefill">D</span><span class="prefill">…</span></div></div>
         <p>当前 V1 <code>schedule()</code> 的源码注释明确写着：调度器内部没有独立的 “decoding phase” 或 “prefill phase”。它看的是 <code>num_computed_tokens</code> 与当前已知 token state 之间还差多少，再在预算允许时推进。长 prompt 因此可以推进很多 tokens；baseline decode 请求通常只多一个新的已知位置。</p>
@@ -70,7 +70,7 @@
       </section>
 
       <section class="article-section" id="chunked">
-        <div class="section-no">06 · CHUNKED PREFILL</div>
+        <div class="section-no">06 · 分块 Prefill</div>
         <h2>长 prompt 不必被当成一个不可切分的大石头。</h2>
         <p>Chunked prefill 允许一个长 prompt 分多轮推进。例如 8000-token prompt 不必在一次调度器执行轮次中全部处理；可以只推进受当前 token/输入预算限制的一段，之后继续。</p>
         <div class="shape-flow"><div><small>LONG PROMPT</small><code>8000 tokens</code></div><span>→</span><div><small>执行轮次</small><code>budget-limited chunk</code></div><span>→</span><div><small>NEXT</small><code>continue later</code></div></div>
@@ -79,14 +79,14 @@
       </section>
 
       <section class="article-section" id="preempt">
-        <div class="section-no">07 · WHAT HAPPENS WHEN KV IS NOT ENOUGH?</div>
+        <div class="section-no">07 · KV 不够时会发生什么？</div>
         <h2>调度器可能需要让已有请求暂时退让；当前 V1 默认通过重新计算恢复。</h2>
         <p>当前 V1 调度器在 running 请求无法分到需要的新块时，会进入明确的抢占路径：选 victim、把它从 running 归属关系移出、释放资源，再尝试让当前工作继续。当前 V1 优化文档明确说明默认抢占 mode 是 <strong>RECOMPUTE</strong>，而不是旧 V0 路径常见的 SWAP；恢复时重新计算必要 KV 状态。</p>
         <div class="warning-note"><b>抢占不是异常，也不是免费的。</b><p>它是有限 KV 容量下继续服务的资源管理策略，但频繁重新计算会浪费算力并恶化端到端延迟。带 KV Connector 时，in-flight KV delivery 还会增加 source/destination lifetime 约束，08.3 会继续拆。</p></div>
       </section>
 
       <section class="article-section" id="pseudo">
-        <div class="section-no">08 · A TINY 调度器 MENTAL MODEL</div>
+        <div class="section-no">08 · 一个最小调度器心智模型</div>
         <h2>把几千行调度器先压成“推进 token 进度 + 分配 KV”的伪代码。</h2>
         <div class="code-block"><div class="code-head"><span>python-like pseudocode</span><span>one 调度执行轮次</span></div><pre><code>token_budget = max_scheduled_tokens
 
@@ -119,7 +119,7 @@ return SchedulerOutput(...)</code></pre></div>
       </section>
 
       <section class="article-section" id="source">
-        <div class="section-no">09 · SOURCE MAP</div>
+        <div class="section-no">09 · 源码地图</div>
         <h2>这次只读调度器周围的四个文件。</h2>
         <div class="source-map-vllm"><div class="source-card"><small>MAIN</small><b>调度器</b><code>vllm/v1/core/sched/scheduler.py</code><span>token-progress 调度、资源预算、running/waiting、抢占、KV Connector hooks。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">打开源码 ↗</a></div><div class="source-card"><small>队列</small><b>RequestQueue</b><code>vllm/v1/core/sched/request_queue.py</code><span>等待队列与调度 policy 的抽象。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/request_queue.py">打开源码 ↗</a></div><div class="source-card"><small>CONTRACT</small><b>SchedulerOutput</b><code>vllm/v1/core/sched/output.py</code><span>看调度器最终交给工作进程/执行器的计划里有哪些字段。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/output.py">打开源码 ↗</a></div><div class="source-card"><small>请求</small><b>请求</b><code>vllm/v1/request.py</code><span>状态、token 进度、connector params 等请求-level 数据。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/request.py">打开源码 ↗</a></div></div>
       </section>
