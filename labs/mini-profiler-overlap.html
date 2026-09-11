@@ -44,11 +44,11 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Profiler-ready 重叠</span></div>
-    <div class="lab-kicker">LAB A7 · PROVE THE 重叠</div>
+    <div class="lab-kicker">LAB A7 · 证明通信真的重叠了</div>
     <h1><code>async_op=True</code> 只能制造机会。<br />Profiler 才能告诉你机会有没有变成真实重叠。</h1>
     <p class="dek">A5 已经把 W2 通信桶的 reduce-scatter 提前到 W1 反向传播之前，A6 又加入 TP×DP process groups。现在补上最重要的证据层：脚本用 <code>torch.profiler</code> 和 <code>record_function()</code> 把前向计算、梯度-ready、collective 启动、继续反向传播、等待全部标到时间线上。CPU/Gloo 只验证事件顺序；只有 GPU/NCCL 时间线真正出现通信 kernel 与计算 kernel 时间区间重叠，才可以说重叠发生了。</p>
 
-    <section class="lab-section" id="markers"><div class="lab-kicker">01 · MARK THE DEPENDENCIES</div><h2>先标“语义边界”，再去看底层 kernel。</h2>
+    <section class="lab-section" id="markers"><div class="lab-kicker">01 · 先标出依赖关系</div><h2>先标“语义边界”，再去看底层 kernel。</h2>
       <div class="command"><div class="command-head"><span>TRACE RANGE ORDER</span><span>per rank</span></div><pre>forward
 backward_w2_ready
 launch_reduce_scatter_w2
@@ -58,7 +58,7 @@ wait_for_gradient_shards</pre></div>
       <p>这些 range 不是为了美化 trace，而是给你一把尺子：<strong>W2 collective 启动之后，到最终等待之前，中间确实存在一段不依赖 W2 分片的反向传播计算。</strong>这段区间就是通信可能被隐藏的窗口。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">02 · RUN + EXPORT TRACE</div><h2>同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">02 · 运行并导出时间线</div><h2>同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_profiler_overlap.py \
   --trace-dir profiler_traces</pre></div>
@@ -72,17 +72,17 @@ PASS</pre></div>
       <div class="truth-note"><b>CPU trace 仍然不能证明 GPU 重叠。</b><p>本地检查只确认两个 rank 都能导出 Chrome trace，而且六个自定义 range 都真实存在。Gloo 的 progress、CPU 调度与 GPU/NCCL 完全不是一回事，所以这里只把 profiler 工作流跑通，不把 CPU timing 当性能结论。</p></div>
     </section>
 
-    <section class="lab-section" id="gpu"><div class="lab-kicker">03 · WHAT COUNTS AS PROOF</div><h2>GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</h2>
+    <section class="lab-section" id="gpu"><div class="lab-kicker">03 · 什么才算证据</div><h2>GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</h2>
       <div class="result-grid"><div class="result-card"><small>启动</small><b>collective returns early</b><span>W2 reduce-scatter 被发起后，CPU/host 没有立即在同一位置把整个操作等完。</span></div><div class="result-card"><small>时间线</small><b>NCCL ∩ 计算</b><span>NCCL reduce-scatter kernel 与后续反向传播 GEMM / elementwise kernel 在时间轴上真的有重叠区间。</span></div><div class="result-card"><small>关键路径</small><b>等待 shrinks</b><span>最终等待不再承担完整通信时间；最好再比较同步版本与重叠版本的单步时间。</span></div></div>
       <p>如果只看到异步 API，却没有第二条 stream 上的 NCCL kernel 与计算同时存在，就只能说“代码允许异步”，不能说“性能上隐藏了通信”。</p>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO CURRENT MEGATRON</div><h2>Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</h2>
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · 映射到当前 Megatron</div><h2>Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</h2>
       <div class="source-bridge"><div><small>OUR LAB</small><b>W2 ready → 异步 RS → later 等待</b><code>record_function + Work handle</code></div><span>same 调度 question →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket group · register_grad_ready · start_grad_sync · finish_grad_sync</code></div></div>
       <p>当前 Megatron 源码会在通信桶进程组的参数梯度全部 ready 后发起梯度 reduction；启用 distributed 优化器时是 reduce-scatter，否则是 all-reduce。<code>overlap_grad_reduce</code> 决定通信是否异步分发。读这里时应把 A7 的时间线放在脑子里，而不是只看函数调用。</p>
     </section>
 
-    <section class="lab-section" id="close"><div class="lab-kicker">05 · TRAINING SOFTWARE CAPSTONE</div><h2>到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</h2>
+    <section class="lab-section" id="close"><div class="lab-kicker">05 · 训练软件阶段收尾</div><h2>到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</h2>
       <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认后端=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与反向传播计算是否重叠。</div><div>③ 再把 A6 的 TP×DP 进程组加进 profiler，区分 TP collective 与 DP reduce-scatter。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对重叠 window 的影响。</div></div>
     </section>
 
