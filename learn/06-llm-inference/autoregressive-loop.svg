@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 790" role="img" aria-labelledby="title desc">
   <title id="title">Autoregressive generation dataflow</title>
-  <desc id="desc">The confirmed prefix enters a decoder-only transformer, last-position logits are processed by a decoding policy, one token is selected and appended, and only then can the next ordinary target-model step proceed.</desc>
+  <desc id="desc">The confirmed prefix enters a decoder-only transformer, last-position logits are processed by a decoding policy, one token is selected and 追加ed, and only then can the next ordinary target-model step proceed.</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#737b74"/></marker>
     <style>
@@ -8,14 +8,14 @@
       .ey{font-size:11px;font-weight:700;letter-spacing:1.7px;fill:#8a918a}.ttl{font-size:24px;font-weight:760;fill:#252a25}.sub{font-size:13px;fill:#687069}.sec{font-size:10px;font-weight:700;letter-spacing:1.35px;fill:#8b928b}.label{font-size:11px;font-weight:760;fill:#343c35}.small{font-size:10px;fill:#687069}.tiny{font-size:9px;fill:#687069}.panel{fill:#fcfcfa;stroke:#ccd2cb;stroke-width:1.2}.box{fill:#fff;stroke:#cdd3cc;stroke-width:1.1}.model{fill:#edf4f8;stroke:#bfd3e0;stroke-width:1.1}.green{fill:#eaf2ed;stroke:#bfd4c5;stroke-width:1.1}.sand{fill:#faf5ea;stroke:#dfceac;stroke-width:1.1}.dark{fill:#222824}.line{fill:none;stroke:#737b74;stroke-width:1.35}
     </style>
   </defs>
-  <text class="mono ey" x="34" y="34">DECODER-ONLY LLM · BASELINE AUTOREGRESSIVE GENERATION</text>
-  <text class="sans ttl" x="34" y="67">One selected token unlocks the next ordinary decode step</text>
-  <text class="sans sub" x="34" y="91">The model produces logits; the decoding policy chooses a token; that token becomes confirmed context.</text>
+  <text class="mono ey" x="34" y="34">仅解码器 LLM · 基线自回归生成</text>
+  <text class="sans ttl" x="34" y="67">选出一个 token 后，下一步 Decode 才能继续</text>
+  <text class="sans sub" x="34" y="91">模型输出 logits；解码策略选出 token；这个 token 随后成为已确认上下文。</text>
 
-  <text class="mono sec" x="34" y="128">1 · ONE ORDINARY GENERATION STEP · t</text>
+  <text class="mono sec" x="34" y="128">1 · 一次普通生成步骤 · t</text>
   <rect class="panel" x="34" y="144" width="692" height="406" rx="14"/>
-  <text class="sans label" x="52" y="174">Input is the already-confirmed prefix — not unknown future outputs.</text>
-  <text class="mono sec" x="52" y="208">CURRENT CONTEXT</text>
+  <text class="sans label" x="52" y="174">输入是已经确认的前缀，而不是尚未知晓的未来输出。</text>
+  <text class="mono sec" x="52" y="208">当前上下文</text>
   <g transform="translate(52 222)" class="mono">
     <g><rect class="box" width="58" height="42" rx="7"/><text class="label" x="29" y="26" text-anchor="middle">x₀</text></g>
     <g transform="translate(64)"><rect class="box" width="58" height="42" rx="7"/><text class="label" x="29" y="26" text-anchor="middle">x₁</text></g>
@@ -25,51 +25,51 @@
   </g>
   <path class="line" d="M386 243 H414" marker-end="url(#arrow)"/>
   <rect class="model" x="420" y="208" width="130" height="72" rx="10"/>
-  <text class="mono sec" x="438" y="231" fill="#315f82">TARGET MODEL</text>
+  <text class="mono sec" x="438" y="231" fill="#315f82">目标模型</text>
   <text class="sans label" x="438" y="252">Transformer</text>
-  <text class="sans tiny" x="438" y="268">last-position hidden</text>
+  <text class="sans tiny" x="438" y="268">最后位置隐藏状态</text>
   <path class="line" d="M550 244 H574" marker-end="url(#arrow)"/>
   <rect class="sand" x="580" y="208" width="126" height="72" rx="10"/>
-  <text class="mono sec" x="598" y="231" fill="#7b6a3e">OUTPUT HEAD</text>
+  <text class="mono sec" x="598" y="231" fill="#7b6a3e">输出头</text>
   <text class="sans label" x="598" y="252">logits ∈ ℝ^V</text>
-  <text class="sans tiny" x="598" y="268">score / vocab token</text>
+  <text class="sans tiny" x="598" y="268">分数 / 词表 token</text>
 
   <path class="line" d="M643 280 V310" marker-end="url(#arrow)"/>
   <rect class="green" x="480" y="316" width="226" height="72" rx="10"/>
-  <text class="mono sec" x="498" y="339" fill="#255b46">DECODING POLICY</text>
+  <text class="mono sec" x="498" y="339" fill="#255b46">解码策略</text>
   <text class="sans label" x="498" y="360">greedy / temperature / top-p …</text>
-  <text class="sans tiny" x="498" y="376">processors → choose one token ID</text>
+  <text class="sans tiny" x="498" y="376">处理规则 → 选择一个 token ID</text>
   <path class="line" d="M480 352 H438" marker-end="url(#arrow)"/>
   <rect class="green" x="340" y="326" width="90" height="52" rx="9"/>
-  <text class="mono sec" x="385" y="346" text-anchor="middle" fill="#255b46">SELECTED</text>
+  <text class="mono sec" x="385" y="346" text-anchor="middle" fill="#255b46">已选 TOKEN</text>
   <text class="sans label" x="385" y="366" text-anchor="middle">yₜ</text>
   <path class="line" d="M340 352 H300" marker-end="url(#arrow)"/>
   <rect class="box" x="126" y="316" width="166" height="72" rx="10"/>
-  <text class="mono sec" x="144" y="339">APPEND TO PREFIX</text>
-  <text class="sans label" x="144" y="360">context ← context + yₜ</text>
-  <text class="sans tiny" x="144" y="376">yₜ is now confirmed state</text>
+  <text class="mono sec" x="144" y="339">追加到前缀</text>
+  <text class="sans label" x="144" y="360">上下文 ← 上下文 + yₜ</text>
+  <text class="sans tiny" x="144" y="376">yₜ 现在成为已确认状态</text>
   <path class="line" d="M126 352 H82 V243 H52" marker-end="url(#arrow)"/>
-  <text class="sans tiny" x="52" y="414">feedback path: the next step can only condition on tokens already accepted into the prefix.</text>
+  <text class="sans tiny" x="52" y="414">反馈路径：下一步只能依赖已经被接受进前缀的 token。</text>
   <rect class="box" x="52" y="438" width="654" height="88" rx="10"/>
-  <text class="mono sec" x="70" y="462">WHAT IS SERIAL?</text>
-  <text class="sans small" x="70" y="484">Within one baseline request, yₜ must be selected before the target model can condition on yₜ at step t+1.</text>
-  <text class="sans small" x="70" y="505">This does not prevent batching many independent requests in the same serving iteration.</text>
+  <text class="mono sec" x="70" y="462">哪里是串行的？</text>
+  <text class="sans small" x="70" y="484">对一个基线请求，必须先选出 yₜ，目标模型才能在 t+1 步把它作为条件。</text>
+  <text class="sans small" x="70" y="505">这并不妨碍同一轮在线推理同时批处理多个独立请求。</text>
 
-  <text class="mono sec" x="34" y="586">2 · INTER-STEP DEPENDENCY</text>
+  <text class="mono sec" x="34" y="586">2 · 步与步之间的依赖</text>
   <rect class="panel" x="34" y="602" width="692" height="96" rx="12"/>
   <g transform="translate(58 625)" class="mono">
-    <rect class="green" width="116" height="46" rx="8"/><text class="label" x="58" y="28" text-anchor="middle">select y₁</text>
-    <path class="line" d="M116 23 H160" marker-end="url(#arrow)"/><text class="tiny" x="125" y="14">append</text>
-    <rect class="green" x="168" width="116" height="46" rx="8"/><text class="label" x="226" y="28" text-anchor="middle">select y₂</text>
-    <path class="line" d="M284 23 H328" marker-end="url(#arrow)"/><text class="tiny" x="293" y="14">append</text>
-    <rect class="green" x="336" width="116" height="46" rx="8"/><text class="label" x="394" y="28" text-anchor="middle">select y₃</text>
+    <rect class="green" width="116" height="46" rx="8"/><text class="label" x="58" y="28" text-anchor="middle">选择 y₁</text>
+    <path class="line" d="M116 23 H160" marker-end="url(#arrow)"/><text class="tiny" x="125" y="14">追加</text>
+    <rect class="green" x="168" width="116" height="46" rx="8"/><text class="label" x="226" y="28" text-anchor="middle">选择 y₂</text>
+    <path class="line" d="M284 23 H328" marker-end="url(#arrow)"/><text class="tiny" x="293" y="14">追加</text>
+    <rect class="green" x="336" width="116" height="46" rx="8"/><text class="label" x="394" y="28" text-anchor="middle">选择 y₃</text>
     <path class="line" d="M452 23 H496" marker-end="url(#arrow)"/>
-    <rect class="box" x="504" width="126" height="46" rx="8"/><text class="label" x="567" y="28" text-anchor="middle">… until stop</text>
+    <rect class="box" x="504" width="126" height="46" rx="8"/><text class="label" x="567" y="28" text-anchor="middle">… 直到停止</text>
   </g>
 
   <rect class="dark" x="34" y="724" width="692" height="50" rx="10"/>
-  <text class="mono sec" x="52" y="746" fill="#b7c1ba">ADVANCED CAVEAT</text>
-  <text class="sans small" x="190" y="746" style="fill:#eef2ed">Speculative methods may accept multiple tokens per expensive target-model iteration,</text>
-  <text class="sans small" x="190" y="764" style="fill:#eef2ed">but accepted tokens must still respect the target autoregressive distribution.</text>
-  <text class="sans tiny" x="34" y="788">Next: separate prompt processing (Prefill) from repeated generation work (Decode).</text>
+  <text class="mono sec" x="52" y="746" fill="#b7c1ba">进阶例外</text>
+  <text class="sans small" x="190" y="746" style="fill:#eef2ed">投机方法可能在一次昂贵的目标模型执行中接受多个 token，</text>
+  <text class="sans small" x="190" y="764" style="fill:#eef2ed">但被接受的 token 仍必须服从目标模型的自回归分布。</text>
+  <text class="sans tiny" x="34" y="788">下一步：把输入处理（Prefill）与重复生成（Decode）分开看。</text>
 </svg>
