@@ -83,7 +83,7 @@
       <div><small>KV CACHE</small><b>随请求数与上下文长度增长</b></div>
       <div><small>RUNTIME</small><b>临时张量、工作区、碎片等不能忽略</b></div>
     </div>
-    <div class="source-note">硬件锚点：<a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA H200</a> 当前规格页给出 141 GB GPU memory 与 4.8 TB/s memory bandwidth。这里用它做数量级例子，不把理论规格当成实测服务性能。</div>
+    <div class="source-note">硬件锚点：<a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA H200</a> 当前规格页给出 141 GB GPU memory 与 <code>4.8 TB/s</code> memory bandwidth。这里用它做数量级例子，不把理论规格当成实测服务性能。</div>
   </section>
 
   <section class="article-section" id="bandwidth">
@@ -91,7 +91,7 @@
     <h2>Decode 很慢，不一定是算力不够；也可能是在等权重和 KV 从显存里被读出来。</h2>
     <p>一个非常有用的理想下界是：</p>
     <div class="shape-rule"><code>时间下界 ≳ 需要搬的数据量 ÷ 有效显存带宽</code></div>
-    <p>仍然拿上面的 140 GB 权重做极端简化：如果某一步真的需要把这 140 GB 权重完整读一遍，而硬件带宽按 H200 标称 4.8 TB/s 计算，光“搬完这些数据”的理论时间下界就约 29 ms。真实程序还会受到 kernel 效率、KV 访问、调度、通信以及没有跑满标称带宽等因素影响，因此实际值只会更复杂。</p>
+    <p>仍然拿上面的 140 GB 权重做极端简化：如果某一步真的需要把这 140 GB 权重完整读一遍，而硬件带宽按 H200 标称 <code>4.8 TB/s</code> 计算，光“搬完这些数据”的理论时间下界就约 29 ms。真实程序还会受到 kernel 效率、KV 访问、调度、通信以及没有跑满标称带宽等因素影响，因此实际值只会更复杂。</p>
     <div class="precision-note"><strong>不要把 29 ms 当成 70B 模型的真实每-token 延迟。</strong>这是故意粗糙的 roofline 式数量级练习：它的用途是判断“带宽有没有可能成为主要瓶颈”，而不是替代 profiler 或 benchmark。</div>
 
     <p>这也解释了为什么批次会改变 Decode 的效率。同一批里有更多 token 一起经过模型时，读取一次权重可以服务更多计算工作，单位 token 分摊到的权重读取成本会下降；但批次更大通常也意味着更多请求同时竞争资源，用户延迟未必一起变好。</p>
