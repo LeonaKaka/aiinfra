@@ -16,6 +16,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import difflib
 import html as html_lib
 import re
 from pathlib import Path
@@ -418,6 +419,18 @@ def main() -> int:
         print("Terminology normalization required:")
         for path in changed:
             print(f"  - {path.relative_to(ROOT)}")
+            old = path.read_text(encoding="utf-8")
+            new = normalize_html(old)
+            diff = difflib.unified_diff(
+                old.splitlines(),
+                new.splitlines(),
+                fromfile=str(path.relative_to(ROOT)),
+                tofile=str(path.relative_to(ROOT)) + " (normalized)",
+                lineterm="",
+                n=1,
+            )
+            for line in list(diff)[:80]:
+                print("    " + line)
         print("Run: python scripts/lesson_terms.py --write")
         return 1
     print(f"Lesson terminology checked: {len(lesson_files())} lessons; {total_terms} lesson-term occurrences indexed; 0 drift.")
