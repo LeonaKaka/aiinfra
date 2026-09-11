@@ -31,9 +31,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Transformer Block</span></div>
       <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约55 min</span></div>
       <h1>Transformer Block：Attention、MLP、Residual 和 Norm 怎么拼起来？</h1>
-      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做Norm、residual connection（残差连接：把子层输入直接加回输出以稳定深层网络） 和 MLP。把这些模块拼起来，你第一次能看见“一个 Transformer 层到底在执行什么”，也终于有资格开始讨论它为什么要被切到多张图形处理器（GPU）。</p>
+      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做归一化、residual connection（残差连接：把子层输入直接加回输出以稳定深层网络）和 MLP。把这些模块拼起来，就得到 Transformer block（Transformer 块：由 Attention、MLP、Norm 和 residual 等子模块组成的一层计算单元），也终于可以讨论它为什么要被切到多张 GPU。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的pre-norm decoder block（块：KV Cache 等系统中固定粒度的内存管理单位）的完整数据流。</li><li>理解 residual connection 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的 position 信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出张量并行、流水线并行和 KV Cache 分别会落在 Transformer Block 的什么位置。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的 pre-norm（前置归一化：先做 Norm 再进入 Attention 或 MLP 分支） Transformer block 的完整数据流。</li><li>理解 residual connection 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的 position 信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出 TP、Pipeline Parallel 和 KV Cache 分别会落在 Transformer block 的什么位置。</li></ul></div>
 
       <section class="article-section" id="big-picture">
         <div class="section-no">01 · 先看完整 Transformer Block</div>
@@ -50,23 +50,23 @@
         <p>把它压成两行伪公式，就是：</p>
         <div class="code-block"><div class="code-head"><span>pre-norm view</span><span>one block</span></div><pre><code>h = x + Attention(Norm(x))
 y = h + MLP(Norm(h))</code></pre></div>
-        <div class="concept-note"><p><strong>架构并不只有这一种。</strong>原始Transformer常被描述为post-norm；很多现代decoder大语言模型（LLM）使用pre-norm，并且归一化、MLP、Attention细节也各有差异。我们先掌握共同的数据流，再学具体模型。</p></div>
+        <div class="concept-note"><p><strong>架构并不只有这一种。</strong>原始 Transformer 常被描述为 post-norm（后置归一化：先完成子层和 residual 相加，再做 Norm）；很多现代 LLM 使用 pre-norm，并且归一化、MLP、Attention 细节也各有差异。我们先掌握共同的数据流，再学具体模型。</p></div>
       </section>
 
       <section class="article-section" id="residual">
         <div class="section-no">02 · Residual Connection</div>
         <h2>为什么Attention和MLP最后都要回到 <code>[B,S,H]</code>？因为要和输入直接相加。</h2>
         <div class="shape-rule"><code>x [B,S,H]</code><span>+</span><code>branch(x) [B,S,H]</code><span>→</span><code>output [B,S,H]</code></div>
-        <p>residual connection 就是“保留原来的x，再加上分支学到的新变化”。要逐元素相加，形状必须一致。这也是上一课多头注意力（MHA）最后需要merge heads并经过output投影回到H的原因之一。</p>
+        <p>residual connection 就是“保留原来的 x，再加上分支学到的新变化”。要逐元素相加，shape 必须一致。这也是上一课 MHA 最后需要合并 heads 并经过 output projection 回到 H 的原因之一。</p>
         <div class="why-grid"><div class="why-card"><b>形状稳定</b><p>每个块输入输出保持同样主形状，几十层可以直接堆起来。</p></div><div class="why-card"><b>信息直通</b><p>分支不必每层都重新创造全部表示，而是在已有表示上学习增量。</p></div><div class="why-card"><b>训练更稳</b><p>残差连接为深层网络提供更直接的信息与梯度路径，是深Transformer能训练起来的重要结构之一。</p></div></div>
       </section>
 
       <section class="article-section" id="norm">
         <div class="section-no">03 · LayerNorm / RMSNorm</div>
         <h2>归一化不负责“理解语言”，它主要让数值尺度更可控。</h2>
-        <p>你会在模型里看到LayerNorm（层归一化：按特征维对单个样本的表示做归一化）、RMSNorm（均方根归一化：用均方根尺度归一化表示的常见方法）等。现在不用背公式，只要知道它们通常沿隐藏维度对每个token的向量做归一化/缩放相关操作，输出形状不变：</p>
+        <p>你会在模型里看到 LayerNorm（层归一化：按特征维对单个样本的表示做归一化）、RMSNorm（均方根归一化：用均方根尺度归一化表示的常见方法）等。现在不用背公式，只要知道它们通常沿 hidden dimension 对每个 token 的向量做归一化或缩放，输出 shape 不变：</p>
         <div class="shape-flow"><div><small>BEFORE NORM</small><code>[B,S,H]</code></div><span>→</span><div><small>NORMALIZE</small><code>per token hidden vector</code></div><span>→</span><div><small>AFTER NORM</small><code>[B,S,H]</code></div></div>
-        <p>现代LLM中RMSNorm很常见，但具体选择属于模型架构。对Infra来说，先记住两点：它是一个额外 kernel/op；它不像大线性层那样有巨大 <code>H×H</code> 权重矩阵，却会参与每层的数据流和kernel scheduling。</p>
+        <p>现代 LLM 中 RMSNorm 很常见，但具体选择属于模型架构。对 Infra 来说，先记住两点：它是一个额外 kernel/算子；它不像大 Linear 那样有巨大 <code>H×H</code> weight，却会参与每层的数据流和 kernel 调度。</p>
       </section>
 
       <section class="article-section" id="mlp">
@@ -74,9 +74,9 @@ y = h + MLP(Norm(h))</code></pre></div>
         <h2>MLP看起来叫“前馈网络”，本质上还是你已经学过的大线性层。</h2>
         <p>最经典的两层MLP可以先画成：</p>
         <div class="mlp-diagram"><div><small>INPUT</small><code>H</code></div><span>线性层 ↑</span><div class="wide"><small>INTERMEDIATE</small><code>4H</code></div><span>activation</span><div class="wide"><small>NONLINEAR</small><code>GELU / …</code></div><span>线性层 ↓</span><div><small>OUTPUT</small><code>H</code></div></div>
-        <p>忽略bias，如果intermediate size恰好是 <code>4H</code>：</p>
+        <p>忽略 bias，如果 intermediate size（中间维度：MLP 扩展后的隐藏表示宽度）恰好是 <code>4H</code>：</p>
         <div class="cost-panel"><div><small>UP PROJECTION</small><b>H × 4H = 4H² parameters</b></div><div><small>DOWN PROJECTION</small><b>4H × H = 4H² parameters</b></div><p>合计约 <strong>8H²</strong> 个权重。相比之下，普通MHA的Q/K/V/O四个H×H投影约是4H²。这个粗算让你看到：MLP往往是块里非常大的参数和通用矩阵乘法（GEMM）来源。</p></div>
-        <div class="concept-note"><p><strong>但别把4H当铁律。</strong>现代LLM常使用SwiGLU等gated MLP，intermediate size 和 projection 数量会不同。以后读具体模型源码，要以配置为准。</p></div>
+        <div class="concept-note"><p><strong>但别把 4H 当铁律。</strong>现代 LLM 常使用 SwiGLU（门控激活结构：用门控分支和非线性共同调制 MLP 输出）等 gated MLP（门控 MLP：用门控分支调制前馈输出的 MLP 变体），intermediate size 和 projection 数量会不同。以后读具体模型源码，要以配置为准。</p></div>
       </section>
 
       <section class="article-section" id="code">
@@ -112,13 +112,13 @@ x = torch.randn(<span class="num">2</span>, <span class="num">16</span>, <span c
 block = TinyBlock()
 y = block(x)
 print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
-        <p>这里用PyTorch的高级 <code>MultiheadAttention</code> 是因为上一课已经手写过Attention形状；这一课重点是观察一个块如何组合子模块。真实LLM的attention、mask、position encoding、RMSNorm、gated MLP等会更具体。</p>
+        <p>这里用 PyTorch 的高级 <code>MultiheadAttention</code>（多头注意力模块：封装多头 Attention 的高层 API）是因为上一课已经手写过 Attention shape；这一课重点是观察一个 Transformer block 如何组合子模块。真实 LLM 的 Attention、mask、position encoding（位置编码：把 token 在序列中的位置信息注入模型表示）、RMSNorm、gated MLP 等会更具体。</p>
       </section>
 
       <section class="article-section" id="position-semantics">
         <div class="section-no">06 · 位置信息也是 Attention 状态的一部分</div>
         <h2>同一个token出现在第10位和第100位，Attention不能把它们当成同一件事。</h2>
-        <p>decoder不只需要知道“token是什么”，还需要知道“token在序列的什么位置”。很多现代LLM使用RoPE（旋转位置编码：把位置信息注入 Query/Key 的常见位置编码方法）：在常见实现里，Query和Key会根据 <code>positions</code> 做位置相关变换，再进入Attention。Value通常不做同样的旋转。</p>
+        <p>自回归模型不只需要知道“token 是什么”，还需要知道“token 在序列的什么位置”。很多现代 LLM 使用 RoPE（旋转位置编码：把位置信息注入 Query/Key 的常见位置编码方法）：在常见实现里，Query 和 Key 会根据 <code>positions</code> 做位置相关变换，再进入 Attention。Value 通常不做同样的旋转。</p>
         <div class="code-block"><div class="code-head"><span>mental model</span><span>position-conditioned attention</span></div><pre><code>hidden states
     │
     ├─→ Q ─┐
@@ -126,38 +126,39 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
     └─→ V ────────────────────────────→ Attention
 
 <span class="comment"># common decoder idea, not a promise about kernel fusion order</span></code></pre></div>
-        <p>这会直接影响后面的KV Cache：缓存不是“随便保存一份K/V数字以后就能到处用”。要安全复用本地或远端KV，至少要保证它仍对应<strong>同一模型语义、同一 layer/head layout、同一 token prefix与一致的位置编码约定</strong>。如果 position 或 RoPE 配置不兼容，即使字节数和形状都对，语义也可能已经错了。</p>
+        <p>这会直接影响后面的 KV Cache：缓存不是“随便保存一份 K/V 数字以后就能到处用”。要安全复用本地或远端 KV，至少要保证它仍对应<strong>同一模型语义、同一层/head layout、同一 token prefix（前缀：从序列开头开始的一段连续 token）与一致的位置编码约定</strong>。如果 position（位置编号：标识 token 在序列中的位置）或 RoPE 配置不兼容，即使 bytes 数和 shape 都对，语义也可能已经错了。</p>
         <div class="why-grid"><div class="why-card"><b>token identity</b><p>缓存必须对应你以为的那段prefix，而不是另一段“长度刚好一样”的序列。</p></div><div class="why-card"><b>position semantics</b><p>位置编号、RoPE参数/缩放等必须与生成这些K/V时的约定兼容。</p></div><div class="why-card"><b>layout / format</b><p>layer、head、dtype、cache layout也必须与消费端契约一致；这会在06–08模块继续具体化。</p></div></div>
-        <div class="concept-note"><p><strong>实现和语义要分开：</strong>真实 runtime 可以把 Query/Key normalization、RoPE、KV cache write 等步骤融合进 kernel；你不需要背某个函数调用顺序。需要牢牢记住的是：<strong>KV reuse 复用的是带上下文语义的模型状态，不只是搬一段显存。</strong></p></div>
+        <div class="concept-note"><p><strong>实现和语义要分开：</strong>真实 runtime（运行时：模型实际执行时负责组织计算、通信和数据状态的系统层）可以把 Query/Key normalization、RoPE、KV cache write 等步骤放进 fused kernel（融合 kernel：把多个操作合并到一次或更少 GPU kernel 中执行）；你不需要背某个函数调用顺序。需要牢牢记住的是：<strong>KV reuse（KV 复用：在语义兼容时直接使用已经计算好的 KV state）复用的是带上下文语义的模型状态，不只是搬一段显存。</strong></p></div>
         <div class="source-note">当前vLLM的Qwen3路径就是一个直观例子：<code>positions</code> 传入attention，Q/K先经过 <code>rotary_emb(positions, q, k)</code>，随后进入attention。源码入口：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/qwen3.py">vLLM · qwen3.py</a>。具体模型与fused kernel可能采用不同实现组织，因此这里把它作为语义示例，不把函数排列当永久接口定义。</div>
       </section>
 
       <section class="article-section" id="stack">
         <div class="section-no">07 · 从一个 Block 堆成模型</div>
         <h2>大模型，就是把这种块重复很多层，再加上入口和出口。</h2>
-        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM（语言模型：对 token 序列概率或下一 token 分布进行建模的模型） HEAD</small><b>logits</b></div></div>
-        <p>所以以后看到“80-layer model”，不是80个完全不同的概念，而是同一种块结构使用不同参数重复80次。也因此，单层里一点点显存、通信或kernel scheduling浪费，乘上几十层后都会很明显。</p>
+        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM（语言模型：对 token 序列概率或下一 token 分布进行建模的模型） HEAD</small><b>logits（未归一化分数：模型在 softmax 前对候选 token 给出的原始分数）</b></div></div>
+        <p>所以以后看到“80-layer model”，不是 80 个完全不同的概念，而是同一种 Transformer block 使用不同 parameter 重复 80 次。也因此，单层里一点点显存、通信或 kernel 调度浪费，乘上几十层后都会很明显。</p>
       </section>
 
       <section class="article-section" id="training">
         <div class="section-no">08 · Transformer Block 与训练循环的关系</div>
         <h2>别把前向计算里的块和外面的优化器混在一起。</h2>
         <div class="compare-strip block-compare"><div><small>MODEL FORWARD</small><b>block(x)</b><span>归一化 → Attention → 残差连接 → 归一化 → MLP → 残差连接</span></div><div><small>训练循环</small><b>loss.backward()</b><span>对所有 blocks 的 parameters 沿计算图产生 gradients</span></div><div><small>优化器</small><b>step()</b><span>在 forward/backward 之外更新所有 trainable parameters</span></div></div>
-        <p>这三个层级分清以后，读Megatron源码会轻松很多：model code定义“算什么”，distributed/runtime code决定“在哪张GPU算、怎么通信”，优化器code决定“参数怎么更新”。</p>
+        <p>这三个层级分清以后，读 Megatron 源码会轻松很多：model code（模型代码：定义“算什么”）描述网络计算；distributed/runtime code（分布式/运行时代码：决定“在哪张 GPU 算、怎么通信”）组织执行；optimizer code（优化器代码：决定 parameter 怎么更新）处理训练状态更新。</p>
       </section>
 
       <section class="article-section" id="infra">
         <div class="section-no">09 · 从系统角度拆一个 Block</div>
         <h2>现在终于可以把AI Infra技术贴到块上。</h2>
-        <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>Tensor Parallel</b><span>切 QKV / output projection weights 与 heads</span></div><div><small>MLP LINEARS</small><b>Tensor Parallel</b><span>切 up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>Context Parallel</b><span>长序列跨ranks分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同 GPU stage 保存不同 layers</span></div><div><small>TRAINING STATES</small><b>Distributed Optimizer</b><span>分片优化器 / parameter-related states</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史 K/V 跨 token 复用</span></div></div>
+        <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>TP</b><span>切 QKV / output projection weights 与 heads</span></div><div><small>MLP LINEARS</small><b>TP</b><span>切 up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>Context Parallel</b><span>长 sequence 跨 GPU 分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同 GPU 阶段保存不同 layers</span></div><div><small>TRAINING STATES</small><b>Distributed Optimizer</b><span>分片 optimizer / parameter 相关 state</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史 K/V 跨 token 复用</span></div></div>
+        <p>这里先给两个后续模块的名字：Context Parallel（上下文并行：沿 sequence 或 context 维把长序列分给不同 GPU）；Pipeline Parallel（流水线并行：把不同 model layers 分给不同 GPU 阶段执行）。</p>
         <p>这张图就是后面几大模块的导航。以后每学一个并行策略，我们都会回来问：它到底切的是块里的哪一块？</p>
       </section>
 
       <section class="article-section" id="prefill-decode">
         <div class="section-no">10 · 通往大模型推理</div>
-        <h2>Prefill和Decode都执行这些blocks，但每一步的工作量结构不同。</h2>
+        <h2>Prefill（预填充阶段：一次处理 prompt 并建立历史 KV state 的阶段）和 Decode（解码阶段：利用已有 KV state 一步步生成新 token 的阶段）都会执行这些 Transformer blocks，但每一步的工作量结构不同。</h2>
         <div class="prefill-decode"><div><small>PREFILL</small><b>一次送入很多prompt tokens</b><span>大矩阵计算更充分；每层产生并保存prompt的KV Cache。</span></div><div><small>DECODE</small><b>通常每条序列一次新增一个token</b><span>每层复用历史KV；小批量/低算术强度问题更突出。</span></div></div>
-        <p>这就是为什么同一个模型，训练Infra和推理Infra会长得很不一样。vLLM章节会从这里继续：如何调度很多请求、管理KV blocks、让GPU在decode阶段仍然高效。</p>
+        <p>这就是为什么同一个模型，训练 Infra 和推理 Infra 会长得很不一样。vLLM 章节会从这里继续：如何调度很多请求、管理 KV 内存块、让 GPU 在 Decode 阶段仍然高效。</p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>MODULE 02</span></div><h2>能把一个块画出来，Transformer地基才算完成。</h2><div class="quiz-item"><div class="quiz-q">1. 为什么Attention分支输出通常要回到 <code>[B,S,H]</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为需要和residual路径上的输入逐元素相加；主hidden形状一致也让多个blocks可以连续堆叠。</div></div><div class="quiz-item"><div class="quiz-q">2. 标准两层 <code>H → 4H → H</code> MLP忽略bias大约有多少权重？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a"><code>H×4H + 4H×H = 8H²</code>。这是一个教学估算，现代gated MLP的结构和intermediate size可能不同。</div></div><div class="quiz-item"><div class="quiz-q">3. Pipeline Parallel和Tensor Parallel最直观的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">在这里的第一层直觉是：Pipeline Parallel更像把不同Transformer layers分给不同阶段；Tensor Parallel则在同一层内部切分大线性层 / 注意力头等张量计算。后面会正式推导通信。</div></div><div class="quiz-item"><div class="quiz-q">4. 为什么远端拿到形状完全正确的KV，仍然不代表一定可以安全复用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为KV还依赖生成它时的模型、layer/头布局、token prefix、position/RoPE语义和cache format。字节数正确只是必要条件，不是语义兼容的充分条件。</div></div></section>
