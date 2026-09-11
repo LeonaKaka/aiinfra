@@ -4,13 +4,12 @@
 Teaching prose keeps source/code spelling and explains it once when the course
 first teaches the concept:
 
-    shape（形状）。它表示 tensor 各维度的长度。
-    scheduler（调度器）。它决定每轮哪些 requests 推进多少 token。
+    shape（形状：表示 tensor 各维度的长度）
+    scheduler（调度器：决定每轮哪些 requests 推进多少 token）
 
-The parenthesis contains only the Chinese term. A short beginner explanation stays
-in normal prose immediately around the first occurrence. Later uses keep the
-English/source spelling so the prose continues to match code, profiler output,
-docs and repository identifiers.
+The parenthesis contains both the Chinese term and one concise beginner
+explanation. Later uses keep the English/source spelling so the prose continues
+to match code, profiler output, docs and repository identifiers.
 
 Exact class/function/field/path identifiers are never translated internally.
 """
