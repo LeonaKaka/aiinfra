@@ -44,11 +44,11 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>已注册内存区描述符</span></div>
-    <div class="lab-kicker">LAB B6 · 分配 ≠ 传输 REGION</div>
+    <div class="lab-kicker">LAB B6 · KV 分配不等于传输区域</div>
     <h1>“注册一块内存”和“我要传哪一层、哪一个 KV 块”<br />不是同一个问题。</h1>
     <p class="dek">B5 已经有握手与生命周期，但还没有真正拆开内存注册的两个层次。这个实验故意让 3 层 KV 视图 共享同一个底层存储：内存系统看到的是<strong>一个分配</strong>，而传输逻辑看到的是<strong>三个层级区域</strong>。每个区域再用 <code>base offset</code>、<code>block length</code>、<code>block stride</code> 描述“第 b 个 KV 块到底在哪里”。这正是读当前 vLLM NIXL <code>register_kv_caches()</code> 前必须建立的心智模型。</p>
 
-    <section class="lab-section" id="allocation"><div class="lab-kicker">01 · ONE 存储, MULTIPLE REGIONS</div><h2>共享存储不意味着所有 layer 都是同一个传输 region。</h2>
+    <section class="lab-section" id="allocation"><div class="lab-kicker">01 · 一块存储，对应多个传输区域</div><h2>共享存储不意味着所有 layer 都是同一个传输 region。</h2>
       <div class="command"><div class="command-head"><span>TEACHING 布局</span><span>3 layers · 8 blocks</span></div><pre>one storage allocation
 ┌───────────────────────────────────────────────────┐
 │ layer 0 region │ layer 1 region │ layer 2 region   │
@@ -61,12 +61,12 @@ block b address = region_base + b × block_stride</pre></div>
       <p>脚本里的三层 tensor 是同一块存储的 view，因此 <code>untyped_storage().data_ptr()</code> 只对应一个底层分配；但每层 <code>data_ptr()</code> 不同，所以可以形成多个逻辑 region。</p>
     </section>
 
-    <section class="lab-section" id="geometry"><div class="lab-kicker">02 · LENGTH VS STRIDE</div><h2><code>block_len</code> 回答“传多少”，<code>block_stride</code> 回答“下一个 block 从哪开始”。</h2>
+    <section class="lab-section" id="geometry"><div class="lab-kicker">02 · 长度与步长</div><h2><code>block_len</code> 回答“传多少”，<code>block_stride</code> 回答“下一个 block 从哪开始”。</h2>
       <div class="source-bridge"><div><small>BLOCK LENGTH</small><b>payload bytes</b><code>当前 block 真正要搬的连续字节数</code></div><span>≠</span><div><small>BLOCK STRIDE</small><b>address step</b><code>block b → block b+1 的地址步长</code></div></div>
       <p>在最简单的 contiguous 布局里两者相等；但一旦布局 interleave、padding 或跨层共享存储，stride 可以大于真正 payload。把两者混成一个数，会直接导致远端描述符指向错误位置。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>先交换几何元数据，再搬指定 block；消费端用自己的分配验证，而不是解引用生产端的 Python 指针。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · 运行并验证</div><h2>先交换几何元数据，再搬指定 block；消费端用自己的分配验证，而不是解引用生产端的 Python 指针。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_registered_region_descriptor.py</pre></div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>one storage allocation bytes : 12288
@@ -80,16 +80,16 @@ PASS</pre></div>
       <div class="truth-note"><b>远端不能拿你的 <code>data_ptr()</code> 当普通地址直接读。</b><p>脚本只交换 offset/shape/stride，并用普通 torch.distributed 搬 tensor。真实 NIXL 需要 transport-aware 内存注册、agent 元数据与 remote descriptors；这里没有 rkey、UCX、RDMA 或 GPUDirect。</p></div>
     </section>
 
-    <section class="lab-section" id="real"><div class="lab-kicker">04 · MAP TO CURRENT VLLM NIXL</div><h2>当前 <code>register_kv_caches()</code> 正好把分配 registration 与 logical region geometry 分开处理。</h2>
+    <section class="lab-section" id="real"><div class="lab-kicker">04 · 映射到当前 vLLM NIXL</div><h2>当前 <code>register_kv_caches()</code> 正好把分配 registration 与 logical region geometry 分开处理。</h2>
       <div class="result-grid"><div class="result-card"><small>分配</small><b>unique 存储</b><span>源码按存储 address 去重，把 <code>(storage_addr, storage.nbytes(), device_id)</code> 交给 NIXL 描述符/registration 路径。</span></div><div class="result-card"><small>REGION</small><b>base · len · stride</b><span>每个逻辑 region 单独记录 base address、block length 与 block stride，供后续按 block 构造传输 descriptors。</span></div><div class="result-card"><small>HANDSHAKE</small><b>NixlAgentMetadata</b><span>注册完成后，把 KV base addresses、num_blocks、block_lens、block_strides、布局、block_size 等编码进握手元数据。</span></div></div>
       <p>当前源码甚至明确写出：<strong>内存注册 follows allocations, while 传输 regions follow logical layers</strong>。这句话就是 B6 的全部核心。</p>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">05 · SOURCE ORDER</div><h2>现在读 NIXL 工作进程，只追这条路径。</h2>
+    <section class="lab-section" id="source"><div class="lab-kicker">05 · 源码阅读顺序</div><h2>现在读 NIXL 工作进程，只追这条路径。</h2>
       <div class="check-list"><div>① 找 <code>storage.data_ptr()</code> / <code>storage.nbytes()</code>：谁是真正被注册的分配？</div><div>② 找 <code>block_len_per_layer</code> / <code>block_stride_per_layer</code>：逻辑 region 如何描述？</div><div>③ 找 <code>get_reg_descs()</code> → <code>register_memory()</code>：实际 NIXL registration 在哪里发生？</div><div>④ 找 <code>NixlAgentMetadata</code>：哪些 registration/布局信息被带到远端 handshake？</div></div>
     </section>
 
-    <section class="lab-section" id="next"><div class="lab-kicker">06 · NEXT</div><h2>Inference 软件路径还剩最后一个控制面问题：租约 / expiry。</h2><p>远端 block 不能无限期替你保留。下一步会把 <code>blocks_expiry_time</code>、心跳、租约 extension 和“何时允许释放远端 KV”做成一个可运行状态机；之后没有真实 NIXL/RDMA 硬件时，就不再伪造数据面 benchmark。</p></section>
+    <section class="lab-section" id="next"><div class="lab-kicker">06 · 下一步</div><h2>Inference 软件路径还剩最后一个控制面问题：租约 / expiry。</h2><p>远端 block 不能无限期替你保留。下一步会把 <code>blocks_expiry_time</code>、心跳、租约 extension 和“何时允许释放远端 KV”做成一个可运行状态机；之后没有真实 NIXL/RDMA 硬件时，就不再伪造数据面 benchmark。</p></section>
 
     <nav class="lab-footer-nav"><a href="./mini-kv-handshake-lifetime.html">← Lab B5 · Handshake + 生命周期</a><a href="./mini-kv-lease-expiry.html">Lab B7 · 租约 / Expiry →</a></nav>
   </main>
