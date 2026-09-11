@@ -36,7 +36,7 @@
       <h1>分布式优化器：数据并行为什么还要把优化器状态再切一遍？</h1>
       <p class="dek">数据并行的基本逻辑是“每个副本处理不同数据，但最终保持同一套模型参数”。最直接的实现会让每个数据并行（DP）rank 都保存一整份梯度、Adam 状态和 FP32 主参数等训练状态。问题是：这些状态很大，而且不同 DP rank 上大量重复。Megatron 分布式优化器就从这里下手——让不同 DP rank 分工保存和更新优化器状态。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释普通数据并行为什么会复制优化器状态。</li><li>理解 分布式优化器与张量并行的差别：前者沿 DP 副本分训练状态，后者沿张量并行（TP）进程组分摊模型计算。</li><li>看懂梯度 reduce-scatter → 本地优化器更新 → 参数 all-gather 这条主数据流。</li><li>理解为什么 Megatron 会使用 连续参数/梯度缓冲区和通信桶。</li><li>知道 <code>--overlap-grad-reduce</code> 与 <code>--overlap-param-gather</code> 分别在隐藏哪段通信。</li><li>理解“省多少显存”取决于数据类型和 DP 并行度，不能简单记成一个固定倍数。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释普通数据并行为什么会复制优化器状态。</li><li>理解分布式优化器与张量并行的差别：前者沿 DP 副本分训练状态，后者沿张量并行（TP）进程组分摊模型计算。</li><li>看懂梯度 reduce-scatter → 本地优化器更新 → 参数 all-gather 这条主数据流。</li><li>理解为什么 Megatron 会使用连续参数/梯度缓冲区和通信桶。</li><li>知道 <code>--overlap-grad-reduce</code> 与 <code>--overlap-param-gather</code> 分别在隐藏哪段通信。</li><li>理解“省多少显存”取决于数据类型和 DP 并行度，不能简单记成一个固定倍数。</li></ul></div>
 
       <section class="article-section" id="replication">
         <div class="section-no">01 · THE DP REDUNDANCY</div>
@@ -87,7 +87,7 @@
       <section class="article-section" id="buffers">
         <div class="section-no">06 · WHY CONTIGUOUS BUFFERS AND BUCKETS?</div>
         <h2>几十亿个参数不适合一个张量发一次集合通信：Megatron 把它们整理进连续缓冲区，再按通信桶通信。</h2>
-        <p>真实模型有成千上万个参数张量。如果每个小张量梯度一就绪就单独发一个 NVIDIA 集体通信库（NCCL）集合通信，latency / launch overhead 会非常糟糕。Megatron 使用 连续参数/梯度缓冲区，并把其中区间组织成通信桶。</p>
+        <p>真实模型有成千上万个参数张量。如果每个小张量梯度一就绪就单独发一个 NVIDIA 集体通信库（NCCL）集合通信，latency / launch overhead 会非常糟糕。Megatron 使用连续参数/梯度缓冲区，并把其中区间组织成通信桶。</p>
         <div class="buffer-map"><small>CONTIGUOUS PARAM / GRAD BUFFER</small><div class="buffer-strip"><span class="r0">通信桶 0a</span><span class="r0">通信桶 0b</span><span class="r1">通信桶 1a</span><span class="r1">通信桶 1b</span><span class="r2">通信桶 2a</span><span class="r2">通信桶 2b</span><span class="r3">通信桶 3a</span><span class="r3">通信桶 3b</span></div></div>
         <p>这样做有两个系统收益：第一，大块连续通信通常比大量 tiny 集合通信s 更容易获得带宽；第二，某个通信桶的梯度一旦全部就绪，就可以提前启动 reduce-scatter，不必等整个 backward 完成。</p>
         <div class="source-note">当前 <a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.param_and_grad_buffer.html">core.distributed.param_and_grad_缓冲区</a> API 提供通信桶-level <code>start_grad_sync()</code>、<code>start_param_sync()</code>、<code>finish_param_sync()</code> 等接口。</div>
