@@ -64,7 +64,7 @@
     </div>
     <p>当前 vLLM 的 <code>vllm bench serve</code> 会同时报告请求吞吐量、输出 token 吞吐量、总 token 吞吐量，以及 TTFT、TPOT、ITL 的均值、中位数和高分位数。更重要的是，vLLM 文档明确提醒：不同工具对这些指标的命名和测量点并不完全统一，跨工具比较时要看公式和采样位置，不能只看缩写。</p>
     <div class="concept-note"><p><strong>第一条规则：</strong>以后看到“性能提高 40%”，先问：提高的是吞吐量、TTFT、ITL，还是单位成本？其它指标有没有变差？</p></div>
-    <div class="source-note">当前口径：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM · Benchmark CLI</a>。本站按 2026-09 的文档复查本节的指标定义。</div>
+    <div class="source-note">当前口径：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM · Benchmark <code>CLI</code></a>。本站按 2026-09 的文档复查本节的指标定义。</div>
   </section>
 
   <section class="article-section" id="capacity">
@@ -148,7 +148,7 @@
       <div class="time-row"><small>SATURATION</small><span class="wait">排队增长</span><span class="wait">p95 / p99 延迟恶化</span></div>
     </div>
     <p>因此更有意义的比较方式，是扫一组并发或请求到达速率，画出“吞吐量—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种 latency–throughput trade-off，而不是只汇报单个峰值数字。</p>
-    <div class="source-note">补充阅读：<a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">NVIDIA · LLM Inference Benchmarking: Fundamental Concepts</a>。这篇适合核对指标与测试口径，不作为本站当前 vLLM 实现细节的权威来源。</div>
+    <div class="source-note">补充阅读：<a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">NVIDIA · 推理基准测试基础概念</a>。这篇适合核对指标与测试口径，不作为本站当前 vLLM 实现细节的权威来源。</div>
   </section>
 
   <section class="article-section" id="claims">
@@ -179,33 +179,35 @@
   <section class="checkpoint" id="checkpoint">
     <div class="checkpoint-head"><span>CHECKPOINT</span><span>06.4</span></div>
     <h2>能把“估算”和“实测”分开，才进入 vLLM。</h2>
-    <div class="quiz-item"><div class="quiz-q">1. 70B BF16 权重约 140 GB，而 GPU 标称显存 141 GB，为什么不能直接说“能单卡部署”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为服务还需要 KV Cache、临时张量、运行时工作区与内存碎片等；权重刚好放得下只通过了容量账的第一关。</div></div>
+    <div class="quiz-item"><div class="quiz-q">1. 70B <code>BF16</code> 权重约 140 GB，而 GPU 标称显存 141 GB，为什么不能直接说“能单卡部署”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为服务还需要 KV Cache、临时张量、运行时工作区与内存碎片等；权重刚好放得下只通过了容量账的第一关。</div></div>
     <div class="quiz-item"><div class="quiz-q">2. 为什么“吞吐量提高”不能自动推出“用户体验更好”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更高并发和更大批次常能提高设备利用率与总吞吐，但也可能增加排队和每个请求等待时间，所以必须同时看 TTFT、ITL 和尾延迟。</div></div>
     <div class="quiz-item"><div class="quiz-q">3. 为什么重复跑同一套 prompt 可能让基准测试失真？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果服务端保留了 Prefix Cache，同样的前缀可能直接复用历史 KV，测到的是“带缓存复用”的性能，而不是原本想比较的冷启动工作负载。</div></div>
     <div class="quiz-item"><div class="quiz-q">4. 比较两个推理方案时，最少要把哪些条件固定？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">模型与精度、硬件与并行配置、输入/输出长度分布、并发或请求速率、关键缓存/调度功能、流式与采样设置，以及相同的测试时长/预热口径。</div></div>
   </section>
 
-  <section class="lesson-terms" id="lesson-terms">
-    <div class="section-no">TERMS · 本课术语表</div>
-    <h2>本课出现的缩写与术语</h2>
-    <p class="lesson-terms-intro">正文优先使用 <strong>中文名（缩写）</strong> 建立概念；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
-    <div class="lesson-terms-scroll"><table class="lesson-terms-table">
-      <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
-      <tbody>
+      <section class="lesson-terms" id="lesson-terms">
+        <div class="section-no">TERMS · 本课术语表</div>
+        <h2>本课出现的缩写与术语</h2>
+        <p class="lesson-terms-intro">正文优先使用 <strong>中文名（缩写）</strong> 建立概念；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table">
+          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
+          <tbody>
+        <tr><td><code>LLM</code></td><td>Large Language Model</td><td>大语言模型</td><td>本课程训练与推理系统的主要模型对象。</td></tr>
         <tr><td><code>KV</code></td><td>Key-Value</td><td>键-值</td><td>自回归 Attention 需要复用的历史 Key/Value 状态。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
         <tr><td><code>ITL</code></td><td>Inter-Token Latency</td><td>Token 间延迟</td><td>流式生成时相邻可见输出 token 之间的时间间隔。</td></tr>
         <tr><td><code>TPOT</code></td><td>Time Per Output Token</td><td>每输出 Token 时间</td><td>生成阶段按输出 token 聚合后的平均耗时指标。</td></tr>
         <tr><td><code>SLO</code></td><td>Service Level Objective</td><td>服务级目标</td><td>系统希望达到的延迟、可用性或吞吐目标。</td></tr>
+        <tr><td><code>CLI</code></td><td>Command-Line Interface</td><td>命令行界面</td><td>通过终端参数和命令配置、启动或调试程序的接口。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
         <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
         <tr><td><code>GiB</code></td><td>Gibibyte</td><td>GiB 二进制容量单位</td><td>二进制容量单位，1 GiB = 2^30 bytes。</td></tr>
-      </tbody>
-    </table></div>
-  </section>
+          </tbody>
+        </table></div>
+      </section>
 
-  <a class="next-lesson" href="../07-vllm/architecture.html">
+      <a class="next-lesson" href="../07-vllm/architecture.html">
     <div><small>NEXT · 07.1</small><br/><strong>进入 vLLM：这些容量、带宽和延迟问题，真实系统怎么调度？</strong></div><span>→</span>
   </a>
 </main>
