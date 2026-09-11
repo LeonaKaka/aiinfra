@@ -66,24 +66,24 @@
         <div class="section-no">04 · compute-bound</div>
         <h2>计算受限时，你真的在“吃计算单元”。</h2>
         <p>想象一个足够大的 Linear：<code>[M,K] @ [K,N]</code>。如果矩阵尺寸合适、数据复用高、底层库能充分使用 Tensor Cores，kernel 可能更接近<code>compute-bound</code>。</p>
-        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / SM（流式多处理器：NVIDIA GPU 上承载线程/warp 与计算资源的核心执行单元） 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、precision、shape、算子融合或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯计算 efficiency</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS/CUTLASS/Transformer Engine（推理引擎：把 request 管理、scheduler 和模型执行组织成服务循环） 等实现质量很重要</span></div></div>
-        <p>这也是为什么 Megatron 会如此关心张量并行（TP） 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
+        <div class="diagnosis-table"><div class="diagnosis-row head"><b>你观察什么</b><span>可能意味着什么</span><span>常见方向</span></div><div class="diagnosis-row"><b>Tensor Core / SM 高忙</b><span>算术执行资源接近上限</span><span>更优 kernel、精度策略、shape、kernel fusion 或减少 FLOPs</span></div><div class="diagnosis-row"><b>HBM 还没到顶</b><span>不是“喂不动”先卡住</span><span>继续盯计算效率</span></div><div class="diagnosis-row"><b>大 GEMM 占主时间</b><span>主耗时集中在矩阵乘</span><span>cuBLAS（CUDA 线性代数库：NVIDIA 提供的 GPU 基础线性代数高性能库）、CUTLASS（CUDA 模板线性代数库：NVIDIA 提供的高性能矩阵乘与相关 kernel 模板库）、Transformer Engine（Transformer 加速库：NVIDIA 提供的 Transformer 低精度训练与推理加速库）等实现质量很重要</span></div></div>
+        <p>这也是为什么 Megatron 会如此关心 TP 之后的 local GEMM shape：切得太碎，可能让每张 GPU 上的 GEMM 变小，计算效率反而下降。</p>
       </section>
 
       <section class="article-section" id="memory">
         <div class="section-no">05 · memory-bound</div>
         <h2>带宽受限时，减少“搬”往往比减少“算”更重要。</h2>
         <p>如果一个操作只对每个元素做很少计算，却必须把大量数据从 HBM 读进来再写回去，那么 Tensor Cores 再强也帮不了太多。典型优化思路是：</p>
-        <div class="stall-grid"><div><b>Kernel fusion</b><span>多个操作合并，减少中间张量写回 HBM 再读出的次数。</span></div><div><b>Better locality</b><span>让数据更多在 register / shared 内存 / cache 层级复用。</span></div><div><b>Fewer bytes</b><span>更低 precision、压缩、只搬真正需要的数据。</span></div><div><b>Batching</b><span>让一次权重读取服务更多 token / 请求，提高复用。</span></div><div><b>布局</b><span>合适的 data layout能帮助 coalesced access 与底层 kernel。</span></div><div><b>Avoid copies</b><span>不必要的张量 materialization / device（设备位置：表示数据位于 CPU 还是哪张 GPU） copy 会直接烧带宽。</span></div></div>
+        <div class="stall-grid"><div><b>kernel fusion</b><span>多个 op 合并，减少中间 tensor 写回 HBM 再读出的次数。</span></div><div><b>提高局部性</b><span>让数据更多在寄存器、shared memory（共享内存：同一线程块内线程可快速共享的片上存储）和 cache 层级复用。</span></div><div><b>减少 bytes</b><span>更低精度、压缩、只搬真正需要的数据。</span></div><div><b>批处理</b><span>让一次 weight 读取服务更多 token / request，提高复用。</span></div><div><b>改善 layout</b><span>合适的 data layout 能帮助连续合并访存并改善底层 kernel 效率。</span></div><div><b>减少 copy</b><span>不必要的 tensor 实体化或 device copy 会直接消耗带宽。</span></div></div>
         <p>后面读 FlashAttention 时，你会看到一个经典例子：它不是简单把 attention 数学公式改掉，而是重新组织数据流，减少昂贵的 HBM 读写。</p>
       </section>
 
       <section class="article-section" id="launch">
         <div class="section-no">06 · kernel launch overhead</div>
         <h2>有时既没吃满计算，也没吃满带宽：工作可能太碎了。</h2>
-        <p>每次 CUDA（NVIDIA GPU 并行计算平台：官方产品名，没有应当强行展开的现代英文全称） kernel launch 都有调度/提交 overhead。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
+        <p>每次 CUDA kernel launch 都有调度/提交 overhead。大量非常短的小 kernel 会让 GPU timeline（时间线：按时间展示 CPU、GPU 和通信活动的性能视图）出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
         <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">launch</span><span class="launch">launch</span><span class="launch">launch</span></div><div class="gpu-line"><small>GPU</small><span class="work a">tiny A</span><span class="work b">tiny B</span></div></div>
-        <p>这也是 CUDA Graphs、kernel fusion、continuous batching（连续批处理：每个调度轮次都可以重新组成执行 batch） 等技术有价值的一部分原因：它们不一定只是在“让某个 kernel 更快”，也可能是在减少碎片化调度和空档。</p>
+        <p>这也是 CUDA Graphs（CUDA 图：把一组固定 GPU 工作预先记录后重复提交以减少 launch 开销）、kernel fusion、continuous batching（连续批处理：每个调度轮次都可以重新组成执行 batch）等技术有价值的一部分原因：它们不一定只是在“让某个 kernel 更快”，也可能是在减少碎片化调度和空档。</p>
       </section>
 
       <section class="article-section" id="communication">
