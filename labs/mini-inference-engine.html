@@ -44,16 +44,16 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Inference 推理引擎</span></div>
-    <div class="lab-kicker">LAB B8 · INFERENCE CAPSTONE</div>
+    <div class="lab-kicker">LAB B8 · 推理综合实验</div>
     <h1>B1–B7 是 KV 数据面的零件。<br />这一节第一次让多个请求在同一个推理引擎生命周期里竞争资源。</h1>
     <p class="dek">2 个 ranks 分别扮演 远端 KV 生产端与 推理消费端。消费端同时面对本地 KV 命中、远端 KV 请求和冷启动未命中：调度器必须分配模型计算 token 预算，块表必须把逻辑 KV 映射到物理池，远端传输必须在 Decode 真正需要这些 KV 前完成，最后完成确认才允许生产端释放那一代 KV。</p>
 
-    <section class="lab-section" id="requests"><div class="lab-kicker">01 · THREE 请求 PATHS</div><h2>推理系统不是“一条 prompt 顺序跑到底”，而是在不同状态的请求之间不断做选择。</h2>
+    <section class="lab-section" id="requests"><div class="lab-kicker">01 · 三类请求路径</div><h2>推理系统不是“一条 prompt 顺序跑到底”，而是在不同状态的请求之间不断做选择。</h2>
       <div class="stage-flow"><div class="stage-card infer"><small>REQ 201 · LOCAL HIT</small><b>KV already local → decode</b><span>不需要重新 prefill；只消耗 1 个 decode token 的 model-计算 budget。</span></div><div class="stage-card comm"><small>REQ 202 · REMOTE KV</small><b>描述符 → blocks → 异步 load</b><span>先验证远端对象兼容性并预留 physical blocks；KV 到达后才能进入 decode。</span></div><div class="stage-card train"><small>REQ 203 · 冷启动未命中</small><b>no reusable KV → prefill</b><span>远端 KV 仍在传输时，本地可以把计算预算用在另一个 cold 请求的 prefill 上。</span></div></div>
       <p>这里真正要看的不是三个固定请求 id，而是<strong>状态不同 → 下一步资源需求不同</strong>。这正是 continuous batching / 调度器思维和普通“批次一次算完”最大的差别。</p>
     </section>
 
-    <section class="lab-section" id="budget"><div class="lab-kicker">02 · token 预算 ≠ NETWORK BYTES</div><h2>远端 KV 在搬，并不等于它正在消耗模型计算 token 预算。</h2>
+    <section class="lab-section" id="budget"><div class="lab-kicker">02 · Token 预算不等于网络字节数</div><h2>远端 KV 在搬，并不等于它正在消耗模型计算 token 预算。</h2>
       <div class="command"><div class="command-head"><span>DEFAULT TEACHING SCHEDULE</span><span>token 预算 = 6</span></div><pre>1 token  → request 201 local-KV decode
 4 tokens → request 203 cold prefill
            [request 202 KV transfer is in flight]
@@ -63,12 +63,12 @@ remaining model-compute budget = 0</pre></div>
       <p>这个区分非常重要：调度器的 token 预算约束模型这一步准备计算多少 token；KV 传输同时占用的是另一类 data-plane / 内存 / network 资源。真实 vLLM 还有更丰富的调度 policy，但“计算预算”和“外部状态到达”不是同一个量。</p>
     </section>
 
-    <section class="lab-section" id="blocks"><div class="lab-kicker">03 · LOGICAL 请求, 物理 KV POOL</div><h2>请求只需要知道自己的逻辑 block 顺序，不应该绑定某个固定显存地址。</h2>
+    <section class="lab-section" id="blocks"><div class="lab-kicker">03 · 逻辑请求与物理 KV 池</div><h2>请求只需要知道自己的逻辑 block 顺序，不应该绑定某个固定显存地址。</h2>
       <div class="source-bridge"><div><small>LOGICAL</small><b>请求 202 blocks [0, 1]</b><code>prompt order</code></div><span>块表 →</span><div><small>PHYSICAL</small><b>pool slots [7, 3]</b><code>allocator-owned storage</code></div></div>
       <p>消费端在 bulk payload 完成前先建立块表，然后把收到的 KV blocks 写进对应 physical slots；真正做 attention 时再按 logical order 取回。B2 的“逻辑序列与物理位置解耦”在这里第一次进入调度器 + remote-传输生命周期。</p>
     </section>
 
-    <section class="lab-section" id="lifetime"><div class="lab-kicker">04 · CONTROL PLANE BEFORE DATA, 完成确认 BEFORE RELEASE</div><h2>高速搬 KV 之前先确认“这是谁、长什么样”；搬完以后还要确认“现在真的可以释放”。</h2>
+    <section class="lab-section" id="lifetime"><div class="lab-kicker">04 · 先控制面，再数据面；先完成确认，再释放资源</div><h2>高速搬 KV 之前先确认“这是谁、长什么样”；搬完以后还要确认“现在真的可以释放”。</h2>
       <div class="command"><div class="command-head"><span>REMOTE 请求 202</span><span>生命周期 contract</span></div><pre>Producer: descriptor(request / shape / generation / bytes)
               │
 Consumer: validate → allocate physical blocks → irecv(payload)
@@ -83,19 +83,19 @@ Producer: safe to release this source generation</pre></div>
       <p><code>request_id</code>、<code>generation</code>、<code>model_signature</code> 和 block IDs 都是教学字段，不是当前 vLLM / NIXL 协议逐字段复刻。要记的是 invariant：兼容性必须在消费前成立，source 内存又必须活到远端完成为止。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">05 · RUN + REFERENCE</div><h2>真正的验收：remote 交接后的 decode，必须等价于本地重新计算同一份 prompt KV。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">05 · 运行并对照参考实现</div><h2>真正的验收：remote 交接后的 decode，必须等价于本地重新计算同一份 prompt KV。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_inference_engine.py</pre></div>
       <p>脚本故意在消费端端额外重算 prompt KV 作为 correctness-only reference；生产系统不会为了“验证交接”每次重算。默认条件下还要求 token 预算恰好用完、描述符兼容、完成确认/release 成功，并且 remote decode 最大误差小于 <code>1e-5</code>。</p>
       <a class="code-link" href="./code/mini_inference_engine.py"><div><small>FULL SOURCE</small><b>打开 mini_inference_engine.py</b></div><span>→</span></a>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">06 · SOURCE READING PAYOFF</div><h2>现在可以把 vLLM 看成一条跨 subsystem 的请求生命周期，而不是只盯调度器一个 class。</h2>
+    <section class="lab-section" id="source"><div class="lab-kicker">06 · 回到源码时能看懂什么</div><h2>现在可以把 vLLM 看成一条跨 subsystem 的请求生命周期，而不是只盯调度器一个 class。</h2>
       <div class="source-bridge"><div><small>OUR CAPSTONE</small><b>请求 state → token 预算 → 块表 → remote KV → decode → 完成确认</b><code>scheduler · allocator · transfer · lifetime</code></div><span>maps to →</span><div><small>VLLM</small><b>调度器 + KVCacheManager / block pool + model runner + KVConnector</b><code>具体 class / 文件拆分会随版本演化</code></div></div>
       <p>真正源码里，这些职责不会都待在一个文件。B8 的作用就是给你一个稳定的阅读问题清单：谁决定请求现在能不能跑？谁分配 KV blocks？谁启动/等待外部 KV？谁知道 decode 已完成？谁最终允许资源回收？</p>
     </section>
 
-    <section class="lab-section" id="checkpoint"><div class="lab-kicker">07 · CHECKPOINT</div><h2>能回答这四问，Inference Infra 的主线才算真正闭环。</h2><div class="check-list"><div>① 为什么 remote KV load 可以和另一个请求的 prefill 并行存在，却不能绕过 remote 请求自己的 decode dependency？</div><div>② token 预算和 KV/network bytes 分别约束什么资源？</div><div>③ 为什么 logical block order 与物理池 slots 要解耦？</div><div>④ 为什么生产端不能在 <code>isend</code> 返回后立刻复用 source KV？</div></div></section>
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">07 · 检查点</div><h2>能回答这四问，Inference Infra 的主线才算真正闭环。</h2><div class="check-list"><div>① 为什么 remote KV load 可以和另一个请求的 prefill 并行存在，却不能绕过 remote 请求自己的 decode dependency？</div><div>② token 预算和 KV/network bytes 分别约束什么资源？</div><div>③ 为什么 logical block order 与物理池 slots 要解耦？</div><div>④ 为什么生产端不能在 <code>isend</code> 返回后立刻复用 source KV？</div></div></section>
 
     <nav class="lab-footer-nav"><a href="./mini-kv-lease-expiry.html">← Lab B7 · KV 租约 / Expiry</a><a href="../source-map/index.html#vllm">进入 vLLM / NIXL Source Map →</a></nav>
   </main>
