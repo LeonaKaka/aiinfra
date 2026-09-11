@@ -45,6 +45,7 @@ SOURCE_TERMS = {
     "optimizer": ("优化器", "根据 gradient 更新模型 parameter"),
     "optimizer state": ("优化器状态", "optimizer 为更新参数额外保存的历史量"),
     "activation": ("激活值", "forward 产生并可能在 backward 中复用的中间结果"),
+    "activation checkpointing": ("激活值检查点", "不保存全部 activation，而在 backward 时重算以节省显存"),
     "autograd": ("自动求导", "PyTorch 自动记录计算图并计算 gradient 的机制"),
     "Adam": ("Adam 优化器", "利用一阶和二阶动量统计更新参数的常用 optimizer"),
     "gradient accumulation": ("梯度累积", "多个小批次的 gradient 先累加，再统一更新 parameter"),
