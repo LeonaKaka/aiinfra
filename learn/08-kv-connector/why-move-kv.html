@@ -64,7 +64,7 @@
       <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证正确性与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab B1 · Mini KV 交接</strong><br />先验证“远端 KV 能否等价接管模型状态”。 <a href="../../labs/mini-kv-handoff.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab B2 · Mini Block KV 交接</strong><br />再加入 logical→physical 块 table，避免把 KV 交接只理解成连续 tensor 拷贝。 <a href="../../labs/mini-block-kv-handoff.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
-        <div class="section-no">TERMS · 本课术语表</div>
+        <div class="section-no">术语表 · 本课词汇</div>
         <h2>本课出现的缩写与术语</h2>
         <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
@@ -74,7 +74,7 @@
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>TTFT</code></td><td>Time To First Token</td><td>首 Token 延迟</td><td>从请求进入系统到第一个输出 token 可见的端到端时间。</td></tr>
         <tr><td><code>ITL</code></td><td>Inter-Token Latency</td><td>Token 间延迟</td><td>流式生成时相邻可见输出 token 之间的时间间隔。</td></tr>
-        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同resource pool/实例并协调 KV handoff。</td></tr>
+        <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
         <tr><td><code>SLO</code></td><td>Service Level Objective</td><td>服务级目标</td><td>系统希望达到的延迟、可用性或吞吐目标。</td></tr>
