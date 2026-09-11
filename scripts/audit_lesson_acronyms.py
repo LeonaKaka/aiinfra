@@ -22,7 +22,7 @@ ALLOW = {
     # Product / project / library names.
     "CUDA", "NVIDIA", "PyTorch", "Megatron", "MCore", "vLLM", "NIXL",
     "NVLink", "NVSwitch", "GPUDirect", "InfiniBand", "Ethernet", "CUTLASS",
-    "DeepEP", "HybridEP", "LMCache", "EAGLE", "Adam", "AdamW",
+    "DeepEP", "HybridEP", "LMCache", "EAGLE", "Adam", "AdamW", "HPC",
     # Method/architecture names whose capitalization is a name rather than a
     # reason to invent a mechanical expansion.
     "RMSNorm", "SwiGLU",
