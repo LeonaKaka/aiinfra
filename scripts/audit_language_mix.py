@@ -110,6 +110,18 @@ CHINESE_DEFAULT = {
     "blocks": "块",
 }
 
+# Context-sensitive source-facing words are useful review signals but not hard
+# failures. They may be natural anchors in terms such as Transformer Block,
+# ModelRunner path or KV block, while prose should still avoid gratuitous use.
+REVIEW_ONLY = {
+    "phase", "state", "states", "step", "steps", "engine", "engines",
+    "policy", "capacity", "pressure", "planning", "bookkeeping", "identity",
+    "info", "compatibility", "layer", "layers", "host", "network", "link",
+    "ratio", "overhead", "placement", "feature", "features", "server",
+    "node", "nodes", "bytes", "path", "pool", "region", "regions",
+    "block", "blocks",
+}
+
 # Code/source identifiers are removed before scanning. Product names and core
 # source-facing concepts such as PyTorch, CUDA, token, Tensor, Transformer,
 # Attention, Prefill, Decode, KV Cache and rank are deliberately not listed.
@@ -146,7 +158,8 @@ def visible_prose(path: Path) -> str:
 
 
 def main() -> int:
-    hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    hard_hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    review_hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     paths = list(LESSONS.glob("**/*.html"))
     paths += list(LABS.glob("*.html"))
     paths += [path for path in GLOBAL_PAGES if path.exists()]
@@ -155,16 +168,28 @@ def main() -> int:
         rel = str(path.relative_to(ROOT))
         for english in CHINESE_DEFAULT:
             count = len(re.findall(rf"(?<![A-Za-z0-9_]){re.escape(english)}(?![A-Za-z0-9_])", prose, re.I))
-            if count:
-                hits[rel][english] += count
+            if not count:
+                continue
+            target = review_hits if english in REVIEW_ONLY else hard_hits
+            target[rel][english] += count
 
-    if not hits:
+    if review_hits:
+        total_review = sum(sum(terms.values()) for terms in review_hits.values())
+        print(f"Language-mix review: {total_review} context-sensitive occurrence(s) across {len(review_hits)} page(s) (warning only).")
+        for rel, terms in review_hits.items():
+            summary = ", ".join(
+                f"{term}×{count}→{CHINESE_DEFAULT[term]}"
+                for term, count in sorted(terms.items())
+            )
+            print(f"review {rel}: {summary}")
+
+    if not hard_hits:
         print("Language-mix audit: no discouraged bare English engineering terms.")
         return 0
 
-    total = sum(sum(terms.values()) for terms in hits.values())
-    print(f"Language-mix audit FAILED: {total} occurrence(s) across {len(hits)} page(s).")
-    for rel, terms in hits.items():
+    total = sum(sum(terms.values()) for terms in hard_hits.values())
+    print(f"Language-mix audit FAILED: {total} hard occurrence(s) across {len(hard_hits)} page(s).")
+    for rel, terms in hard_hits.items():
         summary = ", ".join(
             f"{term}×{count}→{CHINESE_DEFAULT[term]}"
             for term, count in sorted(terms.items())
