@@ -33,9 +33,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Communication Overlap</span></div>
       <div class="lesson-kicker"><span>LESSON 05.8 · MEGATRON</span><span>约 75 min</span></div>
       <h1>通信与计算重叠：真正要找的不是第二条 stream，而是“第一次不得不等”的位置。</h1>
-      <p class="dek">前面每加一种并行都会出现通信：数据并行要同步梯度或参数，张量并行要交换激活值，流水线并行要在不同阶段之间传数据，专家并行还要搬运路由后的 token。重叠执行的目标不是把这些通信量变没，而是让通信尽早开始、让独立计算继续推进，把真正的等待推迟到数据第一次必须被消费的位置。</p>
+      <p class="dek">前面每加一种并行都会出现通信：数据并行要同步梯度或参数，张量并行要交换激活值，流水线并行要在不同阶段之间传数据，专家并行还要搬运路由后的 token。communication overlap 的目标不是把这些通信量变没，而是让通信尽早开始、让独立计算继续推进，把真正的等待推迟到数据第一次必须被消费的位置。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“就绪 → 异步启动 → 独立计算 → 等待”四个事件解释重叠执行。</li><li>区分集合通信的总耗时与真正暴露在关键路径上的通信尾部。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解通信桶大小为什么同时控制“多久才能进入就绪状态”和“单次集合通信的数据量是否足够大”。</li><li>把同一个方法迁移到张量并行（TP）全收集（AG）/归约分散（RS）、流水线并行（PP）点对点通信（P2P）与专家并行（EP）全对全通信（A2A）。</li><li>知道打开重叠开关不等于吞吐量一定提高，最终必须用时间线与单步时间验证。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“ready → async launch → independent compute → wait”四个事件解释重叠执行。</li><li>区分集合通信的total duration 与 exposed critical-path tail。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解bucket size为什么同时控制“多久才能进入就绪状态”和“单次集合通信的数据量是否足够大”。</li><li>把同一个方法迁移到张量并行（TP）全收集（AG）/归约分散（RS）、流水线并行（PP）点对点通信（P2P）与专家并行（EP）全对全通信（A2A）。</li><li>知道打开重叠开关不等于吞吐量一定提高，最终必须用时间线与单步时间验证。</li></ul></div>
 
       <section class="article-section" id="mental-model">
         <div class="section-no">01 · 一个通用心智模型</div>
@@ -47,17 +47,17 @@
       </section>
 
       <section class="article-section" id="dp-grad">
-        <div class="section-no">02 · DP 梯度重叠：就绪发生在通信桶级</div>
-        <h2>不是“整个 backward 做完才 reduce”，而是一个通信桶的所有梯度就绪就能启动。</h2>
-        <p>当前 <code>_ParamAndGradBucketGroup</code> 明确维护每个参数的梯度-就绪计数；当 <code>overlap_grad_reduce=True</code> 时，一个通信桶进程组内所有梯度都就绪，就可以分发对应 all-reduce 或 reduce-scatter。使用 Distributed Optimizer 时是 reduce-scatter，否则是 all-reduce。</p>
-        <div class="mini-code-map"><div class="mini-code-row"><code>backward hook</code><span>某个 param 梯度就绪，登记到通信桶进程组。</span></div><div class="mini-code-row"><code>start_grad_sync()</code><span>开启重叠执行时异步分发 AR/RS；此时 caller 不必立刻等集合通信完成。</span></div><div class="mini-code-row"><code>later backward compute</code><span>如果不依赖这个 reduced 通信桶，就继续执行，形成隐藏窗口。</span></div><div class="mini-code-row"><code>finish_grad_sync()</code><span>在真正需要完成的同步点等待异步 handle；未被计算覆盖的尾巴在这里暴露。</span></div></div>
+        <div class="section-no">02 · DP 梯度重叠：就绪发生在bucket-level</div>
+        <h2>不是“整个 backward 做完才 reduce”，而是一个bucket 的所有 gradients ready就能启动。</h2>
+        <p>当前 <code>_ParamAndGradBucketGroup</code> 明确维护每个参数的梯度-就绪计数；当 <code>overlap_grad_reduce=True</code> 时，一个bucket group内所有梯度都就绪，就可以分发对应 all-reduce 或 reduce-scatter。使用 Distributed Optimizer 时是 reduce-scatter，否则是 all-reduce。</p>
+        <div class="mini-code-map"><div class="mini-code-row"><code>backward hook</code><span>某个 param 梯度就绪，登记到bucket group。</span></div><div class="mini-code-row"><code>start_grad_sync()</code><span>开启重叠执行时async launch AR/RS；此时 caller 不必立刻等集合通信完成。</span></div><div class="mini-code-row"><code>later backward compute</code><span>如果不依赖这个 reduced 通信桶，就继续执行，形成隐藏窗口。</span></div><div class="mini-code-row"><code>finish_grad_sync()</code><span>在真正需要完成的同步点等待async handle；未被计算覆盖的尾巴在这里暴露。</span></div></div>
         <div class="source-note">当前源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/distributed/param_and_grad_buffer.py">core/distributed/param_and_grad_缓冲区.py</a>。类注释和 <code>start_grad_sync()</code>/<code>finish_grad_sync()</code> 都直接描述了重叠执行模式下的异步分发与后续等待。</div>
       </section>
 
       <section class="article-section" id="bucket">
-        <div class="section-no">03 · 通信桶大小是双刃剑</div>
+        <div class="section-no">03 · bucket size是双刃剑</div>
         <h2>太大的通信桶启动太晚；太小的通信桶又可能掉进延迟 / launch overhead。</h2>
-        <div class="hidden-exposed"><div><small>TOO LARGE</small><b>就绪 late</b><span>必须等很多参数的梯度都完成，通信虽然大，但能覆盖它的剩余 backward 窗口变短。</span></div><i>↔</i><div><small>TOO SMALL</small><b>too many 集合通信s</b><span>更早就绪，却产生大量小消息；集合通信 launch/延迟与低带宽利用可能反过来吃掉收益。</span></div></div>
+        <div class="hidden-exposed"><div><small>TOO LARGE</small><b>就绪 late</b><span>必须等很多参数的梯度都完成，通信虽然大，但能覆盖它的剩余 backward 窗口变短。</span></div><i>↔</i><div><small>TOO SMALL</small><b>too many 集合通信s</b><span>更早就绪，却产生大量小消息；collective launch/延迟与低带宽利用可能反过来吃掉收益。</span></div></div>
         <p>当前 <code>DistributedDataParallelConfig.bucket_size</code> 甚至根据 DP 并行度给出默认规模逻辑：未指定时 MCore 使用 <code>max(40,000,000, 1,000,000 × dp_size)</code> 参数。源码注释给出的理由就是更大 DP 通常需要更大通信桶，避免集合通信s 过度延迟-bound。</p>
         <div class="concept-note"><p><strong>所以通信桶不是纯显存参数。</strong>它实际上在调“就绪粒度、消息大小、可隐藏窗口”三者之间的平衡。</p></div>
       </section>
@@ -65,9 +65,9 @@
       <section class="article-section" id="param">
         <div class="section-no">04 · 参数预取：等待当前桶，同时启动下一个</div>
         <h2>Distributed Optimizer 的参数 all-gather 可以做成“下一桶预取”。</h2>
-        <p>当前分布式数据并行（DDP）配置的 <code>overlap_param_gather</code> 文档写得很直接：把参数 all-gather 与 forward 计算重叠。更具体地，通信桶-进程组路径会让当前通信桶的 forward pre-hook 等待自己的 gather，同时在计算开始前分发下一个通信桶的 gather——于是“当前层计算”成为“下一桶 AG”的隐藏窗口。</p>
-        <div class="mini-code-map"><div class="mini-code-row"><code>start_param_sync()</code><span><code>overlap_param_gather=True</code> 时可异步发起当前通信桶所需 all-gather。</span></div><div class="mini-code-row"><code>finish_param_sync()</code><span>完成当前通信桶；当前实现还能推进 <code>next_param_gather_bucket_group</code> 的预取。</span></div><div class="mini-code-row"><code>forward current bucket</code><span>参数已经可用；与此同时下一通信桶的 AG 尽量在后台推进。</span></div><div class="mini-code-row"><code>next pre-hook</code><span>下一段 forward 真正需要该参数时再等待未完成尾部。</span></div></div>
-        <div class="source-note">当前 <code>DistributedDataParallelConfig.param_sync_via_bucket_group</code> 的源码说明明确描述了：forward pre-hook 等当前 gather，同时分发下一通信桶的 gather，从而让下一次通信与当前计算重叠。</div>
+        <p>当前分布式数据并行（DDP）配置的 <code>overlap_param_gather</code> 文档写得很直接：把参数 all-gather 与 forward 计算重叠。更具体地，通信桶-进程组路径会让current bucket的 forward pre-hook 等待自己的 gather，同时在计算开始前分发下一个bucket gather——于是“当前层计算”成为“下一桶 AG”的隐藏窗口。</p>
+        <div class="mini-code-map"><div class="mini-code-row"><code>start_param_sync()</code><span><code>overlap_param_gather=True</code> 时可异步发起current bucket所需 all-gather。</span></div><div class="mini-code-row"><code>finish_param_sync()</code><span>完成current bucket；当前实现还能推进 <code>next_param_gather_bucket_group</code> 的预取。</span></div><div class="mini-code-row"><code>forward current bucket</code><span>参数已经可用；与此同时next bucket的 AG 尽量在后台推进。</span></div><div class="mini-code-row"><code>next pre-hook</code><span>下一段 forward 真正需要该参数时再等待未完成尾部。</span></div></div>
+        <div class="source-note">当前 <code>DistributedDataParallelConfig.param_sync_via_bucket_group</code> 的源码说明明确描述了：forward pre-hook 等当前 gather，同时分发next bucket的 gather，从而让下一次通信与当前计算重叠。</div>
       </section>
 
       <section class="article-section" id="tp">
@@ -80,11 +80,11 @@
       </section>
 
       <section class="article-section" id="pp">
-        <div class="section-no">06 · PP 重叠：微批次创造独立工作</div>
+        <div class="section-no">06 · PP 重叠：microbatches 创造 independent work</div>
         <h2>P2P 能否藏起来，取决于 schedule 是否给同一 rank 留出另一个可执行微批次。</h2>
-        <p>流水线并行的 send/recv 有直接流水线阶段 dependency，但一前向一反向（1F1B） / 虚拟流水线并行（VPP）会制造“别的微批次可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P 通信可与计算重叠执行，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制预热/flush 阶段。</p>
+        <p>流水线并行的 send/recv 有直接pipeline-stage dependency，但一前向一反向（1F1B） / 虚拟流水线并行（VPP）会制造“别的微批次可以算”的窗口。当前 <code>ModelParallelConfig.overlap_p2p_comm</code> 表示部分 P2P 通信可与计算重叠执行，并且当前配置明确要求它与 <code>batch_p2p_comm=True</code> 互斥；另有 <code>overlap_p2p_comm_warmup_flush</code> 控制预热/flush 阶段。</p>
         <div class="serial-vs-overlap"><div class="timeline-card"><small>DEPENDENCY</small><b>MB0 激活值未到，MB0 下一流水线阶段不能凭空开始</b><div class="timeline-track"><span class="compute">F MB0</span><span class="comm">send</span><span class="idle">等待</span><span class="idle">—</span><span class="idle">—</span><span class="idle">—</span></div></div><div class="timeline-card good"><small>SCHEDULE WINDOW</small><b>通信 MB0 时，本 rank 可以推进另一独立微批次</b><div class="timeline-track"><span class="comm">send MB0</span><span class="compute">F MB1</span><span class="compute">B MB-1</span><span class="comm">recv</span><span class="compute">F MB2</span><span class="compute">B MB0</span></div></div></div>
-        <div class="precision-note"><strong>不要把 PP 重叠执行简化成一个 flag。</strong>VPP、微批次数、预热/steady/收尾、P2P 应用程序编程接口（API）与模型各流水线阶段的计算 balance 一起决定实际窗口。</div>
+        <div class="precision-note"><strong>不要把 PP 重叠执行简化成一个 flag。</strong>VPP、微批次数、warmup / steady / cooldown、P2P 应用程序编程接口（API）与模型各流水线阶段的计算 balance 一起决定实际窗口。</div>
       </section>
 
       <section class="article-section" id="ep">
@@ -108,7 +108,7 @@
         <div class="section-no">09 · 用性能时间线找等待，不看“颜色重叠”</div>
         <h2>Nsight 时间线最重要的不是“蓝绿块有没有重叠”，而是关键依赖处还有多少 tail。</h2>
         <div class="profile-lane"><div class="profile-row"><small>计算</small><span class="gemm">GEMM</span><span class="gemm">GEMM</span><span class="gemm">ATTN</span><span class="gemm">GEMM</span><span class="gap">WAIT</span><span class="gemm">GEMM</span><span class="gemm">GEMM</span><span class="gemm">GEMM</span></div><div class="profile-row"><small>COMM</small><span class="gap">—</span><span class="nccl">RS</span><span class="nccl">RS</span><span class="nccl">RS</span><span class="nccl">tail</span><span class="nccl">AG</span><span class="gap">—</span><span class="gap">—</span></div></div>
-        <p>实际分析至少要同时看四件事：集合通信 launch 是否足够早；真正等待时还剩多少通信；并发之后 GEMM 本身是否变慢；不同各个 rank 的等待是否对齐，还是存在 PP/MoE load imbalance。</p>
+        <p>实际分析至少要同时看四件事：collective launch 是否足够早；真正等待时还剩多少通信；并发之后 GEMM 本身是否变慢；different ranks 的等待是否对齐，还是存在 PP/MoE load imbalance。</p>
         <div class="overlap-checklist"><div><small>DEPENDENCY</small><b>窗口是否真实存在</b><span>如果消费端紧跟生产端，async 几乎没有地方可藏。</span></div><div><small>RESOURCE CONTENTION</small><b>重叠后单项是否变慢</b><span>不能只看并发面积，要比较 kernel duration。</span></div><div><small>TAIL</small><b>等待前剩多少</b><span>exposed tail 才直接延长关键路径。</span></div><div><small>TOPOLOGY</small><b>跨了什么链路</b><span>NVLink / PCIe / InfiniBand 高速互连（IB）的带宽与延迟决定通信能否被盖住。</span></div><div><small>IMBALANCE</small><b>谁最后到 barrier</b><span>慢流水线阶段 / 热专家会让其它各个 rank 即使重叠执行良好也得等。</span></div><div><small>中央处理器（CPU） LAUNCH</small><b>GPU 是否无工作可跑</b><span>如果主机 launch 本身有大空洞，先解决它。</span></div></div>
       </section>
 
@@ -116,7 +116,7 @@
         <div class="section-no">10 · 源码阅读方法</div>
         <h2>以后读任何重叠执行优化，都沿“就绪 → start → independent work → finish”找源码。</h2>
         <div class="source-map"><div class="source-map-card"><small>DP GRAD</small><b>start_grad_sync / finish_grad_sync</b><code>param_and_grad_buffer.py</code><span>看通信桶何时就绪、AR/RS 何时分发、handle 何时等待。</span></div><div class="source-map-card"><small>DP PARAM</small><b>start_param_sync / finish_param_sync</b><code>param_and_grad_buffer.py</code><span>看 current 通信桶等待与 next-通信桶 prefetch progression。</span></div><div class="source-map-card"><small>TP / PP</small><b>ModelParallelConfig</b><code>tp_comm_overlap / overlap_p2p_comm</code><span>先读配置约束，再追 TE Linear 与流水线 schedules 的实际 launch/等待。</span></div><div class="source-map-card"><small>EP</small><b>TransformerConfig + MoE schedule</b><code>overlap_moe_expert_parallel_comm</code><span>看 A2A 为什么有独立批次-level 计算 window，以及哪些配置被禁止组合。</span></div></div>
-        <div class="precision-note"><strong>本轮源码核对基线（2026-08-31）：</strong>Megatron up流 <code>main@a3344a6f</code>。这里的 READY / dependency / 等待是稳定心智模型；具体 flag、默认值、文件路径和后端约束属于当前实现细节，后续读源码时要重新核对 up流。</div>
+        <div class="precision-note"><strong>本轮源码核对基线（2026-08-31）：</strong>Megatron up流 <code>main@a3344a6f</code>。这里的 READY / dependency / wait是稳定心智模型；具体 flag、默认值、文件路径和后端约束属于当前实现细节，后续读源码时要重新核对 up流。</div>
         <div class="code-block"><div class="code-head"><span>python-like pseudocode</span><span>the 重叠执行 pattern</span></div><pre><code>if bucket.is_ready():
     handle = start_async_comm(bucket)   <span class="comment"># launch early</span>
 
@@ -127,9 +127,9 @@ if consumer_needs(bucket):
     consume(bucket)</code></pre></div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.8</span></div><h2>如果能从等待点倒推依赖，你已经掌握了这节课最核心的方法。</h2><div class="quiz-item"><div class="quiz-q">1. 10 ms 通信后面有 7 ms 完全独立计算，理想情况下还有多少 exposed 通信？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">忽略资源竞争和调度开销时大约 3 ms。10 ms 集合通信仍完整执行，只是前 7 ms 被独立计算覆盖了。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 <code>start_grad_sync()</code> 调得早，不等于重叠执行已经成功？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为还要有足够长的独立 backward 计算，而且 async 通信不能把计算本身拖慢太多。最终要看 <code>finish_grad_sync()</code> 处是否仍有明显等待 tail。</div></div><div class="quiz-item"><div class="quiz-q">3. Parameter gather 为什么适合“当前桶计算，下一桶 prefetch”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当前通信桶的参数已经可用后，它的 forward 层不依赖下一通信桶的参数，因此下一通信桶的 all-gather 可以提前推进；直到 forward 即将进入下一通信桶时才必须完成。</div></div><div class="quiz-item"><div class="quiz-q">4. 两个 CUDA 流s 上确实同时有 GEMM 和 NCCL，为什么单步时间仍可能不降？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为两类 kernels 可能争用 SM/HBM/互连相关资源，使各自 duration 变长；也可能等待 tail、load imbalance 或 CPU launch 才是实际瓶颈。必须比较完整关键路径。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.8</span></div><h2>如果能从等待点倒推依赖，你已经掌握了这节课最核心的方法。</h2><div class="quiz-item"><div class="quiz-q">1. 10 ms 通信后面有 7 ms 完全独立计算，理想情况下还有多少 exposed 通信？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">忽略资源竞争和调度开销时大约 3 ms。10 ms 集合通信仍完整执行，只是前 7 ms 被独立计算覆盖了。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 <code>start_grad_sync()</code> 调得早，不等于重叠执行已经成功？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为还要有足够长的独立 backward 计算，而且 async 通信不能把计算本身拖慢太多。最终要看 <code>finish_grad_sync()</code> 处是否仍有明显等待 tail。</div></div><div class="quiz-item"><div class="quiz-q">3. Parameter gather 为什么适合“当前桶计算，下一桶 prefetch”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">current bucket的参数已经可用后，它的 forward 层不依赖next bucket的参数，因此next bucket的 all-gather 可以提前推进；直到 forward 即将进入next bucket时才必须完成。</div></div><div class="quiz-item"><div class="quiz-q">4. 两个 CUDA streams 上确实同时有 GEMM 和 NCCL，为什么单步时间仍可能不降？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为两类 kernels 可能争用 SM/HBM/互连相关资源，使各自 duration 变长；也可能等待 tail、load imbalance 或 CPU launch 才是实际瓶颈。必须比较完整关键路径。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A5 · Bucketed Async Reduce-Scatter</strong><br />先制造梯度-就绪 → async launch → later 等待的真实依赖窗口。 <a href="../../labs/mini-bucketed-reduce-scatter.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A7 · Profiler-就绪 Overlap</strong><br />再用 profiler 标记关键事件；CPU 只验顺序，GPU/NCCL 才能证明真实重叠执行。 <a href="../../labs/mini-profiler-overlap.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A12 · Mini Training System</strong><br />最后把 TP×DP、通信桶 readiness、sharded optimizer 与参数 gather 串成一个 training step。 <a href="../../labs/mini-training-system.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A5 · Bucketed Async Reduce-Scatter</strong><br />先制造梯度-就绪 → async launch → later 等待的真实依赖窗口。 <a href="../../labs/mini-bucketed-reduce-scatter.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A7 · Profiler-ready Overlap</strong><br />再用 profiler 标记关键事件；CPU 只验顺序，GPU/NCCL 才能证明真实重叠执行。 <a href="../../labs/mini-profiler-overlap.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A12 · Mini Training System</strong><br />最后把 TP×DP、通信桶 readiness、sharded optimizer 与参数 gather 串成一个 training step。 <a href="../../labs/mini-training-system.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
