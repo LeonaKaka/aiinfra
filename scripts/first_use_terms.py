@@ -154,6 +154,7 @@ SOURCE_TERMS = {
     "membership": ("成员关系", "定义当前哪些 processes 属于同一个分布式通信集合"),
     "device mapping": ("设备映射", "决定某个 process 使用哪张本地 GPU 的对应关系"),
     "one-process-per-GPU": ("每 GPU 一进程", "每个 process 主要绑定一张 GPU 的常见部署方式"),
+    "environment-variable initialization": ("环境变量初始化", "从 RANK、WORLD_SIZE 等环境变量读取进程组初始化信息"),
 
     # 05 · Megatron
     "Megatron": ("大模型训练框架", "用于学习多维并行和分布式训练的源码实现"),
