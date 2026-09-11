@@ -34,7 +34,7 @@
       <h1>为什么要模型并行：8 张 GPU 并不会自动变成一张 640GB 显卡。</h1>
       <p class="dek">到这里我们终于正式进入 Megatron。但第一课先不读源码。先把它要解决的问题钉死：模型参数、激活值和优化器状态太大时，一张图形处理器（GPU）放不下；而多张 GPU 的显存彼此独立。所谓模型并行，本质上就是决定“模型的哪一部分放在哪些 rank 上，以及这些部分什么时候通信”。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么复制式数据并行不能解决“每个 rank 都要常驻的单份模型本身就放不下”的问题。</li><li>区分数据并行（DP）如何切数据和副本，以及张量并行（TP）、流水线并行（PP）如何分别分别切一层内部的张量和模型深度。</li><li>知道上下文并行（CP）与专家并行（EP）又分别切序列/上下文和 MoE 专家。</li><li>理解 Megatron 为什么要维护多种进程组，而不是所有并行维度共用一个进程组。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道之后读源码时先看 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么复制式数据并行不能解决“每个 rank 都要常驻的单份模型本身就放不下”的问题。</li><li>区分数据并行（DP）如何切数据和副本，以及张量并行（TP）、流水线并行（PP）如何分别切一层内部的张量和模型深度。</li><li>知道上下文并行（CP）与专家并行（EP）又分别切序列/上下文和 MoE 专家。</li><li>理解 Megatron 为什么要维护多种进程组，而不是所有并行维度共用一个进程组。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道之后读源码时先看 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
 
       <section class="article-section" id="fit">
         <div class="section-no">01 · THE FIRST WALL: IT DOES NOT FIT</div>
