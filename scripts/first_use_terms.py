@@ -145,6 +145,15 @@ SOURCE_TERMS = {
     "rendezvous": ("会合初始化", "让分布式 processes 发现彼此并建立通信所需信息"),
     "communicator": ("通信器", "通信库内部管理参与者与连接状态的对象"),
     "topology": ("拓扑", "描述 GPU、CPU、NIC 与网络之间的连接关系"),
+    "torchrun": ("PyTorch 分布式启动器", "启动多个训练进程并为它们设置分布式身份信息"),
+    "launcher": ("启动器", "负责创建分布式进程并传入必要启动配置的组件"),
+    "distributed world": ("分布式参与者集合", "一次分布式作业中共同协作的全部 processes"),
+    "default process group": ("默认进程组", "初始化后默认包含主要参与 ranks 的通信组"),
+    "subgroup": ("子进程组", "从更大的 process group 中选出部分 ranks 形成的通信域"),
+    "peer discovery": ("对端发现", "让分布式 processes 找到需要通信的其它参与者"),
+    "membership": ("成员关系", "定义当前哪些 processes 属于同一个分布式通信集合"),
+    "device mapping": ("设备映射", "决定某个 process 使用哪张本地 GPU 的对应关系"),
+    "one-process-per-GPU": ("每 GPU 一进程", "每个 process 主要绑定一张 GPU 的常见部署方式"),
 
     # 05 · Megatron
     "Megatron": ("大模型训练框架", "用于学习多维并行和分布式训练的源码实现"),
