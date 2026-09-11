@@ -120,7 +120,7 @@ REVIEW_ONLY = set(CHINESE_DEFAULT)
 # source term should be English or Chinese in context.
 MALFORMED_PATTERNS = {
     # Chinese stems accidentally left inside English morphology.
-    r"[\u3400-\u9fff](?:ed|ing|s)\b": "mixed Chinese/English suffix",
+    r"[\u3400-\u9fff](?-i:ed|ing|s)\b": "mixed Chinese/English suffix",
 
     # Mechanical identifier / source-path translations. These should never
     # appear as source anchors because the real code uses the English names.
