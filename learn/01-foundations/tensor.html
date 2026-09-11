@@ -67,7 +67,7 @@
       </div>
 
       <section class="article-section" id="tensor">
-        <div class="section-no">01 · WHAT IS A张量</div>
+        <div class="section-no">01 · 什么是张量</div>
         <h2>先把张量想成“带形状的一块数字”。</h2>
         <p>如果你只记一句话，就记这句。张量不需要一开始就从抽象数学定义理解。对我们这条AI基础设施学习路线来说，它首先是一块被组织成某种形状的数据。</p>
 
@@ -83,7 +83,7 @@
       </section>
 
       <section class="article-section" id="shape">
-        <div class="section-no">02 · THE FIRST形状</div>
+        <div class="section-no">02 · 第一件事：看形状</div>
         <h2><code>[B, S, H]</code> 是以后最常见的三维形状。</h2>
         <p>先看Transformer里非常典型的一块数据。假设它的形状是：</p>
 
@@ -115,7 +115,7 @@
       </section>
 
       <section class="article-section" id="pytorch">
-        <div class="section-no">03 · SEE IT IN PYTORCH</div>
+        <div class="section-no">03 · 在 PyTorch 里看张量</div>
         <h2>用4行代码亲手造出它。</h2>
         <p>下面这段代码不用背。它只是把刚才的概念变成一个你可以运行的对象。</p>
 
@@ -139,7 +139,7 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
       </section>
 
       <section class="article-section" id="memory">
-        <div class="section-no">04 · INFRA视图</div>
+        <div class="section-no">04 · 从 AI Infra 角度看张量</div>
         <h2>为什么Infra工程师这么在意形状？</h2>
         <p>因为形状一旦确定，很多系统问题就开始可以计算了。假设 <code>X.shape = [2, 5, 8]</code>，总元素数就是：</p>
         <div class="code-block">
@@ -154,7 +154,7 @@ if FP16: 80 × 2 bytes = 160 bytes</code></pre>
       </section>
 
       <section class="article-section" id="storage-layout">
-        <div class="section-no">05 · 存储 / 视图 / 步长</div>
+        <div class="section-no">05 · 存储、视图与步长</div>
         <h2>同一个形状，不一定以同一种方式躺在内存里。</h2>
         <p>到目前为止，我们一直把张量当成“带形状的数字块”。这对读模型计算已经够用，但读AI基础设施还差一层：<strong>形状描述的是逻辑索引空间，存储与布局描述这些元素怎样映射到底层内存。</strong>两块张量可以拥有相同形状，却有不同的步长，甚至共享同一块存储。</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>形状vs布局</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
@@ -176,7 +176,7 @@ print(z.stride())           <span class="comment"># materialize a contiguous lay
       </section>
 
       <section class="article-section" id="megatron">
-        <div class="section-no">06 · WHERE THIS LEADS</div>
+        <div class="section-no">06 · 这些概念后面会用到哪里</div>
         <h2>这就是它和Megatron的第一条连接线。</h2>
         <p>现在你还不用学张量并行。但可以先偷看未来的问题。一个Linear层通常会出现类似：</p>
         <div class="code-block">
