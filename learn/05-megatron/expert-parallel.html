@@ -49,7 +49,7 @@
         <div class="section-no">02 · 把expertshard experts across ranks</div>
         <h2>教学例：EP=4、8 个expert，每个 EP rank 持有 2 个 local expert。</h2>
         <div class="experts-grid"><div class="expert-card"><small>EP RANK 0</small><b>Expert 0 · 1</b><span>local expert parameters</span></div><div class="expert-card"><small>EP RANK 1</small><b>Expert 2 · 3</b><span>local expert parameters</span></div><div class="expert-card"><small>EP RANK 2</small><b>Expert 4 · 5</b><span>local expert parameters</span></div><div class="expert-card"><small>EP RANK 3</small><b>Expert 6 · 7</b><span>local expert parameters</span></div></div>
-        <p>router的选择不会尊重“token 原来在哪张图形处理器（GPU）”。rank 0 上的 token 可以被分到 rank 3 的 Expert 6，因此 hidden state 必须到达拥有目标expert的执行位置；<strong>expert权重本身并不会跟着每个 token 搬过去</strong>。</p>
+        <p>router的选择不会尊重“token 原来在哪张GPU”。rank 0 上的 token 可以被分到 rank 3 的 Expert 6，因此 hidden state 必须到达拥有目标expert的执行位置；<strong>expert权重本身并不会跟着每个 token 搬过去</strong>。</p>
         <div class="concept-note"><p><strong>这张图只说明 EP 轴。</strong>真实 Megatron 还可能给expert使用独立的expert tensor-parallel size，并构造expert DP。不要把一个 global rank 只想成“EP rank”。</p></div>
       </section>
 
@@ -65,7 +65,7 @@
       <section class="article-section" id="dispatch">
         <div class="section-no">04 · 当前 All-to-All dispatcher 实际做什么</div>
         <h2>EP-only 心智图很重要，但当前 Megatron 的 All-to-All dispatcher还明确区分 EP 通信与expert TP 通信。</h2>
-        <p>当前 <code>MoEAlltoAllTokenDispatcher</code> 的源码注释把 workflow 写得很清楚：preprocess / permute → <code>A2A(EP)</code> → 如果expert-张量并行（TP）大于 1，再做 <code>AG(TP)</code> 并整理 local expert chunks → expert计算 → 合并前做 <code>RS(TP)</code> → <code>A2A(EP)</code> → unpermute。</p>
+        <p>当前 <code>MoEAlltoAllTokenDispatcher</code> 的源码注释把 workflow 写得很清楚：preprocess / permute → <code>A2A(EP)</code> → 如果expert-TP大于 1，再做 <code>AG(TP)</code> 并整理 local expert chunks → expert计算 → 合并前做 <code>RS(TP)</code> → <code>A2A(EP)</code> → unpermute。</p>
         <div class="mini-code-map"><div class="mini-code-row"><code>dispatch_preprocess</code><span>本地计算 destination counts、permutation 等元数据；尽量不要在这里偷偷混入额外通信，以便后续重叠执行。</span></div><div class="mini-code-row"><code>token_dispatch</code><span>主跨设备 transport。All-to-All 路径先在 EP group 做 destination-specific 交换。</span></div><div class="mini-code-row"><code>dispatch_postprocess</code><span>必要时处理expert TP 的 gather / chunk sorting，并整理成 local experts 可以消费的 contiguous token groups。</span></div><div class="mini-code-row"><code>token_combine</code><span>expert outputs 反向跨设备交换；All-to-All dispatcher把结果送回原 source rank，随后合并 postprocess / unpermute 恢复原逻辑位置。</span></div></div>
         <div class="precision-note"><strong>为什么主图标了expert TP=1？</strong>因为这样一张图只回答 EP 的核心问题，不把 TP 的 gather/reduce-scatter 叠在同一个画布里。真正读源码时，再把expert TP 当第二层通信轴加进去。</div>
         <div class="source-note">当前源码：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/token_dispatcher.py">core/transformer/moe/token_dispatcher.py</a>。类注释明确列出A2A(EP)、AG(TP)、RS(TP)、reverse A2A 与 unpermute 的顺序。</div>
@@ -99,7 +99,7 @@
       <section class="article-section" id="tp">
         <div class="section-no">08 · expert grid不能简单理解成稠密网格 × EP</div>
         <h2>TP、CP、EP 不能靠一个“把所有缩写乘起来”的公式理解。</h2>
-        <div class="ep-vs-tp"><div><small>DENSE GRID</small><b>dense TP × 流水线并行（PP） × 上下文并行（CP） → dense DP</b><span>Attention/dense Transformer 部分按 dense rank 生成器组织。</span></div><div><small>EXPERT GRID</small><b>expert TP × EP × PP → expert DP</b><span>MoE expert部分由另一套expert rank generator组织；当前expert generator 里 <code>cp=1</code>。</span></div></div>
+        <div class="ep-vs-tp"><div><small>DENSE GRID</small><b>dense TP × PP × CP → dense DP</b><span>Attention/dense Transformer 部分按 dense rank 生成器组织。</span></div><div><small>EXPERT GRID</small><b>expert TP × EP × PP → expert DP</b><span>MoE expert部分由另一套expert rank generator组织；当前expert generator 里 <code>cp=1</code>。</span></div></div>
         <p>当前 <code>parallel_state.py</code> 会单独计算 <code>expert_tensor_parallel_size × expert_model_parallel_size × pipeline_model_parallel_size</code>（再考虑实验性expert广义张量并行（GTP） remat 轴），然后用 world size 除它得到expert DP。随后 <code>expert_decoder_rank_generator</code> 以 <code>tp=expert_tensor_parallel_size</code>、<code>ep=expert_model_parallel_size</code>、<code>dp=expert_data_parallel_size</code>、<code>pp=...</code>、<code>cp=1</code> 构造expert process groups。</p>
         <p>这就是为什么 <strong>EP 不能机械地在 dense 总 GPU 公式外再乘一次</strong>。一个 global rank 同时参与 dense 与expert 两套 process-group relationships；真正要问的是“当前这段 layer 用哪套 process group”。</p>
         <div class="source-note">当前实现：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py">megatron/core/parallel_state.py</a>，分别构造 dense rank 生成器与expert rank generator。</div>
