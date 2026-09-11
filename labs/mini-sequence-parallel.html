@@ -32,12 +32,12 @@
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV 传输</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区描述符</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
     <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
@@ -45,8 +45,8 @@
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Sequence Parallel</span></div>
     <div class="lab-kicker">LAB A8 · SEQUENCE PARALLEL</div>
-    <h1>SP 不是“把句子随便切两半”。<br />关键是：TP 的 局部输出 可以直接落成 sequence 分片。</h1>
-    <p class="dek">05.3 里讲过 Sequence Parallel (SP) 通常和 Tensor Parallel (TP) 配合。这个最小实验只验证最核心的一次 layout transition：两个 TP ranks 各自产生完整 sequence 的 局部输出，不先 all-reduce 成两份完整 activation，而是用 reduce-scatter 一边求和、一边让每个 rank 只留下自己的 sequence chunk。</p>
+    <h1>SP 不是“把句子随便切两半”。<br />关键是：TP 的局部输出可以直接落成 sequence 分片。</h1>
+    <p class="dek">05.3 里讲过 Sequence Parallel (SP) 通常和 Tensor Parallel (TP) 配合。这个最小实验只验证最核心的一次布局 transition：两个 TP ranks 各自产生完整 sequence 的局部输出，不先 all-reduce 成两份完整 activation，而是用 reduce-scatter 一边求和、一边让每个 rank 只留下自己的 sequence chunk。</p>
 
     <section class="lab-section" id="flow"><div class="lab-kicker">01 · THE TRANSITION</div><h2>同样是把 TP partials 合起来，结果可以 replicated，也可以 sequence-sharded。</h2>
       <div class="command"><div class="command-head"><span>MENTAL MODEL</span><span>TP=2</span></div><pre>Rank 0: y_partial[0] ─┐
@@ -70,16 +70,16 @@ reduce-scatter  : every rank gets only [S/TP,H]</pre></div>
       <a class="code-link" href="./code/mini_sequence_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_sequence_parallel.py</b></div><span>→</span></a>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>回到源码时，优先追“哪里从 TP layout 进入 sequence-parallel layout”。</h2>
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>回到源码时，优先追“哪里从 TP 布局进入 sequence-parallel 布局”。</h2>
       <div class="source-bridge"><div><small>OUR LAB</small><b>TP partial → reduce-scatter(sequence)</b><code>[S,H] partials → [S/TP,H] local activation</code></div><span>maps to →</span><div><small>MEGATRON</small><b>tensor_parallel mappings / layers</b><code>sequence-parallel gather / reduce-scatter transitions</code></div></div>
       <p>不要把 SP 记成另一套独立模型并行。它更像是在 TP 体系里选择一种更省 activation replication 的布局，并在需要 full sequence 的边界再显式 gather。</p>
     </section>
 
-    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>能回答这三问，才算看懂这个 Lab。</h2><div class="check-list"><div>① 为什么这里不能把 reduce-scatter 简单理解成“通信更快的 all-reduce”？</div><div>② local <code>tanh</code> 为什么可以在 sequence 分片 上独立执行？</div><div>③ 如果下一层需要每个 rank 都看到完整 sequence，必须发生什么 layout transition？</div></div></section>
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>能回答这三问，才算看懂这个 Lab。</h2><div class="check-list"><div>① 为什么这里不能把 reduce-scatter 简单理解成“通信更快的 all-reduce”？</div><div>② local <code>tanh</code> 为什么可以在 sequence 分片上独立执行？</div><div>③ 如果下一层需要每个 rank 都看到完整 sequence，必须发生什么布局 transition？</div></div></section>
 
     <nav class="lab-footer-nav"><a href="./mini-profiler-overlap.html">← Lab A7 · Profiler-ready 重叠</a><a href="./mini-pipeline-parallel.html">Lab A9 · Pipeline Parallel →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#flow">同样是把 TP partials 合起来，结果可以 replicated，也可以 sequence-sharded。</a><a href="#reference">我们故意选一个简单局部算子，只验证“切分不改变数学结果”。</a><a href="#run">先在 CPU/Gloo 上验证 collective 与 shape，再去真实 GPU 看性能。</a><a href="#source">回到源码时，优先追“哪里从 TP layout 进入 sequence-parallel layout”。</a><a href="#checkpoint">能回答这三问，才算看懂这个 Lab。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#flow">同样是把 TP partials 合起来，结果可以 replicated，也可以 sequence-sharded。</a><a href="#reference">我们故意选一个简单局部算子，只验证“切分不改变数学结果”。</a><a href="#run">先在 CPU/Gloo 上验证 collective 与 shape，再去真实 GPU 看性能。</a><a href="#source">回到源码时，优先追“哪里从 TP 布局进入 sequence-parallel 布局”。</a><a href="#checkpoint">能回答这三问，才算看懂这个 Lab。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
