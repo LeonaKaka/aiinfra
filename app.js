@@ -68,6 +68,7 @@ const lessonRoutes = {
   '06.1': 'learn/06-llm-inference/autoregressive-generation.html',
   '06.2': 'learn/06-llm-inference/prefill-decode.html',
   '06.3': 'learn/06-llm-inference/kv-cache.html',
+  '06.4': 'learn/06-llm-inference/inference-performance.html',
   '07.1': 'learn/07-vllm/architecture.html',
   '07.2': 'learn/07-vllm/scheduler-continuous-batching.html',
   '07.3': 'learn/07-vllm/kv-cache-manager.html',
