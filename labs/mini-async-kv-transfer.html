@@ -44,11 +44,11 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>异步 KV 传输</span></div>
-    <div class="lab-kicker">LAB B3 · 非阻塞 DATA PLANE</div>
+    <div class="lab-kicker">LAB B3 · 非阻塞数据面</div>
     <h1>“异步传输”最重要的不是快。<br />而是启动之后，你暂时不用等。</h1>
     <p class="dek">B2 已经有元数据、块表和物理 KV pool，但发送仍然是“做完一件再做下一件”的同步心智模型。这里把每个 K/V block 的传输改成非阻塞 P2P：Decode 先准备目标缓冲区并 post <code>irecv</code>，Prefill post <code>isend</code>；两边拿到 Work 句柄后先做与 KV 无关的工作，真正需要数据时才 <code>wait()</code>。</p>
 
-    <section class="lab-section" id="contract"><div class="lab-kicker">01 · 异步 CONTRACT</div><h2>把一个传输拆成启动、progress、dependency。</h2>
+    <section class="lab-section" id="contract"><div class="lab-kicker">01 · 异步传输契约</div><h2>把一个传输拆成启动、progress、dependency。</h2>
       <div class="stage-flow">
         <div class="stage-card infer"><small>POST</small><b>isend / irecv</b><span>描述 source / destination tensor 与 peer，立即拿到一个 Work 句柄。</span></div>
         <div class="stage-card train"><small>INDEPENDENT WORK</small><b>do something else</b><span>只要这段工作不依赖刚才的 KV，就不必立刻阻塞等待传输结束。</span></div>
@@ -57,12 +57,12 @@
       <p>这就是重叠的最小前提，但不是“调用异步 API 就自动加速”。真实重叠还取决于后端是否异步 progress、CUDA stream/event、NIC/GPU DMA、message size、拓扑，以及你中间是否真的有可并行的计算。</p>
     </section>
 
-    <section class="lab-section" id="buffers"><div class="lab-kicker">02 · PREALLOCATED DESTINATION</div><h2>消费端必须先知道数据会落在哪里。</h2>
+    <section class="lab-section" id="buffers"><div class="lab-kicker">02 · 预分配目标缓冲区</div><h2>消费端必须先知道数据会落在哪里。</h2>
       <div class="source-bridge"><div><small>DECODE</small><b>allocate recv_k / recv_v blocks</b><code>irecv(dst_block, src=prefill)</code></div><span>wire →</span><div><small>PREFILL</small><b>slice K/V blocks</b><code>isend(src_block, dst=decode)</code></div></div>
       <p>这里仍然只是普通 <code>torch.distributed</code> P2P，但它已经建立了 NIXL/RDMA 之前必须理解的内存契约：生产端和消费端不只是“传 Python 对象”，而是在讨论一块已经存在的 tensor 内存、它的 shape/size，以及何时可以安全读写。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>四个 block 的 K/V 全部异步 post，最后 attention 与本地 reference 完全一致。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · 运行并验证</div><h2>四个 block 的 K/V 全部异步 post，最后 attention 与本地 reference 完全一致。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_async_kv_transfer.py</pre></div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>ordering only</span></div><pre>backend=gloo device=cpu blocks=4
@@ -75,12 +75,12 @@ PASS</pre></div>
       <div class="truth-note"><b>上面的毫秒数不能用来证明重叠收益。</b><p>它只是一次 CPU/Gloo 小 tensor 本地运行，用来确认执行顺序：post → independent work → 等待。真正的性能实验必须固定工作负载、放大传输量、用 GPU/NCCL 或 NIXL，并结合 profiler 时间线看传输和计算是否在时间轴上重叠。</p></div>
     </section>
 
-    <section class="lab-section" id="nixl"><div class="lab-kicker">04 · BRIDGE TO NIXL</div><h2>Work 句柄是很好的过渡心智模型：真实 transport 也需要“发起、追踪、完成”。</h2>
+    <section class="lab-section" id="nixl"><div class="lab-kicker">04 · 接到 NIXL</div><h2>Work 句柄是很好的过渡心智模型：真实 transport 也需要“发起、追踪、完成”。</h2>
       <div class="result-grid"><div class="result-card"><small>OUR LAB</small><b>Work object</b><span>保存一个尚未完成的 P2P operation，最后等待。</span></div><div class="result-card"><small>REAL SYSTEM</small><b>传输句柄 / state</b><span>Connector 工作进程需要追踪多个请求、blocks、layers 的远端传输生命周期。</span></div><div class="result-card"><small>DEPENDENCY</small><b>ready before use</b><span>调度器/工作进程不能让 attention 读取尚未完成的 remote KV。</span></div></div>
       <div class="source-bridge"><div><small>READ FIRST</small><b>KVConnectorBase_V1</b><code>start_load_kv · wait_for_layer_load · save_kv_layer</code></div><span>then →</span><div><small>NIXL 工作进程</small><b>nixl/base_worker.py</b><code>registered memory · peer metadata · transfer lifecycle</code></div></div>
     </section>
 
-    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>下一步把异步 dependency 从“整个请求”细化到“每一层”。</h2>
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · 下一步</div><h2>下一步把异步 dependency 从“整个请求”细化到“每一层”。</h2>
       <div class="check-list"><div>① Prefill 每生成一层 KV 就立即发送，不等全部 layers 完成。</div><div>② Decode 提前 post receives，但只在进入 layer L 前等待 KV[L]。</div><div>③ 观察哪一层等待暴露在关键路径上。</div><div>④ 再进入 NIXL 内存注册、remote 描述符与 RDMA path；没有对应硬件时不伪造 benchmark。</div></div>
     </section>
 
