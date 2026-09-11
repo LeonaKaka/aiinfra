@@ -28,7 +28,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分逻辑 token 位置、逻辑块链与物理 KV 块 ID。</li><li>理解固定大小的块为什么比“每个请求一大段连续缓冲区”更适合动态在线推理。</li><li>知道 <code>KVCacheManager</code> 与 <code>BlockPool</code> 的职责差异。</li><li>理解 <code>KVCacheBlock</code> 里块 ID、引用计数、哈希等元数据为什么存在。</li><li>解释一个请求追加新 token 时，什么时候需要申请新的 KV 块。</li><li>知道当前 V1 已支持更复杂的 KV 缓存组和混合缓存，因此“每层永远同一种块”只是入门模型。</li></ul></div>
 
       <section class="article-section" id="problem">
-        <div class="section-no">01 · THE CONTIGUOUS 缓冲区 PROBLEM</div>
+        <div class="section-no">01 · 连续缓冲区为什么麻烦</div>
         <h2>在线请求的最终长度未知，所以“先给它一整段最大显存”很浪费。</h2>
         <p>假设最大上下文 8192 tokens。请求 A 最后只用了 300 tokens，B 用了 4000，C 用了 7900。如果每个请求一开始都预留 8192-token 连续 KV 空间，A 的绝大部分 reservation 永远不会被使用。</p>
         <div class="block-pool"><small>NAIVE PER-请求 RESERVATION</small><div class="physical-blocks"><span class="已用">A 已用</span><span class="free">A wasted</span><span class="free">A wasted</span><span class="free">A wasted</span><span class="已用">B 已用</span><span class="已用">B 已用</span><span class="free">B reserve</span><span class="free">C reserve</span></div></div>
@@ -36,14 +36,14 @@
       </section>
 
       <section class="article-section" id="blocks">
-        <div class="section-no">02 · PHYSICAL 块池</div>
+        <div class="section-no">02 · 物理 KV 块池</div>
         <h2>把 GPU 上可用于 KV 的内存切成很多编号块。</h2>
         <div class="block-pool"><small>PHYSICAL KV 块池</small><div class="physical-blocks"><span class="已用">#0 · A</span><span class="已用">#1 · C</span><span class="shared">#2 · prefix</span><span class="已用">#3 · B</span><span class="free">#4 · free</span><span class="已用">#5 · A</span><span class="free">#6 · free</span><span class="shared">#7 · prefix</span></div></div>
         <p>逻辑上 A 的 tokens 是连续的，但它的物理块可以是 <code>#0 → #5 → #12 → ...</code>。只要执行 attention 时有一张表告诉内核 “这个序列的第 0、1、2 个逻辑块分别在哪里”，物理地址就不必连续。</p>
       </section>
 
       <section class="article-section" id="logical">
-        <div class="section-no">03 · LOGICAL CHAIN VS PHYSICAL IDS</div>
+        <div class="section-no">03 · 逻辑块链与物理 ID</div>
         <h2>Sequence 看见连续 token；执行层拿到的是块 table 与物理块 pool。</h2>
         <p>把请求、KVCacheManager、BlockPool、块 table 和执行侧放在一张图里看，核心就是地址翻译：逻辑顺序由逻辑块 order 保证，物理位置由块 table 指向。</p>
         <div class="paged-arch-wrap"><div class="paged-arch-meta"><span>请求 → MANAGER → BLOCK TABLE → PHYSICAL KV</span><span>块 size = 16 tokens</span></div>
@@ -72,28 +72,28 @@
       </section>
 
       <section class="article-section" id="manager-pool">
-        <div class="section-no">04 · KVCACHEMANAGER VS BLOCKPOOL</div>
+        <div class="section-no">04 · KVCacheManager 与 BlockPool 各管什么</div>
         <h2>一个面向请求语义，一个面向物理块。</h2>
         <div class="control-plane"><div class="control-card"><small>KV CACHE MANAGER</small><b>“这个请求需要什么？”</b><span>根据请求已计算 tokens、prefix cache 命中、要新增的 tokens 等，组织每个 KV 缓存组的块，向调度器提供分配/computed-块结果。</span></div><div class="control-card"><small>块池</small><b>“哪些物理块现在可拿？”</b><span>维护实际 KVCacheBlock、free 块队列、哈希→块 lookup、引用计数与淘汰相关状态。</span></div></div>
         <p>当前源码里 <code>KVCacheManager</code> 会借助 coordinator 和块 pool 等内部组件。不要把类关系死背成永远不变；先记住 <strong>请求-level 分配 policy</strong> 和 <strong>物理块 resource pool</strong> 这两个层级。</p>
       </section>
 
       <section class="article-section" id="metadata">
-        <div class="section-no">05 · WHAT A KVCACHEBLOCK KNOWS</div>
+        <div class="section-no">05 · 一个 KVCacheBlock 记录什么</div>
         <h2>一个块不只是整数 ID，它还要知道自己能不能被复用、有没有人在用。</h2>
         <div class="source-map-vllm"><div class="source-card"><small>IDENTITY</small><b>块_id</b><code>0 .. num_gpu_blocks-1</code><span>物理块的稳定编号，后面块 table 就靠它指向 KV 内存。</span></div><div class="source-card"><small>LIFETIME</small><b>ref_cnt</b><code>reference count</code><span>有多少活跃引用正在使用它；共享 prefix 时尤其重要。</span></div><div class="source-card"><small>PREFIX CACHE</small><b>块_哈希</b><code>available when cached</code><span>完整/可缓存块可以带哈希，使相同 prefix 查找到已有块。</span></div><div class="source-card"><small>FREE 队列</small><b>prev / next</b><code>doubly linked free list</code><span>当前实现用自维护双向链表组织 free 块，支持高效删除与淘汰 ordering。</span></div></div>
         <div class="source-note">当前 <code>KVCacheBlock</code> 定义可见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">vllm/v1/core/kv_cache_utils.py</a>。源码明确包含 <code>block_id</code>、<code>ref_cnt</code>、块哈希与 free-list links。</div>
       </section>
 
       <section class="article-section" id="allocation">
-        <div class="section-no">06 · ALLOCATING SLOTS FOR NEW TOKENS</div>
+        <div class="section-no">06 · 为新 Token 分配槽位</div>
         <h2>调度器想推进 tokens，KV manager 要先把“逻辑增长”翻译成“需要几个新块”。</h2>
         <div class="iteration-flow"><div class="iteration-card"><small>1</small><b>known progress</b><span>请求已 computed N tokens。</span></div><div class="iteration-card"><small>2</small><b>schedule M more</b><span>本轮打算再推进 M tokens。</span></div><div class="iteration-card"><small>3</small><b>reuse tail</b><span>最后一个块有空 slot 就先继续写。</span></div><div class="iteration-card"><small>4</small><b>allocate</b><span>不够时从 pool 取新的物理块。</span></div><div class="iteration-card"><small>5</small><b>输出 块 IDs</b><span>SchedulerOutput 把相关块 state 交给工作进程。</span></div></div>
         <p>这一步是调度器和图形处理器（GPU）执行的重要契约：ModelRunner 不应该自己猜“这个请求的 KV 放哪”。它拿到已经决定好的块 IDs，再把它们写入设备侧块 table / 槽位映射。</p>
       </section>
 
       <section class="article-section" id="waste">
-        <div class="section-no">07 · PAGING DOES NOT MEAN ZERO WASTE</div>
+        <div class="section-no">07 · 分页不等于零浪费</div>
         <h2>固定块会显著减少“大段预留”和外部碎片，但最后一块仍可能没填满。</h2>
         <p>如果块 size=16，一个最终长度 33-token 的请求要占 3 块，最后一块只用 1 个 token slot。这是典型内部碎片。</p>
         <div class="shape-rule"><code>33 tokens</code><span>→</span><code>3 × 16 slots = 48 slots</code><span>→</span><code>15 slots un已用 in tail</code></div>
@@ -101,14 +101,14 @@
       </section>
 
       <section class="article-section" id="hybrid">
-        <div class="section-no">08 · CURRENT V1 IS MORE GENERAL THAN THE TOY MODEL</div>
+        <div class="section-no">08 · 当前 V1 比教学模型更一般</div>
         <h2>现代 vLLM 不只处理“所有层统一一种标准 Attention KV”。</h2>
         <p>当前 V1 代码里有 <code>KVCacheConfig</code>、多个 KV 缓存组、<code>HybridKVCacheCoordinator</code> 等抽象，也要处理 sliding-window attention、Mamba state、cross attention 等不同 cache specs。因此源码中你会看到“group”“coordinator”“spec”比早期 PagedAttention 教程复杂很多。</p>
         <div class="warning-note"><b>学习顺序不要被复杂度反过来劫持。</b><p>先用“固定块 → 块 pool → 请求块 chain → 块 table”理解标准 decoder attention；等这条线稳定，再理解不同缓存组为什么需要 coordinator。</p></div>
       </section>
 
       <section class="article-section" id="source">
-        <div class="section-no">09 · SOURCE MAP</div>
+        <div class="section-no">09 · 源码地图</div>
         <h2>这四个文件一起看，KV 管理层才完整。</h2>
         <div class="source-map-vllm"><div class="source-card"><small>请求 FACING</small><b>KVCacheManager</b><code>vllm/v1/core/kv_cache_manager.py</code><span>调度器-facing 分配 / computed 块 / free 等接口。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">打开源码 ↗</a></div><div class="source-card"><small>PHYSICAL POOL</small><b>BlockPool</b><code>vllm/v1/core/block_pool.py</code><span>free 块、哈希 lookup、物理块 reuse。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">打开源码 ↗</a></div><div class="source-card"><small>元数据</small><b>KVCacheBlock</b><code>vllm/v1/core/kv_cache_utils.py</code><span>块 ID / 引用计数 / 哈希 / free 队列元数据。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py">打开源码 ↗</a></div><div class="source-card"><small>CONFIG / SPECS</small><b>KV cache interface</b><code>vllm/v1/kv_cache_interface.py</code><span>AttentionSpec、MambaSpec、KVCacheConfig 等更一般的 cache 布局描述。</span><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/kv_cache_interface.py">打开源码 ↗</a></div></div>
       </section>
