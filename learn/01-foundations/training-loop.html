@@ -66,7 +66,7 @@
       </div>
 
       <section class="article-section" id="loop">
-        <div class="section-no">01 · THE WHOLE LOOP</div>
+        <div class="section-no">01 · 先看完整训练循环</div>
         <h2>先把训练看成一个不断重复的闭环。</h2>
         <p>先不碰公式。一次最小训练step可以压缩成五件事：</p>
         <div class="shape-flow training-flow">
@@ -88,7 +88,7 @@
       </section>
 
       <section class="article-section" id="toy">
-        <div class="section-no">02 · A TINY PROBLEM</div>
+        <div class="section-no">02 · 从一个最小问题开始</div>
         <h2>我们让一个只有两个参数的模型学会 <code>y = 2x + 1</code>。</h2>
         <p>模型先完全不知道答案。我们只给它一个最简单的Linear：</p>
         <div class="shape-hero compact-shape">
@@ -103,7 +103,7 @@
       </section>
 
       <section class="article-section" id="code">
-        <div class="section-no">03 · THE MINIMAL PYTORCH VERSION</div>
+        <div class="section-no">03 · 最小 PyTorch 实现</div>
         <h2>完整代码其实很短，先看全貌再拆。</h2>
         <div class="code-block">
           <div class="code-head"><span>python</span><span>03_training_loop.py</span></div>
@@ -133,7 +133,7 @@ print(model.weight.item(), model.bias.item())
       </section>
 
       <section class="article-section" id="steps">
-        <div class="section-no">04 · TRACE ONE STEP</div>
+        <div class="section-no">04 · 跟踪一次训练步骤</div>
         <h2>把一轮训练逐行追一遍。</h2>
         <div class="why-grid">
           <div class="why-card"><b>① 前向计算</b><p><code>prediction = model(x)</code>。输入经过Linear，得到当前参数下的预测。为了之后反向传播，PyTorch还会记录必要的计算关系。</p></div>
@@ -148,7 +148,7 @@ print(model.weight.item(), model.bias.item())
       </section>
 
       <section class="article-section" id="inspect">
-        <div class="section-no">05 · WATCH参数MOVE</div>
+        <div class="section-no">05 · 看参数怎样更新</div>
         <h2>别只盯损失，直接看参数真的被改了。</h2>
         <p>你可以在训练前后打印参数：</p>
         <div class="code-block">
@@ -167,7 +167,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
       </section>
 
       <section class="article-section" id="infra">
-        <div class="section-no">06 · INFRA视图</div>
+        <div class="section-no">06 · 从 AI Infra 角度看训练循环</div>
         <h2>一旦模型和批次变大，这五步就都变成系统问题。</h2>
         <div class="cost-panel">
           <div><small>前向计算</small><b>需要算大量通用矩阵乘法（GEMM），还要保存反向传播时会用到的激活值。</b></div>
@@ -179,7 +179,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
       </section>
 
       <section class="article-section" id="distributed">
-        <div class="section-no">07 · FIRST DISTRIBUTED QUESTION</div>
+        <div class="section-no">07 · 第一个分布式问题</div>
         <h2>两张GPU各训练一半批次，会发生什么？</h2>
         <div class="split-preview">
           <div class="split-original"><small>GLOBAL批次</small><code>8 samples</code></div>
