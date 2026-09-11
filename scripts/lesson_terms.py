@@ -163,6 +163,31 @@ def english_first_form(abbr: str) -> str:
     return f"{english} ({abbr}，{chinese})" if expand else abbr
 
 
+def terminology_equivalent(source: str) -> str:
+    """Neutralize old/new generated term phrasing for check-mode migration.
+
+    During the language cleanup, untouched lessons may still carry the old
+    English-first generated phrase. Check mode continues to catch real term-table
+    drift, while allowing those pages to be migrated module by module.
+    """
+    neutral = source
+    old_intro = (
+        '第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；'
+        '这里集中复习，避免学习时来回跳总站 Glossary。'
+    )
+    new_intro = (
+        '正文优先使用 <strong>中文名（缩写）</strong> 建立概念；'
+        '完整英文名集中放在这里，便于继续阅读英文文档与源码。'
+    )
+    neutral = neutral.replace(old_intro, '__TERM_INTRO__').replace(new_intro, '__TERM_INTRO__')
+    for abbr, (_, _, _, expand) in TERMS.items():
+        if not expand:
+            continue
+        neutral = neutral.replace(english_first_form(abbr), abbr)
+        neutral = neutral.replace(normalized_form(abbr), abbr)
+    return neutral
+
+
 def normalized_spans(text: str) -> list[tuple[int, int, str]]:
     """Return generated terminology spans so nested acronyms stay atomic."""
     spans = []
@@ -380,9 +405,11 @@ def main() -> int:
             raise SystemExit(f"{path.relative_to(ROOT)}: {exc}")
         total_terms += len(found_terms(MAIN_RE.search(new).group("body")))
         if new != old:
-            changed.append(path)
             if args.write:
+                changed.append(path)
                 path.write_text(new, encoding="utf-8")
+            elif terminology_equivalent(old) != terminology_equivalent(new):
+                changed.append(path)
 
     if args.write:
         print(f"Terminology normalized: {len(lesson_files())} lessons; {len(changed)} file(s) changed; {total_terms} lesson-term occurrences indexed.")
