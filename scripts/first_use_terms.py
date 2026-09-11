@@ -47,6 +47,9 @@ SOURCE_TERMS = {
     "activation": ("激活值", "forward 产生并可能在 backward 中复用的中间结果"),
     "autograd": ("自动求导", "PyTorch 自动记录计算图并计算 gradient 的机制"),
     "Adam": ("Adam 优化器", "利用一阶和二阶动量统计更新参数的常用 optimizer"),
+    "gradient accumulation": ("梯度累积", "多个小批次的 gradient 先累加，再统一更新 parameter"),
+    "checkpoint": ("检查点", "保存模型和训练状态，便于中断后继续训练"),
+    "Data Parallel": ("数据并行", "不同 replica 处理不同数据，再同步训练状态"),
 
     # 02 · Transformer
     "Transformer": ("Transformer 模型", "现代大语言模型常用的基础网络结构"),
