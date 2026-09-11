@@ -24,7 +24,7 @@ GLOBAL_PAGES = (
     ROOT / "source-map" / "index.html",
     ROOT / "glossary" / "index.html",
 )
-BODY_RE = re.compile(r"<body\\b[^>]*>(?P<body>.*?)</body>", re.S | re.I)
+BODY_RE = re.compile(r"<body\b[^>]*>(?P<body>.*?)</body>", re.S | re.I)
 
 # These are concepts whose English spelling is useful in source code, but whose
 # bare use in Chinese teaching prose usually makes a sentence harder to read.
@@ -100,9 +100,9 @@ def visible_prose(path: Path) -> str:
     body = SKIP_BLOCK_RE.sub(" ", body)
     # Glossary/source tables intentionally keep English lookup anchors; prose/UI
     # around them is the readability target.
-    body = re.sub(r"<table\\b.*?</table>", " ", body, flags=re.S | re.I)
+    body = re.sub(r"<table\b.*?</table>", " ", body, flags=re.S | re.I)
     if path == ROOT / "glossary" / "index.html":
-        body = re.sub(r\'<div class="term">.*?</div>\', " ", body, flags=re.S | re.I)
+        body = re.sub(r'<div class="term">.*?</div>', " ", body, flags=re.S | re.I)
     chunks = []
     for item in TEXT_TAG_RE.finditer(body):
         text = re.sub(r"<[^>]+>", " ", item.group(1))
