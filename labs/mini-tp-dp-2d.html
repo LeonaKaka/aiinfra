@@ -19,36 +19,36 @@
   <a class="side-home" href="./index.html">← Hands-on Labs</a>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
     <a class="lesson-link lab-side-link" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
-    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
-    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
-    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
-    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP 反向传播</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + 梯度 Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed 优化器</a>
+    <a class="lesson-link lab-side-link" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed 异步 Reduce-Scatter</a>
     <a class="lesson-link lab-side-link current train-current" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
-    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready 重叠</a>
     <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
-    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini 专家 Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
     <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
     <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
-    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>TP × DP</span></div>
     <div class="lab-kicker">LAB A6 · 2D PROCESS GROUPS</div>
     <h1>一个 global rank 可以同时属于多个“世界”。<br />TP 通信和 DP 通信绝不能混在一起。</h1>
-    <p class="dek">前五个 Training Labs 每次只盯一个并行维度。真正的 Megatron 会同时有 TP、DP、PP、CP、EP。这里先做最小二维拓扑：4 个进程组成 TP=2 × DP=2。每个 DP replica 内，两张卡一起算同一个样本的 TP layer；而相同 TP shard 的两个 replica，再通过另一组 DP group 同步参数梯度。</p>
+    <p class="dek">前五个 训练实验 每次只盯一个并行维度。真正的 Megatron 会同时有 TP、DP、PP、CP、EP。这里先做最小二维拓扑：4 个进程组成 TP=2 × DP=2。每个 DP replica 内，两张卡一起算同一个样本的 TP layer；而相同 TP 分片 的两个 replica，再通过另一组 DP 进程组 同步参数梯度。</p>
 
-    <section class="lab-section" id="topology"><div class="lab-kicker">01 · DRAW THE GROUPS</div><h2>同样四个 rank，按不同问题会被切成两套 group。</h2>
+    <section class="lab-section" id="topology"><div class="lab-kicker">01 · DRAW THE GROUPS</div><h2>同样四个 rank，按不同问题会被切成两套 进程组。</h2>
       <div class="command"><div class="command-head"><span>GLOBAL RANKS</span><span>TP=2 · DP=2</span></div><pre>                 TP rank 0     TP rank 1
 DP replica 0        R0  ←──TP──→  R1
                     ↑             ↑
@@ -58,19 +58,19 @@ DP replica 1        R2  ←──TP──→  R3
 
 TP groups = [0,1] [2,3]
 DP groups = [0,2] [1,3]</pre></div>
-      <p>R0 的身份不是单纯“global rank 0”。它同时是 <strong>TP group [0,1] 的 TP-rank 0</strong>，也是 <strong>DP group [0,2] 的 DP-rank 0</strong>。后面看 Megatron 的 <code>get_tensor_model_parallel_group()</code> / data-parallel group 时，必须带着这种二维坐标思考。</p>
+      <p>R0 的身份不是单纯“global rank 0”。它同时是 <strong>TP 进程组 [0,1] 的 TP-rank 0</strong>，也是 <strong>DP 进程组 [0,2] 的 DP-rank 0</strong>。后面看 Megatron 的 <code>get_tensor_model_parallel_group()</code> / data-parallel 进程组 时，必须带着这种二维坐标思考。</p>
     </section>
 
-    <section class="lab-section" id="flows"><div class="lab-kicker">02 · TWO DIFFERENT COLLECTIVES</div><h2>同一个 backward 里，两个 all-reduce 回答的是完全不同的问题。</h2>
+    <section class="lab-section" id="flows"><div class="lab-kicker">02 · TWO DIFFERENT COLLECTIVES</div><h2>同一个 反向传播 里，两个 all-reduce 回答的是完全不同的问题。</h2>
       <div class="stage-flow">
-        <div class="stage-card train"><small>TP GROUP</small><b>[0,1] or [2,3]</b><span>Row-parallel 输出 partial y 要求和；dX 也是来自不同 weight shard 的 contribution，要在 replica 内求和。</span></div>
-        <div class="stage-card comm"><small>LOCAL SHARD GRAD</small><b>dW1[t] · dW2[t]</b><span>参数 gradient 本身仍属于 TP shard t，不需要和另一个 TP shard 拼成同一个 gradient tensor。</span></div>
-        <div class="stage-card train"><small>DP GROUP</small><b>[0,2] or [1,3]</b><span>相同 TP shard 在不同数据 replica 上得到不同 dW；只和“同 shard 的副本”做 DP gradient sync。</span></div>
+        <div class="stage-card train"><small>TP 进程组</small><b>[0,1] or [2,3]</b><span>Row-parallel 输出 partial y 要求和；dX 也是来自不同 weight 分片 的 contribution，要在 replica 内求和。</span></div>
+        <div class="stage-card comm"><small>LOCAL 分片 GRAD</small><b>dW1[t] · dW2[t]</b><span>参数 梯度 本身仍属于 TP 分片 t，不需要和另一个 TP 分片 拼成同一个 梯度 tensor。</span></div>
+        <div class="stage-card train"><small>DP 进程组</small><b>[0,2] or [1,3]</b><span>相同 TP 分片 在不同数据 replica 上得到不同 dW；只和“同 分片 的副本”做 DP 梯度 sync。</span></div>
       </div>
-      <p>这是理解多维并行最重要的一条：<strong>先问这次 collective 在哪个 process group 里，再问它是什么 collective。</strong>只看到 <code>all_reduce</code> 这个函数名，不足以知道它在解决什么问题。</p>
+      <p>这是理解多维并行最重要的一条：<strong>先问这次 collective 在哪个 process 进程组 里，再问它是什么 collective。</strong>只看到 <code>all_reduce</code> 这个函数名，不足以知道它在解决什么问题。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>4 个 Gloo ranks 实际跑通，两个 TP shard 的 global gradient 都与 dense reference 对齐。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>4 个 Gloo ranks 实际跑通，两个 TP 分片 的 global 梯度 都与 dense reference 对齐。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>4 ranks</span></div><pre>torchrun --standalone --nproc-per-node=4 \
   labs/code/mini_tp_dp_2d.py</pre></div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>backend=gloo world_size=4 TP=2 DP=2
@@ -86,16 +86,16 @@ PASS</pre></div>
 
     <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>现在 <code>parallel_state.py</code> 不再是“初始化样板代码”，而是一张通信坐标系。</h2>
       <div class="source-bridge"><div><small>OUR LAB</small><b>global rank → (dp_rank, tp_rank)</b><code>new_group(TP rows) · new_group(DP columns)</code></div><span>maps to →</span><div><small>MEGATRON</small><b>core/parallel_state.py</b><code>TP / DP / PP / CP / EP groups and ranks</code></div></div>
-      <p>之后读 <code>tensor_parallel/</code> 时只盯 TP group；读 <code>distributed_data_parallel.py</code> / distributed optimizer 时，再追 DP / DP+CP 等 group。真实 Megatron 的拓扑远比 2×2 丰富，但所有复杂组合都建立在“一个 rank 同时处于多个正交 group”这个概念上。</p>
+      <p>之后读 <code>tensor_parallel/</code> 时只盯 TP 进程组；读 <code>distributed_data_parallel.py</code> / distributed 优化器 时，再追 DP / DP+CP 等 进程组。真实 Megatron 的拓扑远比 2×2 丰富，但所有复杂组合都建立在“一个 rank 同时处于多个正交 进程组”这个概念上。</p>
     </section>
 
     <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>如果这四问能不看答案说清，Megatron 的并行坐标系就真正建立了。</h2>
-      <div class="check-list"><div>① R1 的 TP peers 是谁？DP peers 又是谁？</div><div>② Row Parallel 的 partial output 为什么不能去 DP group 求和？</div><div>③ R0 的 dW1 shard 应该和 R1 还是 R2 同步？为什么？</div><div>④ 如果再加 PP=2，global world size 至少怎样继续乘上去？</div></div>
+      <div class="check-list"><div>① R1 的 TP peers 是谁？DP peers 又是谁？</div><div>② Row Parallel 的 局部输出 为什么不能去 DP 进程组 求和？</div><div>③ R0 的 dW1 分片 应该和 R1 还是 R2 同步？为什么？</div><div>④ 如果再加 PP=2，global world size 至少怎样继续乘上去？</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-bucketed-reduce-scatter.html">← Lab A5 · Bucketed Reduce-Scatter</a><a href="./mini-profiler-overlap.html">Lab A7 · Profiler-ready Overlap →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-bucketed-reduce-scatter.html">← Lab A5 · Bucketed Reduce-Scatter</a><a href="./mini-profiler-overlap.html">Lab A7 · Profiler-ready 重叠 →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#topology">同样四个 rank，按不同问题会被切成两套 group。</a><a href="#flows">同一个 backward 里，两个 all-reduce 回答的是完全不同的问题。</a><a href="#run">4 个 Gloo ranks 实际跑通，两个 TP shard 的 global gradient 都与 dense reference 对齐。</a><a href="#source">现在 parallel_state.py 不再是“初始化样板代码”，而是一张通信坐标系。</a><a href="#checkpoint">如果这四问能不看答案说清，Megatron 的并行坐标系就真正建立了。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#topology">同样四个 rank，按不同问题会被切成两套 进程组。</a><a href="#flows">同一个 反向传播 里，两个 all-reduce 回答的是完全不同的问题。</a><a href="#run">4 个 Gloo ranks 实际跑通，两个 TP 分片 的 global 梯度 都与 dense reference 对齐。</a><a href="#source">现在 parallel_state.py 不再是“初始化样板代码”，而是一张通信坐标系。</a><a href="#checkpoint">如果这四问能不看答案说清，Megatron 的并行坐标系就真正建立了。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
