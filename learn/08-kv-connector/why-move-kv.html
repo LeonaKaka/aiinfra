@@ -16,8 +16,8 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>KV Connector</span><span>/</span><span>Why Move KV</span></div>
       <div class="lesson-kicker"><span>LESSON 08.1 · KV CONNECTOR</span><span>约 65 min</span></div>
       <h1>为什么要搬 KV：Prefill GPU 已经算完了，Decode GPU 为什么不能直接接着生成？</h1>
-      <p class="dek">我们终于到最初的目标。06 已经知道 Prefill 和 Decode 是两种不同的推理阶段，07 又知道 Decode 必须依赖历史 KV Cache。现在把它们放到不同的 vLLM 实例：Prefill 在图形处理器（GPU）A 完成后，真正能让 GPU B 接着 Decode 的不是一句“prompt 已经算完”，而是每一层、每个已计算 token 对应的 KV 状态，以及能把这些状态装进 GPU B 本地的分页式 KV 缓冲区 的元数据。</p>
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从自回归 Attention 推导为什么跨实例交接为什么必须包含 KV，而不能只传最后一个 token。</li><li>解释 Prefill/Decode 分离的主要目标：独立调节首 Token 延迟（TTFT）与 Token 间延迟（ITL）、隔离 Prefill 对尾部 ITL 的干扰。</li><li>知道 vLLM 官方明确说明 P/D 分离本身不自动提高吞吐量。</li><li>区分“请求路由”“KV 数据传输”“KV 元数据协调”三件不同的事。</li><li>用 KV 数据量估算传输是否可能成为关键路径。</li><li>知道生产端/消费端是 Connector 中的数据角色，不等同于调度器或工作进程的进程角色。</li></ul></div>
+      <p class="dek">我们终于到最初的目标。06 已经知道 Prefill 和 Decode 是两种不同的推理阶段，07 又知道 Decode 必须依赖历史 KV Cache。现在把它们放到不同的 vLLM 实例：Prefill 在图形处理器（GPU）A 完成后，真正能让 GPU B 接着 Decode 的不是一句“prompt 已经算完”，而是每一层、每个已计算 token 对应的 KV 状态，以及能把这些状态装进 GPU B 本地的分页式 KV 缓冲区的元数据。</p>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从自回归 Attention 推导为什么跨实例交接必须包含 KV，而不能只传最后一个 token。</li><li>解释 Prefill/Decode 分离的主要目标：独立调节首 Token 延迟（TTFT）与 Token 间延迟（ITL）、隔离 Prefill 对尾部 ITL 的干扰。</li><li>知道 vLLM 官方明确说明 P/D 分离本身不自动提高吞吐量。</li><li>区分“请求路由”“KV 数据传输”“KV 元数据协调”三件不同的事。</li><li>用 KV 数据量估算传输是否可能成为关键路径。</li><li>知道生产端/消费端是 Connector 中的数据角色，不等同于调度器或工作进程的进程角色。</li></ul></div>
 
       <section class="article-section" id="dependency"><div class="section-no">01 · DECODE NEEDS STATE</div><h2>只把 token IDs 交给 Decode，不等于把 Prefill 的工作交过去。</h2><p>对第 <code>t+1</code> 个 token，Attention 要用当前 <code>Qₜ₊₁</code> 去访问此前 token 的 <code>K₀…Kₜ</code> 和 <code>V₀…Vₜ</code>。真正能让另一张 GPU 从下一个 token 接着生成的，是每一层已经计算好的历史 K/V 状态。</p>
       <div class="connector-core-wrap"><div class="connector-core-meta"><span>WHY MOVE KV · PREFILL → DECODE</span><span>one request · simplified</span></div>
