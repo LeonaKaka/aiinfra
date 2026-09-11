@@ -14,76 +14,76 @@
 <marker id="pd-g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#255b46"/></marker>
 <marker id="pd-p" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#7d5d6f"/></marker>
 </defs>
-<text x="24" y="28" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82" letter-spacing="1">REQUEST / CONTROL PATH</text>
+<text x="24" y="28" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82" letter-spacing="1">请求 / 控制路径</text>
 <line x1="24" y1="40" x2="936" y2="40" stroke="#d6dde2"/>
 <rect x="42" y="68" width="142" height="64" rx="10" fill="#fff" stroke="#c7c9c0"/>
-<text x="113" y="93" text-anchor="middle" font-size="13" font-weight="700">Client</text><text x="113" y="113" text-anchor="middle" font-size="10.5" fill="#737872">prompt / stream</text>
+<text x="113" y="93" text-anchor="middle" font-size="13" font-weight="700">客户端</text><text x="113" y="113" text-anchor="middle" font-size="10.5" fill="#737872">输入 / 流式输出</text>
 <rect x="302" y="60" width="196" height="80" rx="12" fill="#eaf1f6" stroke="#b8cad6"/>
-<text x="400" y="87" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82">ROUTER / PROXY</text>
-<text x="400" y="108" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2d526c">choose Prefill · later choose Decode</text>
-<text x="400" y="127" text-anchor="middle" font-size="10.2" fill="#65737d">carry kv_transfer_params</text>
+<text x="400" y="87" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82">路由器 / 代理</text>
+<text x="400" y="108" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2d526c">先选择 Prefill · 再选择 Decode</text>
+<text x="400" y="127" text-anchor="middle" font-size="10.2" fill="#65737d">携带 kv_transfer_params</text>
 <rect x="776" y="68" width="142" height="64" rx="10" fill="#fff" stroke="#c7c9c0"/>
-<text x="847" y="93" text-anchor="middle" font-size="13" font-weight="700">Stream</text><text x="847" y="113" text-anchor="middle" font-size="10.5" fill="#737872">tokens to user</text>
+<text x="847" y="93" text-anchor="middle" font-size="13" font-weight="700">流式输出</text><text x="847" y="113" text-anchor="middle" font-size="10.5" fill="#737872">token 返回用户</text>
 <path d="M184 100 H302" stroke="#315f82" stroke-width="1.7" marker-end="url(#pd-b)"/>
 <rect x="38" y="178" width="330" height="300" rx="17" fill="#fbfcf9" stroke="#c3d4c8"/>
-<text x="60" y="205" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46" letter-spacing="1">PREFILL POOL</text>
+<text x="60" y="205" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46" letter-spacing="1">PREFILL 池</text>
 <rect x="62" y="228" width="126" height="72" rx="10" fill="#fff" stroke="#ccd3cd"/>
-<text x="125" y="252" text-anchor="middle" font-size="12" font-weight="700">P queue</text><text x="125" y="272" text-anchor="middle" font-size="10.5" fill="#737872">wait for prefiller</text>
+<text x="125" y="252" text-anchor="middle" font-size="12" font-weight="700">P 队列</text><text x="125" y="272" text-anchor="middle" font-size="10.5" fill="#737872">等待 Prefill 实例</text>
 <rect x="214" y="228" width="130" height="72" rx="10" fill="#eaf2ed" stroke="#c1d4c6"/>
-<text x="279" y="252" text-anchor="middle" font-size="12" font-weight="700" fill="#255b46">Prefill GPU</text><text x="279" y="272" text-anchor="middle" font-size="10.5" fill="#647169">prompt → layer KV</text>
+<text x="279" y="252" text-anchor="middle" font-size="12" font-weight="700" fill="#255b46">Prefill GPU</text><text x="279" y="272" text-anchor="middle" font-size="10.5" fill="#647169">输入 → 各层 KV</text>
 <path d="M188 264 H214" stroke="#255b46" stroke-width="1.6" marker-end="url(#pd-g)"/>
 <rect x="82" y="344" width="242" height="94" rx="12" fill="#eef4ef" stroke="#c1d4c6"/>
-<text x="203" y="370" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46">SOURCE KV · PINNED</text>
-<text x="203" y="393" text-anchor="middle" font-size="11.5" font-weight="700" fill="#254b39">registered GPU KV regions</text>
-<text x="203" y="414" text-anchor="middle" font-size="10.5" fill="#647169">lease keeps blocks alive during D queue / transfer</text>
+<text x="203" y="370" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46">源 KV · 保持占用</text>
+<text x="203" y="393" text-anchor="middle" font-size="11.5" font-weight="700" fill="#254b39">已注册 GPU KV 区域</text>
+<text x="203" y="414" text-anchor="middle" font-size="10.5" fill="#647169">租约保证 D 排队 / 传输期间源 KV 块仍有效</text>
 <path d="M279 300 V324 H203 V344" fill="none" stroke="#255b46" stroke-width="1.6" marker-end="url(#pd-g)"/>
 <rect x="592" y="178" width="330" height="300" rx="17" fill="#fbfcfd" stroke="#c6d3dc"/>
-<text x="614" y="205" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82" letter-spacing="1">DECODE POOL</text>
+<text x="614" y="205" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#315f82" letter-spacing="1">DECODE 池</text>
 <rect x="616" y="228" width="126" height="72" rx="10" fill="#fff" stroke="#ccd3cd"/>
-<text x="679" y="252" text-anchor="middle" font-size="12" font-weight="700">D queue</text><text x="679" y="272" text-anchor="middle" font-size="10.5" fill="#737872">admission / wait</text>
+<text x="679" y="252" text-anchor="middle" font-size="12" font-weight="700">D 队列</text><text x="679" y="272" text-anchor="middle" font-size="10.5" fill="#737872">准入 / 等待</text>
 <rect x="768" y="228" width="130" height="72" rx="10" fill="#eaf1f6" stroke="#b8cad6"/>
-<text x="833" y="252" text-anchor="middle" font-size="12" font-weight="700" fill="#315f82">Decode GPU</text><text x="833" y="272" text-anchor="middle" font-size="10.5" fill="#65737d">continuous batching</text>
+<text x="833" y="252" text-anchor="middle" font-size="12" font-weight="700" fill="#315f82">Decode GPU</text><text x="833" y="272" text-anchor="middle" font-size="10.5" fill="#65737d">连续批处理</text>
 <path d="M742 264 H768" stroke="#315f82" stroke-width="1.6" marker-end="url(#pd-b)"/>
 <rect x="636" y="344" width="242" height="94" rx="12" fill="#eef4ef" stroke="#c1d4c6"/>
-<text x="757" y="370" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46">LOCAL PAGED KV</text>
-<text x="757" y="393" text-anchor="middle" font-size="11.5" font-weight="700" fill="#254b39">destination blocks</text>
-<text x="757" y="414" text-anchor="middle" font-size="10.5" fill="#647169">held for ongoing autoregressive decode</text>
+<text x="757" y="370" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#255b46">本地分页式 KV</text>
+<text x="757" y="393" text-anchor="middle" font-size="11.5" font-weight="700" fill="#254b39">目标 KV 块</text>
+<text x="757" y="414" text-anchor="middle" font-size="10.5" fill="#647169">为持续自回归 Decode 保留</text>
 <path d="M757 344 V324 H833 V300" fill="none" stroke="#315f82" stroke-width="1.6" marker-end="url(#pd-b)"/>
 <path d="M350 140 V160 H125 V228" fill="none" stroke="#315f82" stroke-width="1.5" marker-end="url(#pd-b)"/>
 <path d="M450 140 V177 H679 V228" fill="none" stroke="#315f82" stroke-width="1.5" marker-end="url(#pd-b)"/>
 <rect x="500" y="143" width="124" height="26" rx="6" fill="#f7f7f3" stroke="#ddded7"/>
-<text x="562" y="160" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#777d77">after P returns params</text>
+<text x="562" y="160" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#777d77">P 返回参数后</text>
 <rect x="393" y="224" width="174" height="196" rx="15" fill="#fdfcfd" stroke="#d4c7cf"/>
-<text x="480" y="249" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7d5d6f">KV HANDOFF</text>
+<text x="480" y="249" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7d5d6f">KV 交接</text>
 <rect x="415" y="270" width="130" height="54" rx="9" fill="#f2edf0" stroke="#d4c5ce"/>
-<text x="480" y="292" text-anchor="middle" font-size="11.5" font-weight="700" fill="#6c5060">Connector + NIXL</text><text x="480" y="310" text-anchor="middle" font-size="9.7" fill="#746a70">mapping / handles</text>
+<text x="480" y="292" text-anchor="middle" font-size="11.5" font-weight="700" fill="#6c5060">Connector + NIXL</text><text x="480" y="310" text-anchor="middle" font-size="9.7" fill="#746a70">映射 / 句柄</text>
 <rect x="415" y="344" width="130" height="50" rx="9" fill="#fff" stroke="#c7c9c0"/>
-<text x="480" y="365" text-anchor="middle" font-size="11" font-weight="700">network fabric</text><text x="480" y="381" text-anchor="middle" font-size="9.5" fill="#777d77">UCX / RDMA / ...</text>
+<text x="480" y="365" text-anchor="middle" font-size="11" font-weight="700">网络互连</text><text x="480" y="381" text-anchor="middle" font-size="9.5" fill="#777d77">UCX / RDMA / …</text>
 <path d="M324 390 H393" stroke="#255b46" stroke-width="1.8" marker-end="url(#pd-g)"/>
 <path d="M567 390 H636" stroke="#255b46" stroke-width="1.8" marker-end="url(#pd-g)"/>
 <path d="M480 324 V344" stroke="#7d5d6f" stroke-width="1.5" marker-end="url(#pd-p)"/>
-<text x="351" y="377" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#577063">KV bytes</text>
-<text x="609" y="377" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#577063">KV bytes</text>
+<text x="351" y="377" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#577063">KV 数据</text>
+<text x="609" y="377" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#577063">KV 数据</text>
 <path d="M898 264 H936 V100 H918" fill="none" stroke="#315f82" stroke-width="1.6" marker-end="url(#pd-b)"/>
 <path d="M679 228 V212 H910 V526 H203 V438" fill="none" stroke="#7d5d6f" stroke-width="1.35" stroke-dasharray="5 5" marker-end="url(#pd-p)"/>
 <rect x="345" y="490" width="220" height="30" rx="7" fill="#f7f7f3" stroke="#ddded7"/>
-<text x="455" y="510" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6f6170">D heartbeat → renew P source lease</text>
-<text x="24" y="550" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7a7f78" letter-spacing="1">USER-VISIBLE SLO</text>
+<text x="455" y="510" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6f6170">D 心跳 → 续租 P 端源 KV</text>
+<text x="24" y="550" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7a7f78" letter-spacing="1">用户可见 SLO</text>
 <rect x="42" y="568" width="576" height="48" rx="9" fill="#faf6ef" stroke="#ded1bf"/>
 <text x="60" y="588" font-family="ui-monospace,monospace" font-size="9" font-weight="700" fill="#7b6a3e">TTFT</text>
-<text x="109" y="588" font-size="10.5" fill="#736957">P queue + Prefill + KV handoff + D queue + first decode</text>
-<text x="60" y="605" font-size="9.5" fill="#918778">optimize the whole path, not only GEMM or network bandwidth</text>
+<text x="109" y="588" font-size="10.5" fill="#736957">P 队列 + Prefill + KV handoff + D 队列 + first decode</text>
+<text x="60" y="605" font-size="9.5" fill="#918778">优化整条路径，而不是只优化 GEMM 或网络带宽</text>
 <rect x="640" y="568" width="278" height="48" rx="9" fill="#eaf1f6" stroke="#c4d2db"/>
 <text x="658" y="588" font-family="ui-monospace,monospace" font-size="9" font-weight="700" fill="#315f82">ITL</text>
-<text x="696" y="588" font-size="10.5" fill="#65737d">mostly Decode cadence</text>
-<text x="658" y="605" font-size="9.5" fill="#7c8991">batching · KV pressure · TP · preemption</text>
+<text x="696" y="588" font-size="10.5" fill="#65737d">主要由 Decode 输出节奏决定</text>
+<text x="658" y="605" font-size="9.5" fill="#7c8991">批处理 · KV 压力 · TP · 抢占</text>
 </svg>
 </div><div class="connector-core-takeaway"><strong>生产级主线：</strong>路由器连接两个独立资源池；P 负责建立并暂存 KV，Connector/NIXL 负责交接，D 把 KV 纳入自己的 paged cache 后持续 decode。TTFT 跨越整条路径，而 ITL 主要由 Decode 池的稳定性决定。</div>
-<p>这张图先固定两个边界：<strong>控制面负责 placement、元数据和归属关系；bulk-data path 负责把真正的 KV bytes 送进 Decode 的本地 paged cache。</strong>两者必须协作，但排障时要分开看。</p></section>
+<p>这张图先固定两个边界：<strong>控制面负责 placement、元数据和归属关系；bulk-data path 负责把真正的 KV 数据 送进 Decode 的本地 paged cache。</strong>两者必须协作，但排障时要分开看。</p></section>
 
-<section class="article-section" id="ttft"><div class="section-no">02 · DECOMPOSE TTFT</div><h2>看到 TTFT 变差，不要第一反应就怪 Prefill GEMM。</h2><div class="shape-flow"><div><small>队列 P</small><code>wait for prefiller</code></div><span>+</span><div><small>PREFILL</small><code>prompt compute</code></div><span>+</span><div><small>XFER</small><code>KV handoff</code></div></div><div class="shape-flow"><div><small>队列 D</small><code>decode admission</code></div><span>+</span><div><small>FIRST DECODE</small><code>sample token</code></div><span>=</span><div><small>TTFT</small><code>end-to-end</code></div></div><p>拆开后你才能知道应该加 Prefill 副本、提升 NIXL link、改变 P/D ratio，还是 Decode 池已满。只测模型 forward time 会漏掉最真实的排队和交接。</p></section>
+<section class="article-section" id="ttft"><div class="section-no">02 · DECOMPOSE TTFT</div><h2>看到 TTFT 变差，不要第一反应就怪 Prefill GEMM。</h2><div class="shape-flow"><div><small>队列 P</small><code>等待 Prefill 实例</code></div><span>+</span><div><small>PREFILL</small><code>prompt compute</code></div><span>+</span><div><small>XFER</small><code>KV handoff</code></div></div><div class="shape-flow"><div><small>队列 D</small><code>decode admission</code></div><span>+</span><div><small>FIRST DECODE</small><code>sample token</code></div><span>=</span><div><small>TTFT</small><code>end-to-end</code></div></div><p>拆开后你才能知道应该加 Prefill 副本、提升 NIXL link、改变 P/D ratio，还是 Decode 池已满。只测模型 forward time 会漏掉最真实的排队和交接。</p></section>
 
-<section class="article-section" id="itl"><div class="section-no">03 · DECODE POOL OWNS MOST OF THE STREAMING CADENCE</div><h2>P/D 分离的价值之一，就是把 Decode 的关键路径尽量变得可预测。</h2><p>Decode 实例不再直接执行大块新 Prefill，尾部 ITL 更容易控制；但它仍会受 continuous batching、KV 内存 pressure、recompute 抢占、显存带宽、TP communication、sampling/中央处理器（CPU） overhead 等影响。</p><div class="metric-grid"><div class="metric-card"><small>批次</small><b>active seqs</b><span>过小图形处理器（GPU） 吃不满；过大可能提高 per-token 延迟。</span></div><div class="metric-card"><small>KV</small><b>内存 pressure</b><span>长上下文累积会让可并发请求数下降。</span></div><div class="metric-card"><small>COMM</small><b>TP collectives</b><span>Decode TP 仍受拓扑/collective 延迟影响。</span></div><div class="metric-card"><small>PREEMPT</small><b>recompute</b><span>频繁资源回收会恶化 tail 延迟。</span></div></div></section>
+<section class="article-section" id="itl"><div class="section-no">03 · DECODE 池 OWNS MOST OF THE STREAMING CADENCE</div><h2>P/D 分离的价值之一，就是把 Decode 的关键路径尽量变得可预测。</h2><p>Decode 实例不再直接执行大块新 Prefill，尾部 ITL 更容易控制；但它仍会受 连续批处理、KV 内存 pressure、recompute 抢占、显存带宽、TP communication、sampling/中央处理器（CPU） overhead 等影响。</p><div class="metric-grid"><div class="metric-card"><small>批次</small><b>active seqs</b><span>过小图形处理器（GPU） 吃不满；过大可能提高 per-token 延迟。</span></div><div class="metric-card"><small>KV</small><b>内存 pressure</b><span>长上下文累积会让可并发请求数下降。</span></div><div class="metric-card"><small>COMM</small><b>TP collectives</b><span>Decode TP 仍受拓扑/collective 延迟影响。</span></div><div class="metric-card"><small>PREEMPT</small><b>recompute</b><span>频繁资源回收会恶化 tail 延迟。</span></div></div></section>
 
 <section class="article-section" id="ratio"><div class="section-no">04 · CAPACITY RATIO</div><h2>Prefill GPU 和 Decode GPU 的数量不应该默认 1:1。</h2><p>工作负载决定两阶段的负载比例。长 prompt、短输出的请求更吃 Prefill；短 prompt、长输出更吃 Decode。生产 capacity 规划ning 应从实际请求分布估算，而不是“每个 P 配一个 D”。</p><div class="mode-compare"><div><small>PREFILL-HEAVY 工作负载</small><b>long input · short output</b><span>可能需要更多 Prefill capacity / 更大的 Prefill TP，KV 交接 bytes 也更大。</span></div><div><small>DECODE-HEAVY 工作负载</small><b>short input · long output</b><span>Decode GPU 持有 KV 的时间更久，ITL 和并发 KV capacity 更关键。</span></div></div><p>路由器的任务因此不仅是“转发”，还可能需要做队列-aware placement、P/D load balancing 和 affinity。</p></section>
 
@@ -95,7 +95,7 @@
 
 <section class="article-section" id="turn-ttl"><div class="section-no">08 · BIDIRECTIONAL CACHE USES A DIFFERENT LIFETIME MODEL</div><h2>D 端为“下一轮也许会回来”的 KV，不能靠同样的心跳无限续租。</h2><p>多轮对话的下一次用户输入可能几秒、几分钟甚至永远不来。当前 bidirectional NIXL 因此给 D-side cached KV 使用单独的 <code>decoder_kv_blocks_ttl</code>，默认 480 秒，<strong>不通过心跳续租</strong>。过期后下一轮需要 recompute。</p><p>这里还有一个非常典型的分布式陷阱：expiry 使用进程本地 <code>perf_counter</code>，P 与 D 的时钟零点不相同。当前实现通过 handshake round-trip 估算 peer clock offset，再把 D 的 deadline 转换到 P 能比较的时钟域。Lab B7 会把这个坑单独跑成状态机。</p></section>
 
-<section class="article-section" id="metrics"><div class="section-no">09 · WHAT TO MEASURE</div><h2>完整 benchmark 至少要有这些指标。</h2><div class="metric-grid"><div class="metric-card"><small>USER</small><b>TTFT</b><span>首 token 端到端延迟，含队列 + 传输。</span></div><div class="metric-card"><small>USER</small><b>ITL / 尾部 ITL</b><span>Decode 稳定性与长尾。</span></div><div class="metric-card"><small>SYSTEM</small><b>吞吐量</b><span>token 吞吐量、请求/s；确认拆分没有吞吐退化失控。</span></div><div class="metric-card"><small>XFER</small><b>KV bytes + BW</b><span>实际传输 size、effective GB/s、wait time。</span></div></div><div class="metric-grid"><div class="metric-card"><small>队列</small><b>P / D wait</b><span>分别测两个资源池排队时间。</span></div><div class="metric-card"><small>内存</small><b>KV utilization</b><span>free 块、cache hit、抢占/eviction、租约d 块。</span></div><div class="metric-card"><small>RELIABILITY</small><b>xfer errors</b><span>handshake/load 失败/recompute/fail/租约 expiry。</span></div><div class="metric-card"><small>GPU</small><b>utilization timeline</b><span>Profiler 看计算与传输 overlap。</span></div></div></section>
+<section class="article-section" id="metrics"><div class="section-no">09 · WHAT TO MEASURE</div><h2>完整 benchmark 至少要有这些指标。</h2><div class="metric-grid"><div class="metric-card"><small>USER</small><b>TTFT</b><span>首 token 端到端延迟，含队列 + 传输。</span></div><div class="metric-card"><small>USER</small><b>ITL / 尾部 ITL</b><span>Decode 稳定性与长尾。</span></div><div class="metric-card"><small>SYSTEM</small><b>吞吐量</b><span>token 吞吐量、请求/s；确认拆分没有吞吐退化失控。</span></div><div class="metric-card"><small>XFER</small><b>KV 数据 + BW</b><span>实际传输 size、effective GB/s、wait time。</span></div></div><div class="metric-grid"><div class="metric-card"><small>队列</small><b>P / D wait</b><span>分别测两个资源池排队时间。</span></div><div class="metric-card"><small>内存</small><b>KV utilization</b><span>free 块、cache hit、抢占/eviction、租约d 块。</span></div><div class="metric-card"><small>RELIABILITY</small><b>xfer errors</b><span>handshake/load 失败/recompute/fail/租约 expiry。</span></div><div class="metric-card"><small>GPU</small><b>utilization timeline</b><span>Profiler 看计算与传输 overlap。</span></div></div></section>
 
 <section class="article-section" id="method"><div class="section-no">10 · EXPERIMENTAL METHOD</div><h2>最容易犯的错，是直接上 P/D，然后不知道收益到底来自哪里。</h2><div class="cost-panel"><div><small>BASELINE</small><b>单个 vLLM 实例：固定模型、请求 trace、并发度，记录 TTFT/ITL/吞吐量。</b></div><div><small>DISAGGREGATE</small><b>同样总 GPU 预算下拆 P/D；先不调奇怪参数，只确认正确性和传输 size。</b></div><div><small>PROFILE</small><b>分解 P 队列 / Prefill / KV xfer / D 队列 / Decode；找最大项。</b></div><div><small>TUNE ONE AXIS</small><b>P/D ratio、TP、chunking、transport、块/cache、路由一次只改一类。</b></div><div><small>LOAD TEST</small><b>不要只测一个请求；测不同 prompt/output distribution 与 burst 每秒查询数（QPS）。</b></div><div><small>TAIL</small><b>最终看 p95/p99 TTFT/ITL，而不是只看平均值。</b></div></div></section>
 
