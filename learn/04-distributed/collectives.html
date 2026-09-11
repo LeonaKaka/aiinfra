@@ -80,22 +80,22 @@
         <div class="section-no">06 · All-Reduce 与 Reduce-Scatter + All-Gather</div>
         <h2>把 all-reduce 从数据状态角度拆开，会更容易理解现代分布式训练。</h2>
         <div class="shape-flow"><div><small>START</small><code>local contributions</code></div><span>→</span><div><small>REDUCE-SCATTER</small><code>reduced shards</code></div><span>→</span><div><small>ALL-GATHER</small><code>full reduced tensor</code></div></div>
-        <p>从数学数据状态看，一个 all-reduce 的最终效果可以理解为先得到 reduced 分片，再让所有 ranks gather 完整 reduced 张量。<strong>这不是说 NVIDIA 集体通信库（NCCL） 内部永远机械地调用两个独立应用程序编程接口（API）</strong>；它只是非常有用的语义分解，能帮助理解零冗余优化器（ZeRO） / 全分片数据并行（FSDP） / Megatron 的sharded states。</p>
+        <p>从数学数据状态看，一个 all-reduce 的最终效果可以理解为先得到 reduced shard，再让所有 ranks 收集成完整 reduced tensor。<strong>这不是说 NCCL 内部永远机械地调用两个独立 API</strong>；它只是非常有用的语义分解，能帮助理解 ZeRO / FSDP / Megatron 的分片状态。</p>
       </section>
 
       <section class="article-section" id="alltoall">
         <div class="section-no">07 · All-to-All</div>
         <h2>每个 rank 都要把不同的一部分发给不同对端进程。</h2>
         <div class="alltoall-demo"><div class="alltoall-side"><div><small>R0</small><code>A0 A1 A2 A3</code></div><div><small>R1</small><code>B0 B1 B2 B3</code></div><div><small>R2</small><code>C0 C1 C2 C3</code></div><div><small>R3</small><code>D0 D1 D2 D3</code></div></div><div class="alltoall-center">all-to-all<br/>↔ ↔ ↔</div><div class="alltoall-side"><div><small>R0 GETS</small><code>A0 B0 C0 D0</code></div><div><small>R1 GETS</small><code>A1 B1 C1 D1</code></div><div><small>R2 GETS</small><code>A2 B2 C2 D2</code></div><div><small>R3 GETS</small><code>A3 B3 C3 D3</code></div></div></div>
-        <p>它更像一次 destination-dependent reshuffle：每个 sender 给不同 destination 不同数据。MoE 的 Expert Parallel 是自然例子——路由器决定 token 去哪个 expert，于是 token 要跨ranks dispatch，再把 expert outputs 发回来。</p>
+        <p>它更像一次按目标位置重新分发：每个发送方给不同目标不同数据。MoE 的路由就是自然例子——不同 token 会被分给不同专家子网络，于是 token 要跨 ranks 分发，再把计算结果发回来。</p>
       </section>
 
       <section class="article-section" id="p2p">
         <div class="section-no">08 · Send / Recv 不是集合通信</div>
-        <h2>Point-to-point：明确的 sender 和 receiver。</h2>
-        <p><code>send / recv</code> 不是“整个进程组一起变换张量”，而是某些ranks 直接点对点传数据。Pipeline Parallel 相邻阶段之间传 activations / 梯度时，就很容易出现点对点通信（P2P） 语义。</p>
+        <h2>P2P：明确的一方发送、另一方接收。</h2>
+        <p><code>send</code>（发送：点对点通信中把 tensor 从当前 rank 发往另一个 rank）和 <code>recv</code>（接收：点对点通信中从另一个 rank 接收 tensor）不是“整个 process group 一起变换 tensor”，而是某些 ranks 直接点对点传数据。Pipeline Parallel 相邻阶段之间传 activation / gradient 时，就很容易出现 P2P 语义。</p>
         <div class="process-device"><div><small>RANK 0 · PIPE 阶段 0</small><b>activation</b></div><span>send → recv</span><div><small>RANK 1 · PIPE 阶段 1</small><b>activation</b></div></div>
-        <p>所以后面 Megatron 的不同 parallelism 会对应不同通信模式：TP 经常是collectives，PP 很多时候更像相邻阶段的 P2P。</p>
+        <p>所以后面 Megatron 的不同并行方式会对应不同通信模式：TP 经常使用 collectives，Pipeline Parallel 很多时候更像相邻阶段的 P2P。</p>
       </section>
 
       <section class="article-section" id="pytorch">
@@ -124,32 +124,32 @@ print(f<span class="comment">"rank={rank}, mean={x.item()}"</span>)
 
 dist.destroy_process_group()</code></pre></div>
         <div class="code-block"><div class="code-head"><span>shell</span><span>launch</span></div><pre><code>torchrun --standalone --nproc-per-node=4 05_all_reduce.py</code></pre></div>
-        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以总进程数（world size（总进程数：表示当前 distributed world 中有多少个 processes））。DDP（分布式数据并行：PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度） 梯度同步里的具体 averaging 行为由 DDP 的实现语义处理，不应该把“all-reduce API 本身”记成“自动求平均”。</p>
+        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以 world size。DDP 的 gradient 同步中怎样做平均由 DDP 的实现语义处理，不应该把“all-reduce API 本身”记成“自动求平均”。</p>
         <div class="source-note">官方参考：<a href="https://docs.pytorch.org/docs/stable/distributed.html">PyTorch torch.distributed 集合通信 APIs</a>。</div>
       </section>
 
       <section class="article-section" id="map">
         <div class="section-no">10 · 把集合通信映射回训练与推理系统</div>
-        <h2>现在把几个 primitive 放回真实系统。</h2>
-        <div class="collective-table"><div class="collective-table-row head"><b>Pattern</b><span>典型数据状态</span><span>你以后会在哪见</span></div><div class="collective-table-row"><b>all-reduce</b><span>每 rank 有完整 shape 的不同值 → 每 rank 得到聚合后的完整结果</span><span>经典 DP 梯度 sync；部分 TP reduction 边界</span></div><div class="collective-table-row"><b>all-gather</b><span>每 rank 有分片 → 每 rank 得到完整拼接结果</span><span>sharded parameters / sequence 分片在需要完整视图时</span></div><div class="collective-table-row"><b>reduce-scatter</b><span>每 rank 有完整贡献 → reduce 后每人只留结果分片</span><span>sharded gradients / sequence-parallel outputs 等</span></div><div class="collective-table-row"><b>all-to-all</b><span>不同数据发往不同对端进程</span><span>MoE expert token dispatch / combine 的典型路径</span></div><div class="collective-table-row"><b>send / recv</b><span>一个 peer（对端：通信或 transfer 中的另一侧 process 或实例） → 另一个 peer</span><span>Pipeline Parallel stage-to-stage activation / 梯度</span></div></div>
-        <p>这里的“在哪见”是建立路线感，不表示每个框架在所有配置下都固定使用唯一一种集合通信。Megatron 会根据 parallel mode、Sequence Parallel、分发器和 overlap 策略组合不同通信操作。</p>
+        <h2>现在把几个基本通信操作放回真实系统。</h2>
+        <div class="collective-table"><div class="collective-table-row head"><b>Pattern</b><span>典型数据状态</span><span>你以后会在哪见</span></div><div class="collective-table-row"><b>all-reduce</b><span>每 rank 有完整 shape 的不同值 → 每 rank 得到聚合后的完整结果</span><span>经典 DP gradient 同步；部分 TP reduction 边界</span></div><div class="collective-table-row"><b>all-gather</b><span>每 rank 有 shard → 每 rank 得到完整拼接结果</span><span>分片 parameter / sequence 在需要完整视图时</span></div><div class="collective-table-row"><b>reduce-scatter</b><span>每 rank 有完整贡献 → reduce 后每人只留结果 shard</span><span>分片 gradient / Sequence Parallel 输出等</span></div><div class="collective-table-row"><b>all-to-all</b><span>不同数据发往不同对端进程</span><span>MoE token 分发与结果回收的典型路径</span></div><div class="collective-table-row"><b>send / recv</b><span>一个 peer → 另一个 peer</span><span>Pipeline Parallel 相邻 stage 的 activation / gradient</span></div></div>
+        <p>这里的“在哪见”是建立路线感，不表示每个框架在所有配置下都固定使用唯一一种 collective。Megatron 会根据并行模式、Sequence Parallel、分发方式和 overlap 策略组合不同通信操作。</p>
       </section>
 
       <section class="article-section" id="cost">
         <div class="section-no">11 · 通信也有成本模型</div>
         <h2>同一个集合通信，张量越大、进程组越大、拓扑越差，代价通常越值得担心。</h2>
         <div class="cost-intuition"><div><small>延迟</small><b>一次通信启动的固定成本</b><span>小张量 / 高频集合通信时尤其显眼。</span></div><div><small>BANDWIDTH</small><b>大量字节数据搬运的吞吐上限</b><span>大张量时决定传输时间的主要部分。</span></div></div>
-        <p>真正通信量并不等于简单“张量大小 × 对端进程”。下一课学 NCCL、ring/tree、NVLink/高速外设组件互连（PCIe）/InfiniBand 时，我们再追集合通信怎样映射到真实链路。</p>
+        <p>真正通信量并不等于简单“tensor 大小 × 对端进程”。下一课学 NCCL 与 topology 时，我们再追 collective 怎样映射到 NVLink、PCIe、InfiniBand 等真实链路。</p>
       </section>
 
       <section class="article-section" id="contract">
         <div class="section-no">12 · 集合通信本质上是一份契约</div>
         <h2>参与者必须对“现在要做什么通信”有一致理解。</h2>
-        <div class="hang-warning"><strong>典型错误：</strong><p>rank 0 进入 all-reduce，rank 1 却进入 all-gather；某些ranks 根本没进入集合通信；process group 不一致；tensor shape / count 不满足 API 要求。结果可能是 runtime error，也可能表现成一直等待。</p></div>
-        <p>所以 debugging 分布式代码时，一个有效方法是为每个 rank 打印<strong>collective sequence、process group、shape、dtype</strong>，先确认所有对端进程对通信协议的理解一致。</p>
+        <div class="hang-warning"><strong>典型错误：</strong><p>rank 0 进入 all-reduce，rank 1 却进入 all-gather；某些 ranks 根本没进入 collective；process group 不一致；tensor shape / count 不满足 API 要求。结果可能是运行时错误，也可能表现成一直等待。</p></div>
+        <p>所以调试分布式代码时，一个有效方法是为每个 rank 打印<strong>collective sequence（集合通信序列：一个 rank 按时间依次执行 collective 的顺序记录）、process group、shape、dtype</strong>，先确认所有对端进程对通信协议的理解一致。</p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.2</span></div><h2>别背名字，直接画输入和输出。</h2><div class="quiz-item"><div class="quiz-q">1. 四个ranks 分别持有 A、B、C、D 四个分片，最后希望每个 rank 都得到 [A,B,C,D]，最像哪个集合通信？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">all-gather。每个 rank 起初只有自己的分片，结束时所有参与的 rank 都拥有完整拼接结果。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 reduce-scatter 比“先 all-reduce 再丢掉 3/4 结果”更符合sharded state 的目标？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为最终每个 rank 本来只需要 reduced result 的一个分片。reduce-scatter 的语义直接产生分片后的聚合结果，不要求每 rank 都保留完整 reduced 张量。</div></div><div class="quiz-item"><div class="quiz-q">3. MoE 为什么更容易出现 all-to-all，而不是简单 broadcast？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 token 会被路由器分配到不同 experts/ranks，所以每个 sender 需要把不同 token 子集发给不同 destinations；这更像全体之间的重排，而不是把同一份数据复制给所有人。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>04.2</span></div><h2>别背名字，直接画输入和输出。</h2><div class="quiz-item"><div class="quiz-q">1. 四个ranks 分别持有 A、B、C、D 四个分片，最后希望每个 rank 都得到 [A,B,C,D]，最像哪个集合通信？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">all-gather。每个 rank 起初只有自己的分片，结束时所有参与的 rank 都拥有完整拼接结果。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么 reduce-scatter 比“先 all-reduce 再丢掉 3/4 结果”更符合sharded state 的目标？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为最终每个 rank 本来只需要 reduced result 的一个分片。reduce-scatter 的语义直接产生分片后的聚合结果，不要求每 rank 都保留完整 reduced 张量。</div></div><div class="quiz-item"><div class="quiz-q">3. MoE 为什么更容易出现 all-to-all，而不是简单 broadcast？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 token 会被分配到不同专家和 ranks，所以每个发送方需要把不同 token 子集发给不同目标；这更像全体之间的重排，而不是把同一份数据复制给所有人。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">术语表 · 本课词汇</div>
