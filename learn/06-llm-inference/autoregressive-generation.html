@@ -30,10 +30,10 @@
       <div class="mobile-course-bar"><span>06 · LLM Inference</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">LLM Inference</a><span>/</span><span>Autoregressive Generation</span></div>
       <div class="lesson-kicker"><span>LESSON 06.1 · INFERENCE</span><span>约 50 min</span></div>
-      <h1>自回归生成：为什么“下一个 token”会把整个 在线推理 系统变成状态机？</h1>
-      <p class="dek">训练时我们常把很多已知 token 一次送进模型；在线生成则有一个新的硬约束：未来 token 还不存在。模型只能根据已经确认的前缀产生下一个 token 的分数，解码策略选出一个 token，把它加入前缀，然后下一步才有了新的条件。后面的 Prefill / Decode、键-值（KV） Cache、Scheduler，本质上都在围绕这条状态演化链做系统优化。</p>
+      <h1>自回归生成：为什么“下一个 token”会把整个在线推理系统变成状态机？</h1>
+      <p class="dek">训练时我们常把很多已知 token 一次送进模型；在线生成则有一个新的硬约束：未来 token 还不存在。模型只能根据已经确认的前缀产生下一个 token 的分数，解码策略选出一个 token，把它加入前缀，然后下一步才有了新的条件。后面的 Prefill / Decode、KV Cache、调度器，本质上都在围绕这条状态演化链做系统优化。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 最基本的 decoder-only 自回归生成 的条件依赖。</li><li>知道 目标模型 输出 logits；greedy / temperature / top-p 等是 logits 之后的 解码策略。</li><li>理解为什么普通 目标模型 Decode 步骤 之间存在串行依赖。</li><li>知道 投机解码 / multi-token 技术能减少昂贵 目标模型 执行轮次，但没有删除 目标模型定义的自回归分布。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分 首 Token 延迟（TTFT）、Token 间延迟（ITL）、每输出 Token 时间（TPOT） 与吞吐，并知道 基准测试 定义必须看清。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释最基本的 decoder-only 自回归生成为什么存在严格的条件依赖。</li><li>知道目标模型先输出 logits，再由贪心、temperature、top-p 等解码策略选择 token。</li><li>理解为什么普通目标模型的 Decode 步骤之间存在串行依赖。</li><li>知道投机解码 / multi-token 技术能减少昂贵的目标模型执行轮次，但没有删除 目标模型定义的自回归分布。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分首 Token 延迟（TTFT）、Token 间延迟（ITL）、每输出 Token 时间（TPOT）和吞吐量，并知道比较指标前必须先看清基准测试口径。</li></ul></div>
 
       <section class="article-section" id="tokens">
         <div class="section-no">01 · TEXT BECOMES TOKENS</div>
