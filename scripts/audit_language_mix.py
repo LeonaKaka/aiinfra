@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Audit learner-visible prose for avoidable English engineering vocabulary.
+"""Audit learner-visible prose without forcing source-facing terms into Chinese.
 
-Proper names, source identifiers and code stay English; ordinary teaching prose
-should prefer Chinese. Glossary term cards are an explicit bilingual lookup
-surface and are excluded, while their navigation and explanatory framing remain
-audited. Any discouraged bare engineering term outside these intentional
-surfaces is a CI failure.
+Chinese should carry the explanation, but identifiers and source-facing anchors
+must remain recognizable when they map to code, APIs, classes, fields or common
+repository terminology. English engineering words are therefore review signals,
+not automatic failures. Hard failures are reserved for malformed hybrid text
+that is usually created by mechanical replacement.
 """
 from __future__ import annotations
 
@@ -113,13 +113,23 @@ CHINESE_DEFAULT = {
 # Context-sensitive source-facing words are useful review signals but not hard
 # failures. They may be natural anchors in terms such as Transformer Block,
 # ModelRunner path or KV block, while prose should still avoid gratuitous use.
-REVIEW_ONLY = {
-    "phase", "state", "states", "step", "steps", "engine", "engines",
-    "policy", "capacity", "pressure", "planning", "bookkeeping", "identity",
-    "info", "compatibility", "layer", "layers", "host", "network", "link",
-    "ratio", "overhead", "placement", "feature", "features", "server",
-    "node", "nodes", "bytes", "path", "pool", "region", "regions",
-    "block", "blocks",
+REVIEW_ONLY = set(CHINESE_DEFAULT)
+
+# Mechanical replacement artifacts are never acceptable. Keep this list small
+# and concrete: it protects readability without dictating whether a legitimate
+# source term should be English or Chinese in context.
+MALFORMED_PATTERNS = {
+    r"分块ed\b": "mixed Chinese/English suffix",
+    r"规划ning\b": "mixed Chinese/English suffix",
+    r"批次ing\b": "mixed Chinese/English suffix",
+    r"句柄s\b": "mixed Chinese/English plural",
+    r"后端s\b": "mixed Chinese/English plural",
+    r"传输s\b": "mixed Chinese/English plural",
+    r"块表S\b": "mechanical plural residue",
+    r"槽位映射PING\b": "mechanical suffix residue",
+    r"\bX\.形状\b": "translated code attribute",
+    r"\bre形状\b": "broken reshape token",
+    r"直接直接内存访问": "duplicated translation",
 }
 
 # Code/source identifiers are removed before scanning. Product names and core
@@ -158,44 +168,56 @@ def visible_prose(path: Path) -> str:
 
 
 def main() -> int:
-    hard_hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     review_hits: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    malformed_hits: dict[str, list[str]] = defaultdict(list)
     paths = list(LESSONS.glob("**/*.html"))
     paths += list(LABS.glob("*.html"))
     paths += [path for path in GLOBAL_PAGES if path.exists()]
+
     for path in sorted(set(paths)):
         prose = visible_prose(path)
         rel = str(path.relative_to(ROOT))
+
         for english in CHINESE_DEFAULT:
-            count = len(re.findall(rf"(?<![A-Za-z0-9_]){re.escape(english)}(?![A-Za-z0-9_])", prose, re.I))
-            if not count:
-                continue
-            target = review_hits if english in REVIEW_ONLY else hard_hits
-            target[rel][english] += count
+            count = len(re.findall(
+                rf"(?<![A-Za-z0-9_]){re.escape(english)}(?![A-Za-z0-9_])",
+                prose,
+                re.I,
+            ))
+            if count:
+                review_hits[rel][english] += count
+
+        # Scan the full source too, because malformed hybrids often occur in UI
+        # labels or code-adjacent prose that the visible-prose extractor skips.
+        source = path.read_text(encoding="utf-8")
+        for pattern, reason in MALFORMED_PATTERNS.items():
+            if re.search(pattern, source, re.I):
+                malformed_hits[rel].append(reason)
 
     if review_hits:
         total_review = sum(sum(terms.values()) for terms in review_hits.values())
-        print(f"Language-mix review: {total_review} context-sensitive occurrence(s) across {len(review_hits)} page(s) (warning only).")
+        print(
+            f"Language/source-anchor review: {total_review} occurrence(s) "
+            f"across {len(review_hits)} page(s) (warning only)."
+        )
         for rel, terms in review_hits.items():
             summary = ", ".join(
-                f"{term}×{count}→{CHINESE_DEFAULT[term]}"
+                f"{term}×{count}↔{CHINESE_DEFAULT[term]}"
                 for term, count in sorted(terms.items())
             )
             print(f"review {rel}: {summary}")
 
-    if not hard_hits:
-        print("Language-mix audit: no discouraged bare English engineering terms.")
-        return 0
-
-    total = sum(sum(terms.values()) for terms in hard_hits.values())
-    print(f"Language-mix audit FAILED: {total} hard occurrence(s) across {len(hard_hits)} page(s).")
-    for rel, terms in hard_hits.items():
-        summary = ", ".join(
-            f"{term}×{count}→{CHINESE_DEFAULT[term]}"
-            for term, count in sorted(terms.items())
+    if malformed_hits:
+        print(
+            f"Language audit FAILED: malformed hybrid text found in "
+            f"{len(malformed_hits)} page(s)."
         )
-        print(f"{rel}: {summary}")
-    return 1
+        for rel, reasons in malformed_hits.items():
+            print(f"{rel}: {', '.join(sorted(set(reasons)))}")
+        return 1
+
+    print("Language audit: no malformed hybrid replacements.")
+    return 0
 
 
 if __name__ == "__main__":
