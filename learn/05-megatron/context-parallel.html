@@ -34,9 +34,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>上下文并行</span></div>
       <div class="lesson-kicker"><span>LESSON 05.6 · MEGATRON</span><span>约 65 min</span></div>
       <h1>上下文并行：当序列长到一张 GPU 连 Attention 激活值都放不下。</h1>
-      <p class="dek">序列并行已经在 LayerNorm、dropout、残差连接 等区域把 token 分片存放，但 Attention 仍然需要跨 token 的全局上下文。上下文并行再往前一步：让不同 rank 负责不同序列分片，连 Attention 本身也跨分片并行；至于远端上下文怎样交换，并不只有环形（ring）一种实现。</p>
+      <p class="dek">序列并行已经在 LayerNorm、dropout、残差连接等区域把 token 分片存放，但 Attention 仍然需要跨 token 的全局上下文。上下文并行再往前一步：让不同 rank 负责不同序列分片，连 Attention 本身也跨分片并行；至于远端上下文怎样交换，并不只有环形（ring）一种实现。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释上下文并行（CP）和序列并行（SP）都切序列，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一部分查询 token。</li><li>解释为什么本地 Q 仍然需要整个可见上下文的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时环形 KV 交换的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成“环形通信”。</li><li>知道当前 MCore 对因果 Attention 常用 zigzag 分区来平衡负载，不能把“CP rank = 单个连续 token 区间”当成实现不变量。</li><li>知道分组查询注意力（GQA）/多查询注意力（MQA）为什么能直接降低以 K/V 为主的数据交换量。</li><li>正确计算 稠密 Transformer 并行网格 的张量并行（TP）/流水线并行（PP）/CP/数据并行（DP） rank 关系，并把专家并行（EP）当成另一套专家 grid 来理解。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释上下文并行（CP）和序列并行（SP）都切序列，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一部分查询 token。</li><li>解释为什么本地 Q 仍然需要整个可见上下文的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时环形 KV 交换的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成“环形通信”。</li><li>知道当前 MCore 对因果 Attention 常用 zigzag 分区来平衡负载，不能把“CP rank = 单个连续 token 区间”当成实现不变量。</li><li>知道分组查询注意力（GQA）/多查询注意力（MQA）为什么能直接降低以 K/V 为主的数据交换量。</li><li>正确计算稠密 Transformer 并行网格中的张量并行（TP）/流水线并行（PP）/CP/数据并行（DP） rank 关系，并把专家并行（EP）当成另一套专家并行网格 来理解。</li></ul></div>
 
       <section class="article-section" id="problem">
         <div class="section-no">01 · LONG CONTEXT CHANGES THE MEMORY SCALE</div>
