@@ -44,11 +44,11 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Context Parallel</span></div>
-    <div class="lab-kicker">LAB A10 · CONTEXT PARALLEL</div>
+    <div class="lab-kicker">LAB A10 · 上下文并行（CP）</div>
     <h1>长 context 被切开以后，Attention 仍然要看见全局历史。<br />这个 Lab 让 Q 留在本地，让 KV 去“找”它。</h1>
     <p class="dek">两个 ranks 各持一段 sequence。每个 rank 的 Query 分片始终留在本地；Key/Value chunk 则按 ring 顺序轮转。每一轮，本地 Q 都和当前 KV chunk 计算一部分 attention scores。把所有轮次合起来以后，输出必须和单卡 dense causal attention 完全一致。</p>
 
-    <section class="lab-section" id="ownership"><div class="lab-kicker">01 · WHAT STAYS / WHAT MOVES</div><h2>Context Parallel 的第一层直觉不是“每张卡独立做半段 Attention”。</h2>
+    <section class="lab-section" id="ownership"><div class="lab-kicker">01 · 哪些状态不动，哪些状态流动</div><h2>Context Parallel 的第一层直觉不是“每张卡独立做半段 Attention”。</h2>
       <div class="command"><div class="command-head"><span>2-RANK VIEW</span><span>Q local · KV rotates</span></div><pre>Rank 0 owns Q0, KV0        Rank 1 owns Q1, KV1
 
 round 0: Q0 × KV0          Q1 × KV1
@@ -59,24 +59,24 @@ KV chunks circulate so every local query can see the required global context</pr
       <p>如果每张卡只看自己的 KV chunk，跨 chunk 的 Attention 关系就直接丢了。CP 必须在“sequence 被分片”和“Attention 仍具有全局语义”之间建立通信。</p>
     </section>
 
-    <section class="lab-section" id="causal"><div class="lab-kicker">02 · GLOBAL POSITIONS STILL MATTER</div><h2>KV 搬到另一张卡以后，它的全局 token 位置不能跟着“重编号”。</h2>
+    <section class="lab-section" id="causal"><div class="lab-kicker">02 · 全局位置仍然重要</div><h2>KV 搬到另一张卡以后，它的全局 token 位置不能跟着“重编号”。</h2>
       <div class="stage-flow"><div class="stage-card train"><small>LOCAL Q</small><b>global positions 0…3</b><span>rank 0 的 query chunk 仍知道自己在整条序列里的位置。</span></div><div class="stage-card comm"><small>REMOTE KV</small><b>global positions 4…7</b><span>remote chunk 到达 rank 0 后仍保留原始 key positions；causal mask 用全局位置比较。</span></div><div class="stage-card train"><small>MERGE</small><b>softmax over all valid keys</b><span>每轮 score chunk 拼成同一个 key 维度，再得到本地 query 的最终输出。</span></div></div>
       <p>这正好呼应 02.3 的 position/RoPE 桥：分布式搬运可以改变数据“在哪张卡”，不能改变它在模型语义里的位置。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>正确性标准只有一个：每个 local Q 分片的输出都等于 dense causal attention 的对应切片。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · 运行并验证</div><h2>正确性标准只有一个：每个 local Q 分片的输出都等于 dense causal attention 的对应切片。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_context_parallel.py</pre></div>
       <p>CPU/Gloo 只验证 ring dependency、P2P 和数学结果。真实 CP 性能取决于 sequence partition、KV exchange algorithm、FlashAttention integration、topology 与重叠；这个 Lab 不做这些性能声明。</p>
       <a class="code-link" href="./code/mini_context_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_context_parallel.py</b></div><span>→</span></a>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>05.6 的 ring 图现在可以落到一个真的依赖图上。</h2>
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · 映射到 Megatron</div><h2>05.6 的 ring 图现在可以落到一个真的依赖图上。</h2>
       <div class="source-bridge"><div><small>OUR LAB</small><b>local Q + rotating KV</b><code>global position mask · P2P exchange · dense reference</code></div><span>maps to →</span><div><small>MEGATRON</small><b>Context Parallel attention path</b><code>partition context · exchange required KV/context · preserve attention semantics</code></div></div>
       <p>注意：ring order 只是教学实现。当前 Megatron 还可能使用 zigzag、document-aware 或其他 CP partition / communication strategy；不要把这里的具体轮转顺序背成永久实现。</p>
     </section>
 
-    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>三个问题决定你是否真的理解 CP。</h2><div class="check-list"><div>① 为什么 sequence 已经分片后，本地 Q 仍然需要 remote KV？</div><div>② remote KV 到达新 rank 后，为什么 causal mask 仍必须使用它原来的 global position？</div><div>③ 这个 Lab 为什么能说明 CP 的语义，却不能证明某种 CP 算法性能最好？</div></div></section>
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · 检查点</div><h2>三个问题决定你是否真的理解 CP。</h2><div class="check-list"><div>① 为什么 sequence 已经分片后，本地 Q 仍然需要 remote KV？</div><div>② remote KV 到达新 rank 后，为什么 causal mask 仍必须使用它原来的 global position？</div><div>③ 这个 Lab 为什么能说明 CP 的语义，却不能证明某种 CP 算法性能最好？</div></div></section>
 
     <nav class="lab-footer-nav"><a href="./mini-pipeline-parallel.html">← Lab A9 · Pipeline Parallel</a><a href="./mini-expert-parallel.html">Lab A11 · 专家 Parallel →</a></nav>
   </main>
