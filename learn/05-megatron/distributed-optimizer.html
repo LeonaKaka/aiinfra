@@ -39,7 +39,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释普通数据并行为什么会复制优化器状态。</li><li>理解分布式优化器与张量并行的差别：前者沿 DP 副本分训练状态，后者沿张量并行（TP）进程组分摊模型计算。</li><li>看懂梯度 reduce-scatter → 本地优化器更新 → 参数 all-gather 这条主数据流。</li><li>理解为什么 Megatron 会使用连续参数/梯度缓冲区和通信桶。</li><li>知道 <code>--overlap-grad-reduce</code> 与 <code>--overlap-param-gather</code> 分别在隐藏哪段通信。</li><li>理解“省多少显存”取决于数据类型和 DP 并行度，不能简单记成一个固定倍数。</li></ul></div>
 
       <section class="article-section" id="replication">
-        <div class="section-no">01 · THE DP REDUNDANCY</div>
+        <div class="section-no">01 · DP 的冗余</div>
         <h2>四个 DP 各个 rank，如果每张卡都保存同样的 Adam 状态，就有四份重复。</h2>
         <p>先把 TP/流水线并行（PP）暂时忘掉。假设现在只是 DP=4，而且每个 rank 都有相同模型副本：</p>
         <div class="dp-replica-grid"><div class="dp-replica"><small>DP RANK 0</small><b>full training state</b><div class="state-list"><span>model params</span><span>梯度</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 1</small><b>same copies</b><div class="state-list"><span>model params</span><span>梯度</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 2</small><b>same copies</b><div class="state-list"><span>model params</span><span>梯度</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 3</small><b>same copies</b><div class="state-list"><span>model params</span><span>梯度</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div></div>
@@ -48,7 +48,7 @@
       </section>
 
       <section class="article-section" id="shard">
-        <div class="section-no">02 · 分片 THE OPTIMIZER STATE</div>
+        <div class="section-no">02 · 分片优化器状态</div>
         <h2>DP=4：每个 rank 只负责大约四分之一参数范围的优化器状态与更新。</h2>
         <div class="state-sharding"><div class="state-shard"><small>DP RANK 0</small><b>分片 0</b><code>optimizer state for params 0…¼</code></div><div class="state-shard"><small>DP RANK 1</small><b>分片 1</b><code>optimizer state for params ¼…½</code></div><div class="state-shard"><small>DP RANK 2</small><b>分片 2</b><code>optimizer state for params ½…¾</code></div><div class="state-shard"><small>DP RANK 3</small><b>分片 3</b><code>optimizer state for params ¾…1</code></div></div>
         <p>每个 rank 在 backward 时仍会产生自己数据对应的 local 梯度。但对于参数分片 0，最终只需要 rank 0 持有“所有 DP 各个 rank 聚合后的分片-0 梯度”，然后 rank 0 用自己的 Adam state 更新这一段参数。</p>
@@ -56,7 +56,7 @@
       </section>
 
       <section class="article-section" id="flow">
-        <div class="section-no">03 · THE WHOLE UPDATE FLOW</div>
+        <div class="section-no">03 · 完整更新流程</div>
         <h2>关键不是“少存几份 Adam”，而是一次完整的归属关系转移：full local 梯度 → reduced 分片 → local update → synchronized model params。</h2>
         <p>下面沿用 NVIDIA 当前文档里的 16-element / DP=4 教学尺度。每个 rank 从自己的数据得到完整 local 梯度缓冲区；reduce-scatter 后，每个 rank 只拥有四个已经跨 DP 聚合的梯度 elements；它只更新自己的 FP32 main-param / Adam 分片，最后再 all-gather 回下一轮 forward 使用的模型参数缓冲区。</p>
         <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>DISTRIBUTED OPTIMIZER · DP=4</span><span>梯度归属关系 → 参数 synchronization</span></div><img class="megatron-core-svg" src="./distributed-optimizer-flow.svg" alt="Distributed Optimizer 数据流：四个 DP ranks 的完整 local gradient buffers 经过 reduce-scatter 后分别得到 reduced gradient shard，各 rank 仅用本地 FP32 main parameter 和 Adam state 更新自己的 shard，随后 parameter all-gather 恢复各 replica 下一轮 forward 所需的一致模型参数。" /></div>
@@ -66,7 +66,7 @@
       </section>
 
       <section class="article-section" id="allreduce">
-        <div class="section-no">04 · WHY REDUCE-SCATTER INSTEAD OF ALL-REDUCE</div>
+        <div class="section-no">04 · 为什么用 Reduce-Scatter 而不是 All-Reduce</div>
         <h2>普通 DP 想让每张卡拿完整梯度；Distributed Optimizer 只需要每张卡拿自己负责的梯度分片。</h2>
         <div class="dist-vs-tp"><div><small>ORDINARY DP SYNC</small><b>all-reduce 梯度</b><span>每个 rank 最后都得到完整 reduced 梯度，因此每个 rank 都可以 independently update 全部参数。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>reduce-scatter 梯度</b><span>每个 rank 只得到自己负责的 reduced 梯度分片，正好对应自己保存的优化器状态 / main-param 分片。</span></div></div>
         <p>Megatron Core 当前 <code>DistributedDataParallelConfig</code> 的 <code>use_distributed_optimizer</code> 源码说明仍然明确：启用时用 reduce-scatter 聚合梯度；否则走 all-reduce。当前同一个配置里也仍保留 <code>overlap_grad_reduce</code> 与 <code>overlap_param_gather</code>。</p>
@@ -74,7 +74,7 @@
       </section>
 
       <section class="article-section" id="memory">
-        <div class="section-no">05 · HOW MUCH 内存 DOES IT SAVE?</div>
+        <div class="section-no">05 · 能省多少显存？</div>
         <h2>不要背“除以 DP”这么一句，因为并不是所有数据量都能同样分片。</h2>
         <p>官方当前 Distributed Optimizer 文档给了按参数数据类型 / 梯度数据类型区分的理论账本。设 data-parallel size 为 <code>d</code>：</p>
         <div class="memory-table"><div class="memory-table-row head"><b>配置</b><span>普通 optimizer</span><span>Distributed Optimizer</span></div><div class="memory-table-row"><b>16 位浮点（FP16） params + FP16 grads</b><span>20 数据量 / param</span><code>4 + 16/d</code></div><div class="memory-table-row"><b>BF16 16 位浮点（BF16） params + FP32 grads</b><span>18 数据量 / param</span><code>6 + 12/d</code></div><div class="memory-table-row"><b>FP32 params + FP32 grads</b><span>16 数据量 / param</span><code>8 + 8/d</code></div></div>
@@ -85,7 +85,7 @@
       </section>
 
       <section class="article-section" id="buffers">
-        <div class="section-no">06 · WHY CONTIGUOUS 缓冲区 AND BUCKETS?</div>
+        <div class="section-no">06 · 为什么需要连续缓冲区与通信桶？</div>
         <h2>几十亿个参数不适合一个张量发一次集合通信：Megatron 把它们整理进连续缓冲区，再按通信桶通信。</h2>
         <p>真实模型有成千上万个参数张量。如果每个小张量梯度一就绪就单独发一个 NVIDIA 集体通信库（NCCL）集合通信，延迟 / launch overhead 会非常糟糕。Megatron 使用连续参数/梯度缓冲区，并把其中区间组织成通信桶。</p>
         <div class="buffer-map"><small>CONTIGUOUS PARAM / GRAD 缓冲区</small><div class="buffer-strip"><span class="r0">通信桶 0a</span><span class="r0">通信桶 0b</span><span class="r1">通信桶 1a</span><span class="r1">通信桶 1b</span><span class="r2">通信桶 2a</span><span class="r2">通信桶 2b</span><span class="r3">通信桶 3a</span><span class="r3">通信桶 3b</span></div></div>
@@ -94,7 +94,7 @@
       </section>
 
       <section class="article-section" id="overlap-grad">
-        <div class="section-no">07 · OVERLAP GRAD REDUCE WITH BACKWARD</div>
+        <div class="section-no">07 · 梯度归约如何与反向传播重叠</div>
         <h2>后面的层还在 backward 时，前面已经就绪的梯度通信桶可以开始通信。</h2>
         <div class="overlap-timeline"><div class="overlap-row"><small>BACKWARD</small><span class="compute">Layer 6</span><span class="compute">Layer 5</span><span class="compute">Layer 4</span><span class="compute">Layer 3</span><span class="compute">Layer 2</span><span class="compute">Layer 1</span></div><div class="overlap-row"><small>GRAD 归约分散（RS）</small><span class="empty">—</span><span class="comm">通信桶 6</span><span class="comm">通信桶 5</span><span class="comm">通信桶 4</span><span class="comm">通信桶 3</span><span class="comm">通信桶 2</span></div></div>
         <p>图不是精确 Megatron 时间线，只表达目标：通信和独立的 backward 通用矩阵乘法（GEMM）同时占用不同资源，让 wall-clock 中“纯等待通信”的部分变少。对应当前参数就是 <code>--overlap-grad-reduce</code>。</p>
@@ -102,7 +102,7 @@
       </section>
 
       <section class="article-section" id="overlap-param">
-        <div class="section-no">08 · OVERLAP PARAM GATHER WITH FORWARD</div>
+        <div class="section-no">08 · 参数 All-Gather 如何与前向计算重叠</div>
         <h2>optimizer step 更新完参数分片后，下一轮 forward 不必先停下来等“全模型 gather 完”。</h2>
         <p>Distributed Optimizer 的另一个通信方向是 updated 参数 all-gather。Megatron 可以把参数缓冲区分通信桶，并在 forward 即将需要某一层参数之前预取/启动对应 all-gather。</p>
         <div class="overlap-timeline"><div class="overlap-row"><small>PARAM 全收集（AG）</small><span class="comm">通信桶 L1</span><span class="comm">通信桶 L2</span><span class="comm">通信桶 L3</span><span class="comm">通信桶 L4</span><span class="comm">通信桶 L5</span><span class="empty">—</span></div><div class="overlap-row"><small>FORWARD</small><span class="empty">等待 first</span><span class="compute">Layer 1</span><span class="compute">Layer 2</span><span class="compute">Layer 3</span><span class="compute">Layer 4</span><span class="compute">Layer 5</span></div></div>
@@ -111,14 +111,14 @@
       </section>
 
       <section class="article-section" id="tp-vs-do">
-        <div class="section-no">09 · DO NOT CONFUSE THIS WITH TENSOR PARALLEL</div>
+        <div class="section-no">09 · 不要和张量并行混淆</div>
         <h2>TP 和 Distributed Optimizer 都在“分片”，但分片的对象和执行时机完全不同。</h2>
         <div class="dist-vs-tp"><div><small>TENSOR PARALLEL</small><b>分片 model computation</b><span>同一个层的 weights / 激活值s 被 TP 各个 rank 分着算；forward 本身依赖 TP 集合通信s。没有这些 peers，这个层就算不完整。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>分片 DP training state</b><span>不同 DP 副本数学上仍是同一个模型副本；optimizer update 归属关系 / 优化器状态被分开，之后再同步 updated params。</span></div></div>
         <p>因此它们可以组合：一个 rank 先属于某个 TP 分片，再在“相同 TP/PP 位置的不同 data 副本”之间形成 DP 进程组；Distributed Optimizer 正是在这个 DP 进程组上工作。</p>
       </section>
 
       <section class="article-section" id="source">
-        <div class="section-no">10 · SOURCE MAP</div>
+        <div class="section-no">10 · 源码地图</div>
         <h2>读源码时，沿“缓冲区 → DDP sync → optimizer”三层走。</h2>
         <div class="source-map"><div class="source-map-card"><small>分布式数据并行（DDP） CONFIG</small><b>DistributedDataParallelConfig</b><code>core/distributed/...</code><span><code>use_distributed_optimizer</code>、grad/param 重叠执行开关。</span></div><div class="source-map-card"><small>缓冲区</small><b>param_and_grad_缓冲区</b><code>core/distributed/param_and_grad_buffer.py</code><span>contiguous 缓冲区、通信桶、grad reduce 与 param gather 生命周期。</span></div><div class="source-map-card"><small>OPTIMIZER</small><b>core.optimizer</b><code>megatron/core/optimizer/</code><span>distributed optimizer wrappers、main params、优化器状态与 update。</span></div><div class="source-map-card"><small>CONFIG</small><b>OptimizerConfig</b><code>optimizer_config.py</code><span>precision、optimizer、distributed optimizer、offload/重叠执行等配置。</span></div></div>
         <p>现在你再看到 <code>start_grad_sync()</code>，脑子里应该不是“一个函数”，而是“某个缓冲区通信桶的梯度已就绪，可以启动 DP all-reduce/reduce-scatter”；看到 <code>start_param_sync()</code>，则应该想到下一段 forward 所需参数正在 all-gather。</p>
@@ -126,7 +126,7 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.5</span></div><h2>确认你能从 DP 冗余自己推导这套设计。</h2><div class="quiz-item"><div class="quiz-q">1. Distributed Optimizer 为什么更自然地用 reduce-scatter 梯度，而不是 all-reduce？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每个 DP rank 只负责一个 optimizer/参数分片。它只需要拿到自己那段“已经跨 DP 各个 rank 归约”的梯度；reduce-scatter 正好同时完成 reduction 和分片 distribution。</div></div><div class="quiz-item"><div class="quiz-q">2. optimizer step 完以后为什么还需要参数 all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同各个 rank 分别更新了不同参数分片，但下一轮 data-parallel forward 需要各副本使用一致的模型参数。因此必须把 updated 分片同步/gather 到需要它们的各个 rank。</div></div><div class="quiz-item"><div class="quiz-q">3. <code>--overlap-grad-reduce</code> 真正想隐藏什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当某些梯度通信桶已经就绪时，提前启动它们的 DP all-reduce/reduce-scatter，同时图形处理器（GPU）继续计算其它层的 backward，尽量把通信时间藏在 backward 计算后面。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">HANDS-ON · 对应实验</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A4 · Mini Distributed Optimizer</strong><br />验证 reduce-scatter → 本地优化器分片 update → 参数 all-gather 的归属关系转移。 <a href="../../labs/mini-distributed-optimizer.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A4 · Mini Distributed Optimizer</strong><br />验证 reduce-scatter → 本地优化器分片 update → 参数 all-gather 的归属关系转移。 <a href="../../labs/mini-distributed-optimizer.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
