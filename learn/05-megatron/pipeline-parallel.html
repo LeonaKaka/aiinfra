@@ -34,48 +34,48 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>流水线并行</span></div>
       <div class="lesson-kicker"><span>LESSON 05.4 · MEGATRON</span><span>约 70 min</span></div>
       <h1>流水线并行：把 Transformer 层按深度分到不同 GPU。</h1>
-      <p class="dek">张量并行是“一个层内大家一起算”，流水线并行则换了一个维度：前几层放在流水线阶段 0，中间几层放在流水线阶段 1，后几层继续往后。这样单张图形处理器（GPU）不再保存整模型深度，但代价是前向激活值要沿流水线向后续阶段传递，反向梯度则沿相反方向返回。</p>
+      <p class="dek">张量并行是“一个层内大家一起算”，流水线并行则换了一个维度：前几层放在pipeline stage 0，中间几层放在pipeline stage 1，后几层继续往后。这样单张图形处理器（GPU）不再保存整模型深度，但代价是forward activations要沿流水线向后续阶段传递，backward gradients则沿相反方向返回。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释流水线并行（PP）与张量并行（TP）的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个流水线阶段。</li><li>理解前向激活值发送与反向梯度发送的点对点通信（P2P）数据流。</li><li>解释为什么不切微批次会产生严重流水线气泡。</li><li>理解一前向一反向（1F1B）的预热 / 稳态 / 收尾三个阶段。</li><li>知道 Megatron 的非交错 / 交错流水线调度对应哪些源码入口。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释流水线并行（PP）与张量并行（TP）的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个pipeline stage。</li><li>理解forward activations发送与backward gradients发送的点对点通信（P2P）数据流。</li><li>解释为什么不切 microbatches会产生严重流水线气泡。</li><li>理解1F1B 的 warmup / steady state / cooldown。</li><li>知道 Megatron 的non-interleaved / interleaved pipeline schedules对应哪些源码入口。</li></ul></div>
 
       <section class="article-section" id="depth">
         <div class="section-no">01 · 沿模型深度切分</div>
-        <h2>24 层 Transformer，PP=4：每个流水线阶段先放 6 层。</h2>
+        <h2>24 层 Transformer，PP=4：每个pipeline stage先放 6 层。</h2>
         <div class="layer-stack"><div class="s0"><small>阶段 0</small><b>Layers 1–6</b></div><div class="s1"><small>阶段 1</small><b>Layers 7–12</b></div><div class="s2"><small>阶段 2</small><b>Layers 13–18</b></div><div class="s3"><small>阶段 3</small><b>Layers 19–24</b></div></div>
-        <p>每个流水线阶段只保存自己负责的 Transformer 层及相关参数/优化器状态/激活值s。这样模型深度带来的显存被分摊到多个各个 rank。</p>
+        <p>每个pipeline stage只保存自己负责的 Transformer 层及相关 parameters / optimizer states / activations。这样模型深度带来的显存被分摊到多个 ranks。</p>
         <div class="pipeline-line"><div class="pipeline-stage"><small>PP RANK 0</small><b>L1–L6</b><code>input → hidden₆</code></div><div class="pipeline-stage"><small>PP RANK 1</small><b>L7–L12</b><code>hidden₆ → hidden₁₂</code></div><div class="pipeline-stage"><small>PP RANK 2</small><b>L13–L18</b><code>hidden₁₂ → hidden₁₈</code></div><div class="pipeline-stage"><small>PP RANK 3</small><b>L19–L24</b><code>hidden₁₈ → logits/loss</code></div></div>
-        <p>和 TP 不同，PP 流水线阶段之间通常不是每一层做 all-reduce，而是在流水线阶段边界通过 point-to-point 通信传激活值。</p>
+        <p>和 TP 不同，PP pipeline stage之间通常不是每一层做 all-reduce，而是在pipeline stage边界通过 point-to-point 通信传激活值。</p>
       </section>
 
       <section class="article-section" id="p2p">
         <div class="section-no">02 · 前向传激活，反向传梯度</div>
-        <h2>Pipeline 的接口就是流水线阶段边界那块激活值张量。</h2>
-        <div class="p2p-pair"><div><small>FORWARD</small><b>阶段 0 → 阶段 1</b><span>发送流水线阶段 0 的输出激活值</span></div><span>激活值 →<br/>← dActivation</span><div><small>BACKWARD</small><b>阶段 1 → 阶段 0</b><span>把对边界激活值的梯度传回去</span></div></div>
-        <p>因此 PP 的核心通信 primitive 更接近 <code>send / recv</code>，而不是 TP 那种层-internal 集合通信。Megatron Core 当前的 <code>P2PCommunicator</code> 就专门管理相邻流水线流水线阶段的张量交换s。</p>
-        <div class="source-note">官方应用程序编程接口（API）：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.流水线_parallel.p2p_通信</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive 流水线流水线阶段之间张量交换的通信器。</div>
+        <h2>Pipeline 的接口就是pipeline stage边界那块激活值张量。</h2>
+        <div class="p2p-pair"><div><small>FORWARD</small><b>阶段 0 → 阶段 1</b><span>发送pipeline stage 0 的输出激活值</span></div><span>激活值 →<br/>← dActivation</span><div><small>BACKWARD</small><b>阶段 1 → 阶段 0</b><span>把对边界激活值的梯度传回去</span></div></div>
+        <p>因此 PP 的核心通信 primitive 更接近 <code>send / recv</code>，而不是 TP 那种层-internal 集合通信。Megatron Core 当前的 <code>P2PCommunicator</code> 就专门管理相邻流水线pipeline stage的tensor exchanges。</p>
+        <div class="source-note">官方应用程序编程接口（API）：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.pipeline_parallel.p2p_communication</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive 流水线pipeline stage之间张量交换的通信器。</div>
       </section>
 
       <section class="article-section" id="bubble">
         <div class="section-no">03 · 朴素流水线的气泡</div>
         <h2>如果一次只送一个大批次，后面的 GPU 一开始全在等。</h2>
-        <p>先只看 forward。一个批次必须先经过流水线阶段 0，流水线阶段 1 才能开始；流水线阶段 2 又要等流水线阶段 1。于是流水线在“灌满”之前有大量 idle：</p>
+        <p>先只看 forward。一个批次必须先经过pipeline stage 0，pipeline stage 1 才能开始；pipeline stage 2 又要等pipeline stage 1。于是流水线在“灌满”之前有大量 idle：</p>
         <div class="bubble-chart"><div class="schedule-grid"><div class="axis"></div><div class="axis">t1</div><div class="axis">t2</div><div class="axis">t3</div><div class="axis">t4</div><div class="axis">t5</div><div class="axis">t6</div><div class="axis">t7</div><div class="axis">t8</div><div class="axis">S0</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S1</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S2</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S3</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">B</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div></div></div>
-        <p>这就是流水线气泡：昂贵 GPU 因为依赖关系暂时没有工作可做。解决方向不是“去掉依赖”，而是把批次切成多个微批次es，让不同流水线阶段同时处理不同微批次es。</p>
+        <p>这就是流水线气泡：昂贵 GPU 因为依赖关系暂时没有工作可做。解决方向不是“去掉依赖”，而是把批次切成多个microbatches，让不同pipeline stage同时处理不同microbatches。</p>
       </section>
 
       <section class="article-section" id="microbatch">
         <div class="section-no">04 · 微批次如何填满流水线</div>
-        <h2>一个批次切成很多小块，流水线阶段 0 送走 MB0 后马上开始 MB1。</h2>
+        <h2>一个批次切成很多小块，pipeline stage 0 送走 MB0 后马上开始 MB1。</h2>
         <div class="microbatch-row"><div class="micro-card"><small>MB0</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB1</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB2</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB3</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB4</small><b>samples</b><code>micro batch</code></div><div class="micro-card"><small>MB5</small><b>samples</b><code>micro batch</code></div></div>
-        <p>当流水线阶段 1 在算 MB0 时，流水线阶段 0 已经可以算 MB1；流水线阶段 2 算 MB0 时，流水线阶段 1 算 MB1，流水线阶段 0 算 MB2。流水线逐渐被填满。</p>
+        <p>当pipeline stage 1 在算 MB0 时，pipeline stage 0 已经可以算 MB1；pipeline stage 2 算 MB0 时，pipeline stage 1 算 MB1，pipeline stage 0 算 MB2。流水线逐渐被填满。</p>
         <div class="bubble-chart"><div class="schedule-grid"><div class="axis"></div><div class="axis">t1</div><div class="axis">t2</div><div class="axis">t3</div><div class="axis">t4</div><div class="axis">t5</div><div class="axis">t6</div><div class="axis">t7</div><div class="axis">t8</div><div class="axis">S0</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="axis">S1</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="schedule-cell idle">idle</div><div class="axis">S2</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div><div class="schedule-cell work">F5</div><div class="axis">S3</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell idle">idle</div><div class="schedule-cell work">F0</div><div class="schedule-cell work">F1</div><div class="schedule-cell work">F2</div><div class="schedule-cell work">F3</div><div class="schedule-cell work">F4</div></div></div>
         <p>这个图只演示 forward fill，不是完整训练 schedule。训练还要穿插 backward，Megatron 常用的经典核心策略就是 non-interleaved 1F1B。</p>
       </section>
 
       <section class="article-section" id="1f1b">
         <div class="section-no">05 · 1F1B</div>
-        <h2>“一次 forward、一次 backward”不是口号，而是每个流水线阶段在依赖允许时形成的本地执行顺序。</h2>
-        <p>下面用 PP=4、4 个微批次es、每个 forward/backward 都视为一个等长 slot 的教学模型。通信时间先忽略，只保留真正的数据依赖。绿色是 forward，蓝色是 backward，空格就是无法被消掉的等待。</p>
+        <h2>“一次 forward、一次 backward”不是口号，而是每个pipeline stage在依赖允许时形成的本地执行顺序。</h2>
+        <p>下面用 PP=4、4 个microbatches、每个 forward/backward 都视为一个等长 slot 的教学模型。通信时间先忽略，只保留真正的数据依赖。绿色是 forward，蓝色是 backward，空格就是无法被消掉的等待。</p>
         <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>NON-INTERLEAVED 1F1B · PP=4 · M=4</span><span>equal-cost teaching model</span></div>
         <svg class="megatron-core-svg" viewBox="0 0 960 610" role="img" aria-label="Pipeline Parallel 非 interleaved 1F1B 时间图。四个 stages 处理四个 microbatches，开始阶段以 forward 填充 pipeline，稳态中不同 stages 混合执行 forward 和 backward，最后排空剩余 backward。">
         <text x="24" y="30" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#7a7f78" letter-spacing="1">MICROBATCH SCHEDULE ACROSS FOUR PIPELINE STAGES</text><line x1="24" y1="42" x2="936" y2="42" stroke="#ddded7"/>
@@ -90,51 +90,51 @@
         <g fill="#eaf2ed" stroke="#c1d4c6"><rect x="307" y="370" width="47" height="54" rx="7"/><rect x="413" y="370" width="47" height="54" rx="7"/><rect x="519" y="370" width="47" height="54" rx="7"/><rect x="625" y="370" width="47" height="54" rx="7"/></g><g font-family="ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle" fill="#255b46"><text x="330.5" y="402">F0</text><text x="436.5" y="402">F1</text><text x="542.5" y="402">F2</text><text x="648.5" y="402">F3</text></g><g fill="#eaf1f6" stroke="#b8cad6"><rect x="360" y="370" width="47" height="54" rx="7"/><rect x="466" y="370" width="47" height="54" rx="7"/><rect x="572" y="370" width="47" height="54" rx="7"/><rect x="678" y="370" width="47" height="54" rx="7"/></g><g font-family="ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle" fill="#315f82"><text x="383.5" y="402">B0</text><text x="489.5" y="402">B1</text><text x="595.5" y="402">B2</text><text x="701.5" y="402">B3</text></g>
         <rect x="142" y="474" width="742" height="104" rx="12" fill="#f8f8f5" stroke="#dedfd9"/><rect x="166" y="497" width="42" height="26" rx="6" fill="#eaf2ed" stroke="#c1d4c6"/><text x="221" y="515" font-size="10.5" fill="#58635a">F = forward microbatch</text><rect x="396" y="497" width="42" height="26" rx="6" fill="#eaf1f6" stroke="#b8cad6"/><text x="451" y="515" font-size="10.5" fill="#5c6972">B = backward microbatch</text><text x="166" y="548" font-size="10.5" font-weight="700" fill="#575d57">为什么还有空格：</text><text x="272" y="548" font-size="10.3" fill="#737872">F 要等上游 activation；B 要等下游 dActivation 返回。</text><text x="166" y="567" font-family="ui-monospace,monospace" font-size="9" fill="#8a8e88">communication time omitted · real F/B costs and runtime timing vary</text>
         </svg></div>
-        <div class="megatron-core-takeaway"><strong>1F1B 真正的意思是“每个流水线阶段的本地顺序尽量交替”，不是所有流水线阶段同步一起 F、再一起 B。</strong>最后一个流水线阶段最早拿到 loss 梯度，因此最早进入 backward；梯度再像波一样向前面的流水线阶段传播。</div>
+        <div class="megatron-core-takeaway"><strong>1F1B 真正的意思是“每个pipeline stage的本地顺序尽量交替”，不是所有pipeline stage同步一起 F、再一起 B。</strong>最后一个pipeline stage最早拿到 loss 梯度，因此最早进入 backward；梯度再像波一样向前面的pipeline stage传播。</div>
         <p>这个时间图是为了把依赖画清楚，不是性能预测器。真实 Megatron 里 F/B 时长可能不相等，通信也不是零成本，而且重叠执行、recompute、interleaving 都会改变实际时间线。</p>
       </section>
 
       <section class="article-section" id="bubble-math">
         <div class="section-no">06 · 更多微批次如何降低相对气泡</div>
-        <h2>流水线 depth 固定时，微批次es 越多，填充/排空成本占比通常越小。</h2>
-        <p>用最简单的 forward-only、每流水线阶段等时长模型举例：有 <code>p</code> 个流水线阶段、<code>m</code> 个微批次es，完成所有 forward 需要大约 <code>m + p - 1</code> 个流水线阶段-time slots。于是理想化 utilization 可以写成：</p>
+        <h2>流水线 depth 固定时，microbatches 越多，填充/排空成本占比通常越小。</h2>
+        <p>用最简单的 forward-only、每pipeline stage等时长模型举例：有 <code>p</code> 个pipeline stage、<code>m</code> 个microbatches，完成所有 forward 需要大约 <code>m + p - 1</code> 个pipeline stage-time slots。于是理想化 utilization 可以写成：</p>
         <div class="comm-equation"><small>SIMPLIFIED FORWARD-ONLY INTUITION</small><b>utilization ≈ <span>m / (m + p - 1)</span></b></div>
-        <p>这不是完整 1F1B 训练的通用性能公式，只是用来建立直觉：流水线越深，填充成本越大；微批次es 越多，bubble 的相对占比越容易被摊薄。真实效率还会受 F/B 时长不对称、流水线阶段 imbalance、通信、recompute 等影响。</p>
+        <p>这不是完整 1F1B 训练的通用性能公式，只是用来建立直觉：流水线越深，填充成本越大；microbatches 越多，bubble 的相对占比越容易被摊薄。真实效率还会受 F/B 时长不对称、pipeline stage imbalance、通信、recompute 等影响。</p>
       </section>
 
       <section class="article-section" id="interleave">
         <div class="section-no">07 · 交错 / 虚拟流水线</div>
-        <h2>一个物理 GPU 还可以持有多个“虚拟流水线阶段 / model chunks”。</h2>
-        <p>非 interleaved PP 里，一个 physical rank 常对应一段连续层。Interleaved schedule 则把模型切成更多 chunks，让同一个 rank 持有多个不连续 chunks，并让微批次es 在这些 virtual 流水线阶段间流动。</p>
+        <h2>一个物理 GPU 还可以持有多个“虚拟pipeline stage / model chunks”。</h2>
+        <p>非 interleaved PP 里，一个 physical rank 常对应一段连续层。Interleaved schedule 则把模型切成更多 chunks，让同一个 rank 持有多个不连续 chunks，并让microbatches 在这些 virtual pipeline stage间流动。</p>
         <div class="virtual-map"><div><small>NON-INTERLEAVED</small><b>每个 rank 一段连续层</b><div class="chunk-list"><span>GPU0: L1–L4</span><span>GPU1: L5–L8</span><span>GPU2: L9–L12</span><span>GPU3: L13–L16</span></div></div><div><small>INTERLEAVED IDEA</small><b>每个 rank 多个 model chunks</b><div class="chunk-list"><span>GPU0: chunk A</span><span>GPU0: chunk E</span><span>GPU1: chunk B</span><span>GPU1: chunk F</span><span>…</span></div></div></div>
-        <p>这样可以缩小 virtual 流水线流水线阶段的粒度，增加重叠执行机会、降低某些 bubble，但 schedule 与通信会更复杂。Megatron 当前 Parallelism Guide 使用 <code>--num-layers-per-virtual-pipeline-stage</code> 配置 virtual 流水线。</p>
+        <p>这样可以缩小 virtual 流水线pipeline stage的粒度，增加重叠执行机会、降低某些 bubble，但 schedule 与通信会更复杂。Megatron 当前 Parallelism Guide 使用 <code>--num-layers-per-virtual-pipeline-stage</code> 配置 virtual 流水线。</p>
         <div class="source-note">官方指南：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html">Parallelism Strategies Guide</a>；当前 PP 示例包含 <code>--pipeline-model-parallel-size</code> 和 <code>--num-layers-per-virtual-pipeline-stage</code>。</div>
       </section>
 
       <section class="article-section" id="tp-pp">
         <div class="section-no">08 · PP 和 TP 如何组合</div>
-        <h2>一个流水线流水线阶段本身可以不是一张 GPU，而是一整个 TP 进程组。</h2>
-        <p>例如 PP=4、TP=2，一份模型就需要 8 张 GPU。每个流水线阶段由两张 GPU 共同完成内部张量并行：</p>
+        <h2>一个流水线pipeline stage本身可以不是一张 GPU，而是一整个 TP 进程组。</h2>
+        <p>例如 PP=4、TP=2，一份模型就需要 8 张 GPU。每个pipeline stage由两张 GPU 共同完成内部张量并行：</p>
         <div class="pp-tp-grid"><div class="pp-tp-stage"><small>PP 阶段 0</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP 阶段 1</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP 阶段 2</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div><div class="pp-tp-stage"><small>PP 阶段 3</small><div class="tp-pair"><span>TP0</span><span>TP1</span></div></div></div>
-        <p>流水线阶段内是 TP 集合通信s，流水线阶段间是 PP P2P。于是同一个 rank 同时处在张量-model-parallel 进程组和流水线-model-parallel 进程组中。05.1 的“一个 world，多种进程组s”现在真正开始工作。</p>
+        <p>pipeline stage内是 TP collectives，pipeline stage间是 PP P2P。于是同一个 rank 同时处在tensor-model-parallel group和pipeline-model-parallel group中。05.1 的“一个 world，multiple process groups”现在真正开始工作。</p>
       </section>
 
       <section class="article-section" id="tradeoff">
         <div class="section-no">09 · PP 带来什么，又付出什么</div>
         <h2>PP 不是“免费把层分开”，它把问题从显存转成流水线调度。</h2>
-        <div class="trade-table"><div class="trade-row head"><b>维度</b><span>收益</span><span>代价</span></div><div class="trade-row"><b>Parameter 内存</b><span>每个流水线阶段只保存部分层。</span><span>流水线阶段划分不均会导致内存 / 计算 imbalance。</span></div><div class="trade-row"><b>计算</b><span>不同流水线阶段可并行处理不同微批次es。</span><span>fill / drain 会产生 bubble。</span></div><div class="trade-row"><b>Communication</b><span>不需要像 TP 那样每层频繁全组集合通信。</span><span>流水线阶段 boundary 激活值 / 梯度必须 P2P 传输。</span></div><div class="trade-row"><b>调度</b><span>1F1B / interleaving 可提高利用率。</span><span>微批次数、virtual 流水线阶段、recompute 都会相互影响。</span></div></div>
+        <div class="trade-table"><div class="trade-row head"><b>维度</b><span>收益</span><span>代价</span></div><div class="trade-row"><b>parameter memory</b><span>每个pipeline stage只保存部分层。</span><span>pipeline stage划分不均会导致内存 / 计算 imbalance。</span></div><div class="trade-row"><b>计算</b><span>不同pipeline stage可并行处理不同microbatches。</span><span>fill / drain 会产生 bubble。</span></div><div class="trade-row"><b>Communication</b><span>不需要像 TP 那样每层频繁全组集合通信。</span><span>pipeline stage boundary 激活值 / 梯度必须 P2P 传输。</span></div><div class="trade-row"><b>调度</b><span>1F1B / interleaving 可提高利用率。</span><span>microbatch count、virtual pipeline stage、recompute 都会相互影响。</span></div></div>
       </section>
 
       <section class="article-section" id="source">
         <div class="section-no">10 · 打开真实 Megatron 调度实现</div>
-        <h2>现在你可以带着“流水线阶段 + 微批次 + P2P”去读源码。</h2>
-        <div class="source-map"><div class="source-map-card"><small>SCHEDULES</small><b>流水线_parallel.schedules</b><code>forward_backward_*</code><span>决定 non-流水线、non-interleaved 1F1B、interleaved 1F1B 等执行路径。</span></div><div class="source-map-card"><small>P2P</small><b>P2PCommunicator</b><code>p2p_communication.py</code><span>相邻流水线流水线阶段的 send/recv 张量交换。</span></div><div class="source-map-card"><small>NO INTERLEAVING</small><b>forward_backward_pipelining_without_interleaving</b><code>non-interleaved 1F1B</code><span>一个 rank 一个主要流水线阶段/chunk 的经典流水线 schedule。</span></div><div class="source-map-card"><small>INTERLEAVING</small><b>forward_backward_pipelining_with_interleaving</b><code>interleaved 1F1B</code><span>一个 physical rank 多个 model chunks。</span></div></div>
-        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.schedules.html">core.流水线_parallel.schedules</a>；包说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/pipeline_parallel.html">流水线_parallel package</a>。</div>
+        <h2>现在你可以带着“pipeline stage + 微批次 + P2P”去读源码。</h2>
+        <div class="source-map"><div class="source-map-card"><small>SCHEDULES</small><b>pipeline_parallel.schedules</b><code>forward_backward_*</code><span>决定 non-流水线、non-interleaved 1F1B、interleaved 1F1B 等执行路径。</span></div><div class="source-map-card"><small>P2P</small><b>P2PCommunicator</b><code>p2p_communication.py</code><span>相邻流水线pipeline stage的 send/recv 张量交换。</span></div><div class="source-map-card"><small>NO INTERLEAVING</small><b>forward_backward_pipelining_without_interleaving</b><code>non-interleaved 1F1B</code><span>一个 rank 一个主要pipeline stage/chunk 的经典流水线 schedule。</span></div><div class="source-map-card"><small>INTERLEAVING</small><b>forward_backward_pipelining_with_interleaving</b><code>interleaved 1F1B</code><span>一个 physical rank 多个 model chunks。</span></div></div>
+        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.schedules.html">core.pipeline_parallel.schedules</a>；包说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/pipeline_parallel.html">流水线_parallel package</a>。</div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.4</span></div><h2>确认你能把流水线当成一条真实的数据生产线。</h2><div class="quiz-item"><div class="quiz-q">1. TP 和 PP 最大的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个层内沿张量/feature 维分工；PP 沿模型深度分层，把不同层 ranges 放在不同流水线阶段。它们因此使用不同通信：TP 更依赖集合通信s，PP 更依赖流水线阶段间 P2P。</div></div><div class="quiz-item"><div class="quiz-q">2. 微批次为什么能减少流水线气泡？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">流水线阶段 0 处理完 MB0 并发给流水线阶段 1 后，可以立刻继续 MB1；于是不同流水线阶段同时处理不同微批次es，避免只有一个流水线阶段忙而其他流水线阶段等待。</div></div><div class="quiz-item"><div class="quiz-q">3. 1F1B 的三个阶段是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Warmup 先灌流水线；稳态让各流水线阶段在依赖允许时尽量交替执行 forward/backward 微批次es；收尾在 forward 完成后排空剩余 backward。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.4</span></div><h2>确认你能把流水线当成一条真实的数据生产线。</h2><div class="quiz-item"><div class="quiz-q">1. TP 和 PP 最大的区别是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">TP 在一个层内沿张量/feature 维分工；PP 沿模型深度分层，把不同layer ranges 放在不同pipeline stage。它们因此使用不同通信：TP 更依赖collectives，PP 更依赖pipeline stage间 P2P。</div></div><div class="quiz-item"><div class="quiz-q">2. 微批次为什么能减少流水线气泡？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">pipeline stage 0 处理完 MB0 并发给pipeline stage 1 后，可以立刻继续 MB1；于是不同pipeline stage同时处理不同microbatches，避免只有一个pipeline stage忙而其他pipeline stage等待。</div></div><div class="quiz-item"><div class="quiz-q">3. 1F1B 的三个阶段是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">Warmup 先灌流水线；稳态让各pipeline stage在依赖允许时尽量交替执行 forward/backward microbatches；收尾在 forward 完成后排空剩余 backward。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A9 · Mini 流水线并行</strong><br />跑通流水线阶段 boundary 的激活值 send 与 backward dActivation 回传。 <a href="../../labs/mini-pipeline-parallel.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A9 · Mini 流水线并行</strong><br />跑通pipeline stage boundary 的激活值 send 与 backward dActivation 回传。 <a href="../../labs/mini-pipeline-parallel.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">TERMS · 本课术语表</div>
