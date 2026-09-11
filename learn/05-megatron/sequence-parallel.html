@@ -33,10 +33,10 @@
       <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>序列并行</span></div>
       <div class="lesson-kicker"><span>LESSON 05.3 · MEGATRON</span><span>约 60 min</span></div>
-      <h1>序列并行：TP 已经切了权重，为什么激活值还会重复？</h1>
-      <p class="dek">上一课的张量并行把大型 Linear 切开了，但 Transformer 里并不是所有操作都天然沿隐藏维/输出维维切分。LayerNorm、dropout、残差连接等区域如果仍让每个张量并行（TP）rank 都持有整段序列的激活值，就会留下明显重复。序列并行的核心就是：在这些区域里，把序列维也分给 TP 各个 rank。</p>
+      <h1>序列并行（SP）：TP 已经切了权重，为什么激活值还会重复？</h1>
+      <p class="dek">上一课的张量并行把大型 Linear 切开了，但 Transformer 里并不是所有操作都天然沿隐藏维/输出维切分。LayerNorm、dropout、残差连接等区域如果仍让每个张量并行（TP）rank 都持有整段序列的激活值，就会留下明显重复。序列并行的核心就是：在这些区域里，把序列维也分给各个 TP rank。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 TP 不等于“所有激活值自动除以 TP 并行度”。</li><li>理解序列并行主要在 TP 进程组内沿序列维分片部分激活值。</li><li>看懂为什么一个 TP all-reduce 可以从概念上拆成 reduce-scatter + all-gather。</li><li>知道 LayerNorm / dropout / 残差连接 为什么适合在序列分片上本地计算。</li><li>区分序列并行与上下文并行：两者都切序列，但解决的问题不同。</li><li>打开 Megatron <code>tensor_parallel.mappings</code> 时能认出 gather / reduce-scatter 相关接口。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么 TP 不等于“所有激活值自动除以 TP 并行度”。</li><li>理解序列并行主要在 TP 进程组内沿序列维分片部分激活值。</li><li>看懂为什么一个 TP all-reduce 可以从概念上拆成 reduce-scatter + all-gather。</li><li>知道 LayerNorm / dropout / 残差连接为什么适合在序列分片上本地计算。</li><li>区分序列并行与上下文并行：两者都切序列，但解决的问题不同。</li><li>打开 Megatron <code>tensor_parallel.mappings</code> 时能认出 gather / reduce-scatter 相关接口。</li></ul></div>
 
       <section class="article-section" id="leftover">
         <div class="section-no">01 · THE MEMORY LEFTOVER AFTER TP</div>
