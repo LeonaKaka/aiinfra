@@ -43,7 +43,7 @@
         <h2>序列从 4K 变 32K，不只是“多算八倍 token”。</h2>
         <p>训练长上下文时，大量 activations 会随 sequence length 增长；Attention 还要求每个 query 根据 mask 规则访问其它 token 的 K/V。即便 FlashAttention 避免显式物化巨大 <code>S×S</code> score matrix，Q/K/V 与其它activations的保存、计算和通信仍然随 S 增长。</p>
         <div class="long-context"><div class="context-strip"><span class="c0">0–4K</span><span class="c0">4–8K</span><span class="c0">8–12K</span><span class="c0">12–16K</span><span class="c1">16–20K</span><span class="c1">20–24K</span><span class="c1">24–28K</span><span class="c1">28–32K</span></div></div>
-        <p>一种粗暴办法是继续增大 TP，但这会把 Linear 通用矩阵乘法（GEMM）也切得越来越小，通信占比可能上升。CP 的想法是：既然真正变长的是序列，就沿序列/上下文维增加并行度。</p>
+        <p>一种粗暴办法是继续增大 TP，但这会把 Linear GEMM也切得越来越小，通信占比可能上升。CP 的想法是：既然真正变长的是序列，就沿序列/上下文维增加并行度。</p>
       </section>
 
       <section class="article-section" id="split">
@@ -83,7 +83,7 @@
         <div class="section-no">06 · CP 到底节省哪部分显存</div>
         <h2>主要收益是：可沿 context shard 的 activations不必在每张 GPU 完整复制。</h2>
         <div class="cp-memory"><div><small>CP = 1</small><b>~ S × activations-per-token</b><span>单 rank 处理整个序列。</span></div><i>→</i><div><small>CP = p</small><b>~ (S/p) × activations-per-token</b><span>shardable activations在每个 rank 上约随 CP 并行度下降。</span></div></div>
-        <p>实际峰值还包含 K/V exchange buffer、attention backend workspace、TP/PP/DP 状态等，所以不能把“整个图形处理器（GPU）显存”简单除以 CP。</p>
+        <p>实际峰值还包含 K/V exchange buffer、attention backend workspace、TP/PP/DP 状态等，所以不能把“整个GPU显存”简单除以 CP。</p>
       </section>
 
       <section class="article-section" id="gqa">
