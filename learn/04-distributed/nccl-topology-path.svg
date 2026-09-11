@@ -26,38 +26,38 @@
     </style>
   </defs>
 
-  <text class="mono ey" x="34" y="34">NCCL · LOGICAL CONTRACT → PHYSICAL PATH</text>
-  <text class="sans ttl" x="34" y="67">The collective stays the same; topology changes its cost</text>
-  <text class="sans sub" x="34" y="91">First ask what result the ranks need. Then ask which links the bytes actually cross.</text>
+  <text class="mono ey" x="34" y="34">NCCL · 逻辑语义 → 物理路径</text>
+  <text class="sans ttl" x="34" y="67">集合通信语义不变，拓扑决定代价</text>
+  <text class="sans sub" x="34" y="91">先问各 rank 需要什么结果，再问数据实际跨过哪些链路。</text>
 
-  <text class="mono sec" x="34" y="126">1 · LOGICAL COLLECTIVE CONTRACT</text>
+  <text class="mono sec" x="34" y="126">1 · 逻辑集合通信语义</text>
   <rect class="panel" x="34" y="142" width="692" height="180" rx="14"/>
   <rect class="blue" x="54" y="178" width="176" height="104" rx="11"/>
-  <text class="mono sec" x="72" y="202" fill="#315f82">FRAMEWORK</text>
+  <text class="mono sec" x="72" y="202" fill="#315f82">框架层</text>
   <text class="sans label" x="72" y="227">all_reduce(tensor, TP group)</text>
-  <text class="sans small" x="72" y="249">semantic request is identical</text>
-  <text class="sans small" x="72" y="266">on every participant</text>
+  <text class="sans small" x="72" y="249">语义请求相同</text>
+  <text class="sans small" x="72" y="266">所有参与者都一致</text>
 
   <rect class="dark" x="286" y="166" width="188" height="128" rx="12"/>
-  <text class="mono sec" x="306" y="192" fill="#b6c0b9">NCCL COMMUNICATOR</text>
-  <text class="sans label" x="306" y="218" style="fill:#f1f3ef">map contract to machine</text>
-  <text class="sans tiny" x="306" y="240" style="fill:#b6beb8">collective · bytes · ranks</text>
-  <text class="sans tiny" x="306" y="257" style="fill:#b6beb8">topology · architecture</text>
+  <text class="mono sec" x="306" y="192" fill="#b6c0b9">NCCL 通信器</text>
+  <text class="sans label" x="306" y="218" style="fill:#f1f3ef">把语义映射到机器</text>
+  <text class="sans tiny" x="306" y="240" style="fill:#b6beb8">集合通信 · 字节数 · ranks</text>
+  <text class="sans tiny" x="306" y="257" style="fill:#b6beb8">拓扑 · 硬件结构</text>
   <rect x="306" y="270" width="68" height="18" rx="5" fill="#eaf2ed"/><text class="mono tiny" x="340" y="283" text-anchor="middle" fill="#255b46">Ring/Tree</text>
   <rect x="382" y="270" width="72" height="18" rx="5" fill="#edf4f8"/><text class="mono tiny" x="418" y="283" text-anchor="middle" fill="#315f82">P2P/NET</text>
 
   <rect class="sand" x="530" y="178" width="176" height="104" rx="11"/>
-  <text class="mono sec" x="548" y="202" fill="#7b6a3e">EXECUTION PLAN</text>
-  <text class="sans label" x="548" y="227">algorithm + transport</text>
-  <text class="sans small" x="548" y="249">different physical path,</text>
-  <text class="sans small" x="548" y="266">same mathematical result</text>
+  <text class="mono sec" x="548" y="202" fill="#7b6a3e">执行计划</text>
+  <text class="sans label" x="548" y="227">算法 + 传输方式</text>
+  <text class="sans small" x="548" y="249">物理路径可以不同，</text>
+  <text class="sans small" x="548" y="266">数学结果保持相同</text>
   <path class="line" d="M230 230 H286" marker-end="url(#arrow)"/><path class="line" d="M474 230 H530" marker-end="url(#arrow)"/>
 
-  <text class="mono sec" x="34" y="358">2 · PHYSICAL TOPOLOGY / DATA PATH</text>
+  <text class="mono sec" x="34" y="358">2 · 物理拓扑 / 数据路径</text>
   <rect class="panel" x="34" y="374" width="692" height="354" rx="14"/>
 
   <rect class="green" x="52" y="410" width="270" height="252" rx="13"/>
-  <text class="mono sec" x="70" y="435" fill="#255b46">NODE 0 · LOCAL GPU DOMAIN</text>
+  <text class="mono sec" x="70" y="435" fill="#255b46">节点 0 · 本地 GPU 域</text>
   <g transform="translate(70 454)" class="mono">
     <g><rect class="box" width="50" height="44" rx="7"/><text class="label" x="25" y="20" text-anchor="middle">GPU0</text><text class="tiny" x="25" y="35" text-anchor="middle">r0</text></g>
     <g transform="translate(58)"><rect class="box" width="50" height="44" rx="7"/><text class="label" x="25" y="20" text-anchor="middle">GPU1</text><text class="tiny" x="25" y="35" text-anchor="middle">r1</text></g>
@@ -66,14 +66,14 @@
   </g>
   <rect x="70" y="524" width="234" height="54" rx="9" fill="#dfece4" stroke="#b7cfbf"/>
   <text class="mono small" x="187" y="546" text-anchor="middle" fill="#255b46">NVLink / NVSwitch / PCIe P2P</text>
-  <text class="sans tiny" x="187" y="565" text-anchor="middle">local fabric depends on platform</text>
+  <text class="sans tiny" x="187" y="565" text-anchor="middle">本地互连取决于平台</text>
   <path class="gline" d="M95 498 V524 M153 498 V524 M211 498 V524 M269 498 V524"/>
   <rect class="box" x="126" y="600" width="122" height="38" rx="8"/>
-  <text class="mono small" x="187" y="624" text-anchor="middle">NIC 0 / PCIe path</text>
+  <text class="mono small" x="187" y="624" text-anchor="middle">NIC 0 / PCIe 路径</text>
   <path class="line" d="M187 578 V600" marker-end="url(#arrow)"/>
 
   <rect class="blue" x="438" y="410" width="270" height="252" rx="13"/>
-  <text class="mono sec" x="456" y="435" fill="#315f82">NODE 1 · LOCAL GPU DOMAIN</text>
+  <text class="mono sec" x="456" y="435" fill="#315f82">节点 1 · 本地 GPU 域</text>
   <g transform="translate(456 454)" class="mono">
     <g><rect class="box" width="50" height="44" rx="7"/><text class="label" x="25" y="20" text-anchor="middle">GPU4</text><text class="tiny" x="25" y="35" text-anchor="middle">r4</text></g>
     <g transform="translate(58)"><rect class="box" width="50" height="44" rx="7"/><text class="label" x="25" y="20" text-anchor="middle">GPU5</text><text class="tiny" x="25" y="35" text-anchor="middle">r5</text></g>
@@ -82,25 +82,25 @@
   </g>
   <rect x="456" y="524" width="234" height="54" rx="9" fill="#e1edf4" stroke="#bfd3df"/>
   <text class="mono small" x="573" y="546" text-anchor="middle" fill="#315f82">NVLink / NVSwitch / PCIe P2P</text>
-  <text class="sans tiny" x="573" y="565" text-anchor="middle">local fabric can differ by machine</text>
+  <text class="sans tiny" x="573" y="565" text-anchor="middle">不同机器的本地互连可能不同</text>
   <path class="bline" d="M481 498 V524 M539 498 V524 M597 498 V524 M655 498 V524"/>
   <rect class="box" x="512" y="600" width="122" height="38" rx="8"/>
-  <text class="mono small" x="573" y="624" text-anchor="middle">NIC 1 / PCIe path</text>
+  <text class="mono small" x="573" y="624" text-anchor="middle">NIC 1 / PCIe 路径</text>
   <path class="line" d="M573 578 V600" marker-end="url(#arrow)"/>
 
   <rect class="sand" x="326" y="520" width="108" height="82" rx="10"/>
-  <text class="mono sec" x="380" y="544" text-anchor="middle" fill="#7b6a3e">NETWORK</text>
+  <text class="mono sec" x="380" y="544" text-anchor="middle" fill="#7b6a3e">网络</text>
   <text class="sans label" x="380" y="565" text-anchor="middle">IB / RoCE</text>
-  <text class="sans tiny" x="380" y="583" text-anchor="middle">switches · routing</text>
+  <text class="sans tiny" x="380" y="583" text-anchor="middle">交换机 · 路由</text>
   <path class="bline" d="M248 619 H290 V561 H326" marker-end="url(#blue-arrow)"/>
   <path class="bline" d="M434 561 H470 V619 H512" marker-end="url(#blue-arrow)"/>
 
-  <text class="mono sec" x="52" y="698" fill="#255b46">FAST LOCAL CASE</text>
-  <text class="sans small" x="184" y="698">keep frequent TP traffic inside the fast GPU fabric when possible.</text>
-  <text class="mono sec" x="52" y="716" fill="#315f82">SCALE-OUT CASE</text>
-  <text class="sans small" x="184" y="716">cross-node traffic adds GPU↔NIC placement and network congestion.</text>
+  <text class="mono sec" x="52" y="698" fill="#255b46">高速本地场景</text>
+  <text class="sans small" x="184" y="698">尽量让高频 TP 通信留在高速 GPU 互连内部。</text>
+  <text class="mono sec" x="52" y="716" fill="#315f82">跨节点扩展场景</text>
+  <text class="sans small" x="184" y="716">跨节点通信还要考虑 GPU↔NIC 拓扑和网络拥塞。</text>
 
   <rect class="box" x="34" y="756" width="692" height="48" rx="10"/>
-  <text class="sans small" x="52" y="777">GPUDirect RDMA can avoid host staging on a supported path; it does not erase PCIe/NIC/network topology cost.</text>
-  <text class="sans tiny" x="52" y="794">Logical contract = what result ranks need. Physical path = which links must move the bytes.</text>
+  <text class="sans small" x="52" y="777">支持时 GPUDirect RDMA 可减少主机内存中转，但不会消除 PCIe/NIC/网络拓扑成本。</text>
+  <text class="sans tiny" x="52" y="794">逻辑语义 = 各 rank 需要什么结果；物理路径 = 数据必须经过哪些链路。</text>
 </svg>
