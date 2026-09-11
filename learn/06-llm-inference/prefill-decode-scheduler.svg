@@ -11,55 +11,55 @@
     </style>
   </defs>
 
-  <text class="mono ey" x="34" y="34">PREFILL vs DECODE · WORKLOAD SEMANTICS ≠ GLOBAL SCHEDULER PHASE</text>
-  <text class="sans ttl" x="34" y="67">A request has phases;</text>
-  <text class="sans ttl" x="34" y="94">a scheduler iteration may mix their token work</text>
-  <text class="sans sub" x="34" y="119">Long Prefill can be chunked. Decode tokens and Prefill chunks can share one vLLM execution iteration.</text>
+  <text class="mono ey" x="34" y="34">PREFILL vs DECODE · 请求阶段 ≠ 全局调度器阶段</text>
+  <text class="sans ttl" x="34" y="67">一个请求有不同阶段；</text>
+  <text class="sans ttl" x="34" y="94">一次调度执行轮次可以混合不同 token 工作</text>
+  <text class="sans sub" x="34" y="119">长 Prefill 可以分块；Decode token 和 Prefill 分块可以出现在同一个 vLLM 执行轮次中。</text>
 
-  <text class="mono sec" x="34" y="154">1 · ONE REQUEST · LOGICAL WORKLOAD SEMANTICS</text>
+  <text class="mono sec" x="34" y="154">1 · 单个请求 · 逻辑阶段语义</text>
   <rect class="panel" x="34" y="170" width="692" height="320" rx="14"/>
-  <text class="sans small" x="52" y="194">All prompt tokens are known; after their KV is built, future generated tokens depend on the confirmed prefix.</text>
+  <text class="sans small" x="52" y="194">所有输入 token 一开始都已知；建立 KV 后，后续生成 token 依赖已经确认的前缀。</text>
 
   <rect class="gold" x="52" y="216" width="178" height="112" rx="10"/>
-  <text class="mono sec" x="70" y="240" fill="#7b6a3e">KNOWN PROMPT</text>
+  <text class="mono sec" x="70" y="240" fill="#7b6a3e">已知输入</text>
   <text class="sans label" x="70" y="266">t₀ · t₁ · t₂ · … · tN</text>
-  <text class="sans small" x="70" y="289">positions are known up front</text>
-  <text class="sans tiny" x="70" y="309">causal mask limits visibility</text>
+  <text class="sans small" x="70" y="289">位置一开始就已知</text>
+  <text class="sans tiny" x="70" y="309">因果掩码限制可见范围</text>
 
   <rect class="gold" x="292" y="216" width="178" height="112" rx="10"/>
-  <text class="mono sec" x="310" y="240" fill="#7b6a3e">LOGICAL PREFILL</text>
-  <text class="sans label" x="310" y="266">process prompt tokens</text>
-  <text class="sans small" x="310" y="289">compute hidden states + K/V</text>
+  <text class="mono sec" x="310" y="240" fill="#7b6a3e">逻辑 PREFILL</text>
+  <text class="sans label" x="310" y="266">处理输入 token</text>
+  <text class="sans small" x="310" y="289">计算隐藏状态 + K/V</text>
   <rect class="green" x="310" y="300" width="142" height="20" rx="6"/>
-  <text class="mono tiny" x="381" y="314" text-anchor="middle" fill="#255b46">build historical KV</text>
+  <text class="mono tiny" x="381" y="314" text-anchor="middle" fill="#255b46">建立历史 KV</text>
   <path class="gldline" d="M230 272 H292" marker-end="url(#goldArrow)"/>
 
   <rect class="blue" x="526" y="208" width="180" height="128" rx="10"/>
-  <text class="mono sec" x="544" y="232" fill="#315f82">REPEATED DECODE</text>
+  <text class="mono sec" x="544" y="232" fill="#315f82">重复 DECODE</text>
   <rect class="box" x="544" y="246" width="64" height="36" rx="7"/>
-  <text class="mono tiny" x="576" y="260" text-anchor="middle">current</text><text class="sans label" x="576" y="276" text-anchor="middle">token</text>
+  <text class="mono tiny" x="576" y="260" text-anchor="middle">当前</text><text class="sans label" x="576" y="276" text-anchor="middle">token</text>
   <rect class="green" x="544" y="290" width="64" height="36" rx="7"/>
-  <text class="mono tiny" x="576" y="304" text-anchor="middle" fill="#255b46">history</text><text class="sans label" x="576" y="320" text-anchor="middle">KV</text>
+  <text class="mono tiny" x="576" y="304" text-anchor="middle" fill="#255b46">历史</text><text class="sans label" x="576" y="320" text-anchor="middle">KV</text>
   <rect class="blue" x="628" y="252" width="60" height="54" rx="7"/>
-  <text class="mono tiny" x="658" y="270" text-anchor="middle" fill="#315f82">model</text><text class="sans tiny" x="658" y="288" text-anchor="middle">read +</text><text class="sans tiny" x="658" y="300" text-anchor="middle">extend KV</text>
+  <text class="mono tiny" x="658" y="270" text-anchor="middle" fill="#315f82">模型</text><text class="sans tiny" x="658" y="288" text-anchor="middle">读取 +</text><text class="sans tiny" x="658" y="300" text-anchor="middle">扩展 KV</text>
   <path class="bline" d="M608 264 H628" marker-end="url(#blueArrow)"/><path class="bline" d="M608 308 H618 V292 H628" marker-end="url(#blueArrow)"/>
   <path class="bline" d="M658 306 V322" marker-end="url(#blueArrow)"/>
-  <text class="mono tiny" x="658" y="332" text-anchor="middle" fill="#315f82">select next token</text>
+  <text class="mono tiny" x="658" y="332" text-anchor="middle" fill="#315f82">选择下一个 token</text>
   <path class="line" d="M470 272 H526" marker-end="url(#arrow)"/>
 
   <rect class="box" x="52" y="356" width="654" height="108" rx="10"/>
-  <text class="mono sec" x="70" y="380">WHAT CHANGES BETWEEN THE TWO WORKLOADS?</text>
-  <text class="sans small" x="70" y="405">Prefill builds prompt state from many known positions; Decode advances generated state from the confirmed prefix.</text>
-  <text class="sans small" x="70" y="428">TTFT includes queue + prompt-building + first output; ITL measures output-token cadence after generation starts.</text>
-  <text class="sans tiny" x="70" y="450">These are request semantics — not a claim that the whole server switches between global Prefill and Decode modes.</text>
+  <text class="mono sec" x="70" y="380">PREFILL 和 DECODE 有什么不同？</text>
+  <text class="sans small" x="70" y="405">Prefill 从大量已知位置建立输入状态；Decode 从已确认前缀继续推进生成状态。</text>
+  <text class="sans small" x="70" y="428">TTFT 包含排队、输入状态建立和首个输出；ITL 衡量生成开始后的输出 token 节奏。</text>
+  <text class="sans tiny" x="70" y="450">这些是请求语义，并不意味着整个服务器会在全局 Prefill / Decode 模式之间切换。</text>
 
-  <text class="mono sec" x="34" y="528">2 · ONE vLLM V1 SCHEDULER ITERATION · TOKEN-BUDGET VIEW</text>
+  <text class="mono sec" x="34" y="528">2 · 一次 vLLM V1 调度轮次 · TOKEN 预算视角</text>
   <rect class="panel" x="34" y="544" width="692" height="350" rx="14"/>
-  <text class="sans small" x="52" y="570">The scheduler advances requests by token counts; it can combine pending Decode work and a chunk of a long Prefill.</text>
+  <text class="sans small" x="52" y="570">调度器按 token 数推进请求；它可以把待执行的 Decode 与长 Prefill 的一个分块放在同一轮。</text>
 
   <rect class="blue" x="52" y="598" width="180" height="102" rx="10"/>
-  <text class="mono sec" x="70" y="622" fill="#315f82">RUNNING DECODE</text>
-  <text class="sans small" x="70" y="646">D0 · D1 · D2 already have KV</text>
+  <text class="mono sec" x="70" y="622" fill="#315f82">运行中的 DECODE</text>
+  <text class="sans small" x="70" y="646">D0 · D1 · D2 已有 KV</text>
   <g transform="translate(70 664)" class="mono tiny">
     <rect class="blue" width="42" height="24" rx="5"/><text x="21" y="16" text-anchor="middle" fill="#315f82">D0 +1</text>
     <rect class="blue" x="48" width="42" height="24" rx="5"/><text x="69" y="16" text-anchor="middle" fill="#315f82">D1 +1</text>
@@ -67,26 +67,26 @@
   </g>
 
   <rect class="gold" x="52" y="718" width="180" height="102" rx="10"/>
-  <text class="mono sec" x="70" y="742" fill="#7b6a3e">WAITING PREFILL</text>
-  <text class="sans small" x="70" y="766">P0 still has many prompt tokens</text>
-  <text class="sans tiny" x="70" y="788">remaining work > one iteration</text>
-  <text class="sans tiny" x="70" y="806">→ scheduler may take a chunk</text>
+  <text class="mono sec" x="70" y="742" fill="#7b6a3e">等待中的 PREFILL</text>
+  <text class="sans small" x="70" y="766">P0 仍有大量输入 token</text>
+  <text class="sans tiny" x="70" y="788">剩余工作量 > 单轮预算</text>
+  <text class="sans tiny" x="70" y="806">→ 调度器可以只取一个分块</text>
 
   <rect class="dark" x="280" y="598" width="190" height="222" rx="11"/>
-  <text class="mono sec" x="298" y="624" fill="#b8c2bb">SCHEDULER</text>
+  <text class="mono sec" x="298" y="624" fill="#b8c2bb">调度器</text>
   <text class="sans label" x="298" y="649" style="fill:#eef2ed">max_num_batched_tokens</text>
-  <text class="sans tiny" x="298" y="668" style="fill:#b7c0ba">one iteration's token budget</text>
+  <text class="sans tiny" x="298" y="668" style="fill:#b7c0ba">单轮 token 预算</text>
   <rect x="298" y="688" width="154" height="42" rx="7" fill="#edf4f8"/>
-  <text class="mono tiny" x="310" y="706" fill="#315f82">1 · pending Decode</text><text class="mono tiny" x="310" y="720" fill="#315f82">token work first</text>
+  <text class="mono tiny" x="310" y="706" fill="#315f82">1 · 待执行 Decode</text><text class="mono tiny" x="310" y="720" fill="#315f82">先安排 token 工作</text>
   <rect x="298" y="742" width="154" height="58" rx="7" fill="#faf5ea"/>
-  <text class="mono tiny" x="310" y="760" fill="#7b6a3e">2 · remaining budget</text><text class="mono tiny" x="310" y="774" fill="#7b6a3e">goes to Prefill</text><text class="mono tiny" x="310" y="788" fill="#7b6a3e">chunk if it does not fit</text>
+  <text class="mono tiny" x="310" y="760" fill="#7b6a3e">2 · 剩余预算</text><text class="mono tiny" x="310" y="774" fill="#7b6a3e">分给 Prefill</text><text class="mono tiny" x="310" y="788" fill="#7b6a3e">放不下就分块</text>
   <path class="bline" d="M232 649 H280" marker-end="url(#blueArrow)"/>
   <path class="gldline" d="M232 769 H256 V771 H280" marker-end="url(#goldArrow)"/>
 
   <rect class="box" x="518" y="598" width="188" height="222" rx="11"/>
-  <text class="mono sec" x="536" y="624">ONE MIXED BATCH</text>
-  <text class="sans small" x="536" y="646">same ModelRunner iteration</text>
-  <text class="mono tiny" x="536" y="670">scheduled token slots</text>
+  <text class="mono sec" x="536" y="624">一个混合批次</text>
+  <text class="sans small" x="536" y="646">同一个 ModelRunner 执行轮次</text>
+  <text class="mono tiny" x="536" y="670">已调度 token 槽位</text>
   <g transform="translate(536 682)" class="mono tiny">
     <rect class="blue" width="34" height="30" rx="5"/><text x="17" y="20" text-anchor="middle" fill="#315f82">D0</text>
     <rect class="blue" x="40" width="34" height="30" rx="5"/><text x="57" y="20" text-anchor="middle" fill="#315f82">D1</text>
@@ -94,12 +94,12 @@
     <rect class="gold" x="120" width="50" height="30" rx="5"/><text x="145" y="20" text-anchor="middle" fill="#7b6a3e">P0 chunk</text>
   </g>
   <rect class="green" x="536" y="734" width="152" height="66" rx="8"/>
-  <text class="sans tiny" x="550" y="754" fill="#255b46">each request independently:</text>
-  <text class="mono tiny" x="550" y="772" fill="#255b46">KV state</text>
+  <text class="sans tiny" x="550" y="754" fill="#255b46">每个请求独立维护：</text>
+  <text class="mono tiny" x="550" y="772" fill="#255b46">KV 状态</text>
   <text class="mono tiny" x="550" y="788" fill="#255b46">num_computed_tokens</text>
   <path class="line" d="M470 709 H518" marker-end="url(#arrow)"/>
 
   <rect class="box" x="52" y="842" width="654" height="38" rx="9"/>
-  <text class="sans small" x="70" y="862">Prefill / Decode describe token work + request state; one serving iteration can contain both.</text>
-  <text class="sans tiny" x="34" y="912">Exact mix varies with cache hits, chunking, speculative tokens, model, hardware and load.</text>
+  <text class="sans small" x="70" y="862">Prefill / Decode 描述 token 工作与请求状态；一次在线推理轮次可以同时包含二者。</text>
+  <text class="sans tiny" x="34" y="912">Exact mix varies with cache hits, chunking, speculative tokens, 模型, hardware and load.</text>
 </svg>
