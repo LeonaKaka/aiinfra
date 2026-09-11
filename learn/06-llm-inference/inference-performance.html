@@ -32,7 +32,7 @@
   <div class="module-block">
     <div class="module-name"><b>07</b> vLLM</div>
     <a class="lesson-link" href="../07-vllm/architecture.html">07.1 Architecture</a>
-    <a class="lesson-link" href="../07-vllm/scheduler-continuous-batching.html">07.2 Scheduler / Continuous Batching</a>
+    <a class="lesson-link" href="../07-vllm/scheduler-continuous-batching.html">07.2 调度器 / Continuous Batching</a>
     <a class="lesson-link" href="../07-vllm/kv-cache-manager.html">07.3 KV Cache Manager</a>
   </div>
 </aside>
@@ -83,7 +83,7 @@
       <div><small>KV CACHE</small><b>随请求数与上下文长度增长</b></div>
       <div><small>RUNTIME</small><b>临时张量、工作区、碎片等不能忽略</b></div>
     </div>
-    <div class="source-note">硬件锚点：<a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA H200</a> 当前规格页给出 141 GB GPU memory 与 <code>4.8 TB/s</code> memory bandwidth。这里用它做数量级例子，不把理论规格当成实测服务性能。</div>
+    <div class="source-note">硬件锚点：<a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA H200</a> 当前规格页给出 141 GB GPU 显存与 <code>4.8 TB/s</code> 显存带宽。这里用它做数量级例子，不把理论规格当成实测服务性能。</div>
   </section>
 
   <section class="article-section" id="bandwidth">
@@ -102,8 +102,8 @@
     <h2>先判断“更像算力瓶颈还是带宽瓶颈”，再决定该优化哪里。</h2>
     <p>对普通 dense Transformer，可以把每个 token 的前向计算量先粗略记成和参数量同阶，常见心算会用 <code>≈ 2 × parameters FLOPs/token</code> 来估线性层主导部分。它不是精确公式：长上下文 Attention、混合专家模型、量化、融合 kernel 和并行策略都会改变实际成本。</p>
     <div class="request-grid">
-      <div class="request-card"><small>COMPUTE</small><b>算力更紧</b><span>大 Prefill、大矩阵乘更容易把计算单元吃满；这时更高的有效浮点计算能力很重要。</span></div>
-      <div class="request-card"><small>MEMORY</small><b>带宽更紧</b><span>小批次 Decode 常更容易受权重/KV 读取影响；这时只看峰值浮点计算能力会误判。</span></div>
+      <div class="request-card"><small>计算</small><b>算力更紧</b><span>大 Prefill、大矩阵乘更容易把计算单元吃满；这时更高的有效浮点计算能力很重要。</span></div>
+      <div class="request-card"><small>内存</small><b>带宽更紧</b><span>小批次 Decode 常更容易受权重/KV 读取影响；这时只看峰值浮点计算能力会误判。</span></div>
       <div class="request-card"><small>COMMUNICATION</small><b>多卡通信更紧</b><span>张量并行等方案能分摊容量和计算，却会引入跨卡通信；“卡更多”不保证线性加速。</span></div>
     </div>
     <p>所以性能分析不是找一个万能公式，而是先建立几条数量级上界/下界，再用 profiler 和真实基准测试确认哪一项真的在主导。</p>
@@ -135,7 +135,7 @@
   --num-prompts 100 \
   --save-result</code></pre></div>
     <p>当前 vLLM 会从基准测试客户端测量 TTFT，并分别统计 ITL 与 TPOT。标准逐 token 解码时两者通常接近；但投机解码可能在一次流式返回里带回多个 token，这时 ITL 记录“流式返回之间的间隔”，TPOT 则把解码时间按所有输出 token 摊开，因此两者不应该被强行当成同一个量。</p>
-    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个服务实例跑同一组 prompt，可能命中前一次留下的 Prefix Cache，从而把吞吐量测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置/重启服务实例，或使用会在 sweep 间重置服务端缓存 的工具。</p></div>
+    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个服务实例跑同一组 prompt，可能命中前一次留下的 Prefix Cache，从而把吞吐量测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置/重启服务实例，或使用会在 sweep 间重置服务端缓存的工具。</p></div>
     <div class="source-note">当前实现与命令入口：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM Benchmark CLI</a> 与 <a href="https://docs.vllm.ai/en/stable/api/vllm/entrypoints/cli/benchmark/serve/">vLLM bench serve 接口文档</a>。</div>
   </section>
 
@@ -147,7 +147,7 @@
       <div class="time-row"><small>USEFUL RANGE</small><span class="prefill">吞吐持续上升</span><span class="decode">延迟仍在目标内</span></div>
       <div class="time-row"><small>SATURATION</small><span class="wait">排队增长</span><span class="wait">p95 / p99 延迟恶化</span></div>
     </div>
-    <p>因此更有意义的比较方式，是扫一组并发或请求到达速率，画出“吞吐量—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种 latency–throughput trade-off，而不是只汇报单个峰值数字。</p>
+    <p>因此更有意义的比较方式，是扫一组并发或请求到达速率，画出“吞吐量—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种延迟–吞吐量 trade-off，而不是只汇报单个峰值数字。</p>
     <div class="source-note">补充阅读：<a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">NVIDIA · 推理基准测试基础概念</a>。这篇适合核对指标与测试口径，不作为本站当前 vLLM 实现细节的权威来源。</div>
   </section>
 
