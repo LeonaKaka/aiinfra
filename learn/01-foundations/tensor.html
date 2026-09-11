@@ -133,7 +133,7 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
         <p>现在你第一次看到了我们刚才说的三个系统属性：</p>
         <div class="why-grid">
           <div class="why-card"><b>形状</b><p>给出各个维度的长度；总元素数由这些维度长度的乘积决定。它决定后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
-          <div class="why-card"><b>数据类型</b><p>每个数字用32位浮点（FP32）、16位浮点（FP16）、BF16 16位浮点（BF16）还是别的格式存。它直接影响显存和计算性能。</p></div>
+          <div class="why-card"><b>数据类型</b><p>每个数字用 <code>FP32</code>、<code>FP16</code>、<code>BF16</code> 还是别的格式存。它直接影响显存占用和计算性能。</p></div>
           <div class="why-card"><b>设备</b><p>这块数据现在在中央处理器（CPU）、GPU 0还是GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
         </div>
       </section>
@@ -226,7 +226,6 @@ Y = X @ W
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>FP32</code></td><td>32-bit Floating Point</td><td>32 位浮点</td><td>常见高精度浮点格式，元素通常占 4 bytes。</td></tr>
