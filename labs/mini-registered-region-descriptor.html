@@ -45,8 +45,8 @@
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>已注册内存区描述符</span></div>
     <div class="lab-kicker">LAB B6 · 分配 ≠ 传输 REGION</div>
-    <h1>“注册一块内存”和“我要传哪一层、哪一个 block”<br />不是同一个问题。</h1>
-    <p class="dek">B5 已经有 handshake 与生命周期，但还没有真正拆开内存注册的两个层次。这个实验故意让 3 层 KV view 共享同一个底层存储：内存系统看到的是<strong>一个分配</strong>，而传输逻辑看到的是<strong>三个 layer region</strong>。每个 region 再用 base offset、block length、block stride 描述“第 b 个 block 到底在哪里”。这正是读当前 vLLM NIXL <code>register_kv_caches()</code> 前必须建立的心智模型。</p>
+    <h1>“注册一块内存”和“我要传哪一层、哪一个 KV 块”<br />不是同一个问题。</h1>
+    <p class="dek">B5 已经有握手与生命周期，但还没有真正拆开内存注册的两个层次。这个实验故意让 3 层 KV 视图 共享同一个底层存储：内存系统看到的是<strong>一个分配</strong>，而传输逻辑看到的是<strong>三个层级区域</strong>。每个区域再用 <code>base offset</code>、<code>block length</code>、<code>block stride</code> 描述“第 b 个 KV 块到底在哪里”。这正是读当前 vLLM NIXL <code>register_kv_caches()</code> 前必须建立的心智模型。</p>
 
     <section class="lab-section" id="allocation"><div class="lab-kicker">01 · ONE 存储, MULTIPLE REGIONS</div><h2>共享存储不意味着所有 layer 都是同一个传输 region。</h2>
       <div class="command"><div class="command-head"><span>TEACHING 布局</span><span>3 layers · 8 blocks</span></div><pre>one storage allocation
