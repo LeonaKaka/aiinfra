@@ -36,7 +36,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的预归一化（pre-norm）解码器块的完整数据流。</li><li>理解残差连接为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的位置信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出张量并行、流水线并行和 KV Cache 分别会落在 Transformer Block 的什么位置。</li></ul></div>
 
       <section class="article-section" id="big-picture">
-        <div class="section-no">01 · THE WHOLE块</div>
+        <div class="section-no">01 · 先看完整 Transformer Block</div>
         <h2>先看全貌：一个常见现代解码器块有两条大分支。</h2>
         <div class="block-diagram">
           <div class="block-node input"><small>INPUT</small><b>x</b><code>[B,S,H]</code></div>
@@ -54,7 +54,7 @@ y = h + MLP(Norm(h))</code></pre></div>
       </section>
 
       <section class="article-section" id="residual">
-        <div class="section-no">02 · RESIDUAL CONNECTION</div>
+        <div class="section-no">02 · 残差连接</div>
         <h2>为什么Attention和MLP最后都要回到 <code>[B,S,H]</code>？因为要和输入直接相加。</h2>
         <div class="shape-rule"><code>x [B,S,H]</code><span>+</span><code>branch(x) [B,S,H]</code><span>→</span><code>output [B,S,H]</code></div>
         <p>残差连接connection就是“保留原来的x，再加上分支学到的新变化”。要逐元素相加，形状必须一致。这也是上一课多头注意力（MHA）最后需要merge heads并经过output投影回到H的原因之一。</p>
@@ -62,7 +62,7 @@ y = h + MLP(Norm(h))</code></pre></div>
       </section>
 
       <section class="article-section" id="norm">
-        <div class="section-no">03 · NORMALIZATION</div>
+        <div class="section-no">03 · 归一化</div>
         <h2>归一化不负责“理解语言”，它主要让数值尺度更可控。</h2>
         <p>你会在模型里看到LayerNorm、RMSNorm等。现在不用背公式，只要知道它们通常沿隐藏维度对每个token的向量做归一化/缩放相关操作，输出形状不变：</p>
         <div class="shape-flow"><div><small>BEFORE NORM</small><code>[B,S,H]</code></div><span>→</span><div><small>NORMALIZE</small><code>per token hidden vector</code></div><span>→</span><div><small>AFTER NORM</small><code>[B,S,H]</code></div></div>
@@ -70,7 +70,7 @@ y = h + MLP(Norm(h))</code></pre></div>
       </section>
 
       <section class="article-section" id="mlp">
-        <div class="section-no">04 · THE MLP BRANCH</div>
+        <div class="section-no">04 · MLP 分支</div>
         <h2>MLP看起来叫“前馈网络”，本质上还是你已经学过的大线性层。</h2>
         <p>最经典的两层MLP可以先画成：</p>
         <div class="mlp-diagram"><div><small>INPUT</small><code>H</code></div><span>线性层 ↑</span><div class="wide"><small>INTERMEDIATE</small><code>4H</code></div><span>activation</span><div class="wide"><small>NONLINEAR</small><code>GELU / …</code></div><span>线性层 ↓</span><div><small>OUTPUT</small><code>H</code></div></div>
@@ -80,7 +80,7 @@ y = h + MLP(Norm(h))</code></pre></div>
       </section>
 
       <section class="article-section" id="code">
-        <div class="section-no">05 · A TINY块IN PYTORCH</div>
+        <div class="section-no">05 · 在 PyTorch 里搭一个最小 Block</div>
         <h2>用一个最小类，把数据流真正写成代码。</h2>
         <div class="code-block"><div class="code-head"><span>python</span><span>07_tiny_transformer_block.py</span></div><pre><code>import torch
 from torch import nn
@@ -116,7 +116,7 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       </section>
 
       <section class="article-section" id="position-semantics">
-        <div class="section-no">06 · POSITION IS PART OF ATTENTION STATE</div>
+        <div class="section-no">06 · 位置信息也是 Attention 状态的一部分</div>
         <h2>同一个token出现在第10位和第100位，Attention不能把它们当成同一件事。</h2>
         <p>decoder不只需要知道“token是什么”，还需要知道“token在序列的什么位置”。很多现代LLM使用旋转位置编码（RoPE）：在常见实现里，Query和Key会根据 <code>positions</code> 做位置相关变换，再进入Attention。Value通常不做同样的旋转。</p>
         <div class="code-block"><div class="code-head"><span>mental model</span><span>position-conditioned attention</span></div><pre><code>hidden states
@@ -133,28 +133,28 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       </section>
 
       <section class="article-section" id="stack">
-        <div class="section-no">07 · FROM ONE块TO A MODEL</div>
+        <div class="section-no">07 · 从一个 Block 堆成模型</div>
         <h2>大模型，就是把这种块重复很多层，再加上入口和出口。</h2>
         <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + 语言模型（LM）头</small><b>logits</b></div></div>
         <p>所以以后看到“80-layer model”，不是80个完全不同的概念，而是同一种块结构使用不同参数重复80次。也因此，单层里一点点显存、通信或kernel调度浪费，乘上几十层后都会很明显。</p>
       </section>
 
       <section class="article-section" id="training">
-        <div class="section-no">08 · 块VS训练循环</div>
+        <div class="section-no">08 · Transformer Block 与训练循环的关系</div>
         <h2>别把前向计算里的块和外面的优化器混在一起。</h2>
         <div class="compare-strip block-compare"><div><small>MODEL前向计算</small><b>块(x)</b><span>归一化 → Attention → 残差连接 → 归一化 → MLP → 残差连接</span></div><div><small>训练循环</small><b>loss.backward()</b><span>对所有blocks的参数沿计算图产生gradients</span></div><div><small>优化器</small><b>step()</b><span>在前向计算/backward之外更新所有可训练参数</span></div></div>
         <p>这三个层级分清以后，读Megatron源码会轻松很多：model code定义“算什么”，distributed/runtime code决定“在哪张GPU算、怎么通信”，优化器code决定“参数怎么更新”。</p>
       </section>
 
       <section class="article-section" id="infra">
-        <div class="section-no">09 · INFRA MAP OF A块</div>
+        <div class="section-no">09 · 从 AI Infra 角度拆一个 Block</div>
         <h2>现在终于可以把AI Infra技术贴到块上。</h2>
         <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>Tensor Parallel</b><span>切查询-键-值（QKV） / output投影权重与heads</span></div><div><small>MLP LINEARS</small><b>Tensor Parallel</b><span>切up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>上下文Parallel</b><span>长序列跨ranks分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同GPU 阶段保存不同层</span></div><div><small>TRAINING STATES</small><b>Distributed优化器</b><span>分片优化器 / parameter-related states</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史K/V跨token复用</span></div></div>
         <p>这张图就是后面几大模块的导航。以后每学一个并行策略，我们都会回来问：它到底切的是块里的哪一块？</p>
       </section>
 
       <section class="article-section" id="prefill-decode">
-        <div class="section-no">10 · THE ROAD TO INFERENCE</div>
+        <div class="section-no">10 · 通往大模型推理</div>
         <h2>Prefill和Decode都执行这些blocks，但每一步的工作量结构不同。</h2>
         <div class="prefill-decode"><div><small>PREFILL</small><b>一次送入很多prompt tokens</b><span>大矩阵计算更充分；每层产生并保存prompt的KV Cache。</span></div><div><small>DECODE</small><b>通常每条序列一次新增一个token</b><span>每层复用历史KV；小批量/低算术强度问题更突出。</span></div></div>
         <p>这就是为什么同一个模型，训练Infra和推理Infra会长得很不一样。vLLM章节会从这里继续：如何调度很多请求、管理KV blocks、让GPU在decode阶段仍然高效。</p>
