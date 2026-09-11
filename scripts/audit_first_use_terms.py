@@ -29,7 +29,7 @@ LESSONS = ROOT / "learn"
 LABS = ROOT / "labs"
 
 SKIP_BLOCK_RE = re.compile(
-    r"<(?:script|style|pre|code|svg|table|nav|aside)\b.*?</(?:script|style|pre|code|svg|table|nav|aside)>",
+    r"<(?:script|style|pre|svg|table|nav|aside)\b.*?</(?:script|style|pre|svg|table|nav|aside)>",
     re.S | re.I,
 )
 HEADING_RE = re.compile(r"<h[1-3]\b.*?</h[1-3]>", re.S | re.I)
