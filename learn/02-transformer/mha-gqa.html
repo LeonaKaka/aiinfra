@@ -30,10 +30,10 @@
       <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>MHA &amp; GQA</span></div>
       <div class="lesson-kicker"><span>LESSON 02.2 · TRANSFORMER</span><span>约45 min</span></div>
-      <h1>MHA与GQA：为什么Q有很多个头，K/V却可以更少？</h1>
-      <p class="dek">上一课故意只画了一个注意力头。真实大语言模型（LLM）通常会把隐藏维度拆成多个注意力头，让不同注意力头在不同子空间里做匹配。接着为了降低推理时最昂贵的键-值（KV）Cache，又出现了分组查询注意力（GQA）：Q头仍然很多，但多个Q头共享更少的K/V heads。</p>
+      <h1>MHA 与 GQA：为什么 Q 有很多个注意力头，K/V 却可以更少？</h1>
+      <p class="dek">上一课故意只画了一个注意力头。真实的大语言模型（LLM）通常会把隐藏维度拆成多个注意力头，让不同注意力头在不同子空间里做匹配。接着为了降低推理时最昂贵的KV Cache，又出现了分组查询注意力（GQA）：Q 头仍然很多，但多个 Q 头可以共享更少的 K/V 头。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 <code>[B,S,H]</code> 正确拆成 <code>[B,N,S,D]</code>，并知道 <code>H=N×D</code>。</li><li>从形状推导Multi-头Attention的分数为 <code>[B,N,S,S]</code>。</li><li>解释多头注意力（MHA）、GQA、多查询注意力（MQA）的区别不在“有没有Attention”，而在Q heads与KV头的数量关系。</li><li>用一个比例说明为什么GQA会显著减少KV Cache。</li><li>理解heads为什么同时是Megatron Tensor Parallel与vLLM在线推理的重要结构。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 <code>[B,S,H]</code> 正确拆成 <code>[B,N,S,D]</code>，并知道 <code>H=N×D</code>。</li><li>从形状推导多头注意力的分数矩阵为 <code>[B,N,S,S]</code>。</li><li>解释多头注意力（MHA）、GQA、多查询注意力（MQA）的区别不在“有没有 Attention”，而在 Q 头与 KV 头的数量关系。</li><li>用一个比例说明为什么 GQA 会显著减少 KV Cache。</li><li>理解注意力头为什么同时影响 Megatron 张量并行与 vLLM 在线推理。</li></ul></div>
 
       <section class="article-section" id="why-heads"><div class="section-no">01 · WHY MULTIPLE HEADS</div><h2>不是把同一个Attention重复很多遍，而是把hidden space分成多个更小的子空间。</h2><p>假设 <code>H=8</code>，我们设置 <code>N=2</code> 个heads，那么每个头的维度就是 <code>D=4</code>：</p><div class="shape-rule"><code>H = 8</code><span>=</span><code>N = 2</code><span>×</span><code>D = 4</code></div><div class="head-split"><div class="head-input"><small>ONE TOKEN</small><b>hidden = 8</b><div class="head-cells"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div><span>split →</span><div class="head-pair"><div><small>头0</small><b>D=4</b></div><div><small>头1</small><b>D=4</b></div></div></div><p>每个头都有自己的Q/K/V子空间，可以学到不同的匹配方式。最后再把所有heads的结果拼回隐藏维度。</p><div class="concept-note"><p><strong>重要：</strong>“头学到句法、另一个头学到指代”这种说法只能当直觉例子，不是固定分工。头学到什么由训练决定。</p></div></section>
 
