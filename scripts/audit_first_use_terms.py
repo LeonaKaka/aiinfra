@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from first_use_terms import SOURCE_TERMS
@@ -154,6 +155,7 @@ def clean_chinese(abbr: str, chinese: str) -> str:
     return chinese[len(prefix):].strip() if chinese.startswith(prefix) else chinese
 
 
+@lru_cache(maxsize=None)
 def boundary_pattern(alias: str, *, case_sensitive: bool = True) -> re.Pattern[str]:
     # Avoid rewriting inside identifiers such as request-level or gpu_worker.
     flags = 0 if case_sensitive else re.I
