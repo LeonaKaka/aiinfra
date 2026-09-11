@@ -143,7 +143,7 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
         <h2>为什么Infra工程师这么在意形状？</h2>
         <p>因为形状一旦确定，很多系统问题就开始可以计算了。假设 <code>X.shape = [2, 5, 8]</code>，总元素数就是：</p>
         <div class="code-block">
-          <div class="code-head"><span>mental math</span><span>memory</span></div>
+          <div class="code-head"><span>mental math</span><span>内存</span></div>
           <pre><code>elements = 2 × 5 × 8 = 80
 
 if FP32: 80 × 4 bytes = 320 bytes
@@ -167,12 +167,12 @@ print(y.is_contiguous())    <span class="comment"># False</span>
 z = y.contiguous()
 print(z.stride())           <span class="comment"># materialize a contiguous layout</span></code></pre></div>
         <div class="why-grid">
-          <div class="why-card"><b>存储</b><p>底层真正拥有内存的allocation。多个张量/视图可以引用同一块存储，而不是每次都复制数据。</p></div>
+          <div class="why-card"><b>存储</b><p>底层真正拥有内存的分配。多个张量/视图可以引用同一块存储，而不是每次都复制数据。</p></div>
           <div class="why-card"><b>步长</b><p>某一维索引增加1时，在底层存储里要跨过多少个元素。它把“逻辑坐标”映射到“物理位置”。</p></div>
-          <div class="why-card"><b>连续存储</b><p>元素是否按当前逻辑维度顺序紧密排列。某些kernel或transfer path可以处理任意步长，另一些路径会要求或更偏好连续存储buffer。</p></div>
+          <div class="why-card"><b>连续存储</b><p>元素是否按当前逻辑维度顺序紧密排列。某些kernel或传输 path可以处理任意步长，另一些路径会要求或更偏好连续存储缓冲区。</p></div>
         </div>
         <p><code>transpose</code> 常常只改变视图的形状/步长，而不立即复制存储；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到re形状、permute、视图、copy时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
-        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4的block table和08.4的registered memory / transfer region都会把“逻辑张量”继续落到更具体的地址、offset、步长与lifetime。现在先建立一个底线：<strong>logical形状 ≠ physical布局</strong>。</p></div>
+        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4的block table和08.4的registered 内存 / 传输 region都会把“逻辑张量”继续落到更具体的地址、offset、步长与lifetime。现在先建立一个底线：<strong>logical形状 ≠ physical布局</strong>。</p></div>
       </section>
 
       <section class="article-section" id="megatron">
