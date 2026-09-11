@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="AI Infra from Zero 01.3：用一个最小 PyTorch 训练循环理解 forward、loss、backward、optimizer step，以及这些步骤未来如何扩展到分布式训练。" />
   <meta name="theme-color" content="#f7f7f3" />
-  <title>01.3 PyTorch 的最小训练循环 · AI 基础设施 from Zero</title>
+  <title>01.3 PyTorch的最小训练循环 · AI基础设施from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
 </head>
@@ -23,27 +23,27 @@
   <div class="lesson-shell">
     <aside class="course-sidebar" aria-label="课程目录">
       <div class="side-label">COURSE MAP</div>
-      <a class="side-home" href="../../index.html">← AI 基础设施 from Zero</a>
+      <a class="side-home" href="../../index.html">← AI基础设施from Zero</a>
       <div class="module-block">
         <div class="module-name"><b>01</b> Foundations</div>
-        <a class="lesson-link" href="./tensor.html">01.1 张量 到底是什么？</a>
-        <a class="lesson-link" href="./linear.html">01.2 矩阵乘法 与 Linear</a>
-        <a class="lesson-link current" href="./training-loop.html">01.3 PyTorch 的最小训练循环</a>
-        <a class="lesson-link" href="./autograd-optimizer.html">01.4 autograd 与 优化器</a>
+        <a class="lesson-link" href="./tensor.html">01.1张量到底是什么？</a>
+        <a class="lesson-link" href="./linear.html">01.2矩阵乘法与Linear</a>
+        <a class="lesson-link current" href="./training-loop.html">01.3 PyTorch的最小训练循环</a>
+        <a class="lesson-link" href="./autograd-optimizer.html">01.4 autograd与优化器</a>
       </div>
       <div class="module-block">
         <div class="module-name"><b>02</b> Transformer</div>
-        <a class="lesson-link" href="../02-transformer/attention.html">02.1 Attention 数据流</a>
-        <a class="lesson-link" href="../02-transformer/mha-gqa.html">02.2 MHA 与 GQA</a>
+        <a class="lesson-link" href="../02-transformer/attention.html">02.1 Attention数据流</a>
+        <a class="lesson-link" href="../02-transformer/mha-gqa.html">02.2 MHA与GQA</a>
         <a class="lesson-link" href="../02-transformer/transformer-block.html">02.3 Transformer Block</a>
       </div>
       <div class="module-block">
         <div class="module-name"><b>03</b> GPU Systems</div>
-        <a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">GPU、显存与 kernel</a>
+        <a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">GPU、显存与kernel</a>
       </div>
       <div class="module-block">
         <div class="module-name"><b>04</b> Distributed</div>
-        <a class="lesson-link" href="../04-distributed/process-rank.html">Collectives 与 NCCL</a>
+        <a class="lesson-link" href="../04-distributed/process-rank.html">Collectives与NCCL</a>
       </div>
     </aside>
 
@@ -51,14 +51,14 @@
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>Training Loop</span></div>
 
-      <div class="lesson-kicker"><span>LESSON 01.3 · FOUNDATION</span><span>约 35 min</span></div>
-      <h1>PyTorch 的最小训练循环：参数是怎么真的变掉的？</h1>
-      <p class="dek">前两课我们只看“数据怎么表示”和“Linear 怎么计算”。但模型为什么会越来越会做题？答案并不神秘：不断做 前向计算，算出错多少，再把这个错误反向传回参数，最后让 优化器 改一点参数。训练就是把这套循环重复很多次。</p>
+      <div class="lesson-kicker"><span>LESSON 01.3 · FOUNDATION</span><span>约35 min</span></div>
+      <h1>PyTorch的最小训练循环：参数是怎么真的变掉的？</h1>
+      <p class="dek">前两课我们只看“数据怎么表示”和“Linear怎么计算”。但模型为什么会越来越会做题？答案并不神秘：不断做前向计算，算出错多少，再把这个错误反向传回参数，最后让优化器改一点参数。训练就是把这套循环重复很多次。</p>
 
       <div class="learning-goals">
         <strong>这节课结束时，你应该能做到：</strong>
         <ul>
-          <li>从头到尾讲清一次 训练步骤 的数据流。</li>
+          <li>从头到尾讲清一次训练步骤的数据流。</li>
           <li>知道 <code>model(x)</code>、<code>loss.backward()</code>、<code>optimizer.step()</code> 分别在做什么。</li>
           <li>理解为什么每轮通常要先 <code>zero_grad()</code>。</li>
           <li>看懂“单卡训练循环”以后，分布式训练到底多出来了什么问题。</li>
@@ -68,7 +68,7 @@
       <section class="article-section" id="loop">
         <div class="section-no">01 · THE WHOLE LOOP</div>
         <h2>先把训练看成一个不断重复的闭环。</h2>
-        <p>先不碰公式。一次最小训练 step 可以压缩成五件事：</p>
+        <p>先不碰公式。一次最小训练step可以压缩成五件事：</p>
         <div class="shape-flow training-flow">
           <div><small>1 · INPUT</small><code>x, target</code></div>
           <span>→</span>
@@ -83,20 +83,20 @@
           <span>→</span>
           <div><small>REPEAT</small><code>next batch</code></div>
         </div>
-        <p>真正训练一个大模型时，外面会套上数据加载、混合精度、梯度累积、分布式通信、checkpoint 等复杂系统；但最里面这个闭环没有变。</p>
-        <div class="concept-note"><p><strong>先记住一句：</strong>前向计算 产生预测，损失 衡量错误，反向传播 产生梯度，优化器 根据梯度修改参数。</p></div>
+        <p>真正训练一个大模型时，外面会套上数据加载、混合精度、梯度累积、分布式通信、checkpoint等复杂系统；但最里面这个闭环没有变。</p>
+        <div class="concept-note"><p><strong>先记住一句：</strong>前向计算产生预测，损失衡量错误，反向传播产生梯度，优化器根据梯度修改参数。</p></div>
       </section>
 
       <section class="article-section" id="toy">
         <div class="section-no">02 · A TINY PROBLEM</div>
         <h2>我们让一个只有两个参数的模型学会 <code>y = 2x + 1</code>。</h2>
-        <p>模型先完全不知道答案。我们只给它一个最简单的 Linear：</p>
+        <p>模型先完全不知道答案。我们只给它一个最简单的Linear：</p>
         <div class="shape-hero compact-shape">
           <div class="shape-expression">ŷ = wx + b</div>
           <div class="shape-legend">
             <div><b>w</b><small>一开始是随机值</small></div>
             <div><b>b</b><small>一开始也是随机值</small></div>
-            <div><b>goal</b><small>最后接近 w=2, b=1</small></div>
+            <div><b>goal</b><small>最后接近w=2, b=1</small></div>
           </div>
         </div>
         <p>训练的工作不是直接把 <code>w=2, b=1</code> 填进去，而是只告诉模型“你刚才预测得有多错”，让它根据梯度一步步靠近正确参数。</p>
@@ -129,30 +129,30 @@ for step in range(<span class="num">200</span>):
 print(model.weight.item(), model.bias.item())
 <span class="comment"># 应该逐渐接近 2 和 1</span></code></pre>
         </div>
-        <p>这里没有魔法。训练 200 次只是重复同一套数据流。现实里当然会换成成千上万个 批次，但核心顺序仍然相同。</p>
+        <p>这里没有魔法。训练200次只是重复同一套数据流。现实里当然会换成成千上万个批次，但核心顺序仍然相同。</p>
       </section>
 
       <section class="article-section" id="steps">
         <div class="section-no">04 · TRACE ONE STEP</div>
         <h2>把一轮训练逐行追一遍。</h2>
         <div class="why-grid">
-          <div class="why-card"><b>① 前向计算</b><p><code>prediction = model(x)</code>。输入经过 Linear，得到当前参数下的预测。为了之后反向传播，PyTorch 还会记录必要的计算关系。</p></div>
-          <div class="why-card"><b>② 损失</b><p><code>MSELoss</code> 把预测和真实 y 比较，压成一个标量 损失。损失 越大，说明当前预测越差。</p></div>
-          <div class="why-card"><b>③ zero_grad</b><p>PyTorch 默认会把新梯度累加到已有 <code>.grad</code> 上，所以普通训练 step 通常先清掉上一次的梯度。</p></div>
+          <div class="why-card"><b>① 前向计算</b><p><code>prediction = model(x)</code>。输入经过Linear，得到当前参数下的预测。为了之后反向传播，PyTorch还会记录必要的计算关系。</p></div>
+          <div class="why-card"><b>② 损失</b><p><code>MSELoss</code> 把预测和真实y比较，压成一个标量损失。损失越大，说明当前预测越差。</p></div>
+          <div class="why-card"><b>③ zero_grad</b><p>PyTorch默认会把新梯度累加到已有 <code>.grad</code> 上，所以普通训练step通常先清掉上一次的梯度。</p></div>
         </div>
         <div class="why-grid">
-          <div class="why-card"><b>④ 反向传播</b><p><code>loss.backward()</code> 从 损失 反向沿计算图计算每个可训练参数的梯度，结果放到参数的 <code>.grad</code> 中。</p></div>
-          <div class="why-card"><b>⑤ 优化器 step</b><p><code>optimizer.step()</code> 读取这些梯度，再按 随机梯度下降（SGD） 的更新规则修改参数。参数真的在这一行发生改变。</p></div>
-          <div class="why-card"><b>⑥ Repeat</b><p>参数变了一点，下一轮 前向计算 的 prediction 就会不同。只要更新方向总体有效，损失 会逐渐下降。</p></div>
+          <div class="why-card"><b>④ 反向传播</b><p><code>loss.backward()</code> 从损失反向沿计算图计算每个可训练参数的梯度，结果放到参数的 <code>.grad</code> 中。</p></div>
+          <div class="why-card"><b>⑤ 优化器step</b><p><code>optimizer.step()</code> 读取这些梯度，再按随机梯度下降（SGD）的更新规则修改参数。参数真的在这一行发生改变。</p></div>
+          <div class="why-card"><b>⑥ Repeat</b><p>参数变了一点，下一轮前向计算的prediction就会不同。只要更新方向总体有效，损失会逐渐下降。</p></div>
         </div>
       </section>
 
       <section class="article-section" id="inspect">
-        <div class="section-no">05 · WATCH 参数 MOVE</div>
-        <h2>别只盯 损失，直接看参数真的被改了。</h2>
+        <div class="section-no">05 · WATCH参数MOVE</div>
+        <h2>别只盯损失，直接看参数真的被改了。</h2>
         <p>你可以在训练前后打印参数：</p>
         <div class="code-block">
-          <div class="code-head"><span>debug habit</span><span>inspect 参数</span></div>
+          <div class="code-head"><span>debug habit</span><span>inspect参数</span></div>
           <pre><code>print(<span class="comment">"before"</span>, model.weight.item(), model.bias.item())
 
 <span class="comment"># ... run training loop ...</span>
@@ -160,37 +160,37 @@ print(model.weight.item(), model.bias.item())
 print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item())</code></pre>
         </div>
         <div class="example-grid">
-          <div class="example-card"><div class="cap">BEFORE</div><p><strong>随机参数。</strong> 例如 w≈-0.4、b≈0.2。预测自然很差，损失 比较大。</p></div>
-          <div class="example-card"><div class="cap">AFTER</div><p><strong>接近目标。</strong> 经过许多小步更新后，w 会逼近 2、b 会逼近 1，预测也越来越准。</p></div>
+          <div class="example-card"><div class="cap">BEFORE</div><p><strong>随机参数。</strong> 例如w≈-0.4、b≈0.2。预测自然很差，损失比较大。</p></div>
+          <div class="example-card"><div class="cap">AFTER</div><p><strong>接近目标。</strong> 经过许多小步更新后，w会逼近2、b会逼近1，预测也越来越准。</p></div>
         </div>
-        <p>以后调大模型时，“参数有没有 grad”“grad 是不是异常”“优化器 有没有真的 step”仍然是最基本的 debugging 思路，只是参数数量从 2 个变成几十亿个。</p>
+        <p>以后调大模型时，“参数有没有grad”“grad是不是异常”“优化器有没有真的step”仍然是最基本的debugging思路，只是参数数量从2个变成几十亿个。</p>
       </section>
 
       <section class="article-section" id="infra">
-        <div class="section-no">06 · INFRA 视图</div>
-        <h2>一旦模型和 批次 变大，这五步就都变成系统问题。</h2>
+        <div class="section-no">06 · INFRA视图</div>
+        <h2>一旦模型和批次变大，这五步就都变成系统问题。</h2>
         <div class="cost-panel">
-          <div><small>前向计算</small><b>需要算大量 通用矩阵乘法（GEMM），还要保存 反向传播 时会用到的 激活值。</b></div>
-          <div><small>反向传播</small><b>通常计算量很大，还会生成与参数相关的 梯度。</b></div>
-          <div><small>优化器</small><b>除了参数和梯度，还可能维护额外 优化器状态，占据大量显存。</b></div>
-          <div><small>DISTRIBUTED</small><b>多张 图形处理器（GPU） 各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
+          <div><small>前向计算</small><b>需要算大量通用矩阵乘法（GEMM），还要保存反向传播时会用到的激活值。</b></div>
+          <div><small>反向传播</small><b>通常计算量很大，还会生成与参数相关的梯度。</b></div>
+          <div><small>优化器</small><b>除了参数和梯度，还可能维护额外优化器状态，占据大量显存。</b></div>
+          <div><small>DISTRIBUTED</small><b>多张图形处理器（GPU）各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
         </div>
-        <p>这就是为什么我们先学训练循环再学 人工智能（AI） Infra。以后遇到 激活值 checkpointing、梯度累积、distributed 优化器、数据并行 时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
+        <p>这就是为什么我们先学训练循环再学人工智能（AI）Infra。以后遇到激活值checkpointing、梯度累积、分布式优化器、数据并行时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
       </section>
 
       <section class="article-section" id="distributed">
         <div class="section-no">07 · FIRST DISTRIBUTED QUESTION</div>
-        <h2>两张 GPU 各训练一半 批次，会发生什么？</h2>
+        <h2>两张GPU各训练一半批次，会发生什么？</h2>
         <div class="split-preview">
-          <div class="split-original"><small>GLOBAL 批次</small><code>8 samples</code></div>
-          <span>split 批次 →</span>
+          <div class="split-original"><small>GLOBAL批次</small><code>8 samples</code></div>
+          <span>split批次 →</span>
           <div class="split-gpus">
             <div><small>GPU 0</small><code>4 samples → grad₀</code></div>
             <div><small>GPU 1</small><code>4 samples → grad₁</code></div>
           </div>
         </div>
-        <p>如果两张 GPU 都拥有同一份模型参数，却各自只看一半数据，那么 反向传播 后会得到不同梯度。为了让两份模型继续保持一致，更新参数前通常要把各卡梯度聚合成一致的结果。</p>
-        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 数据并行 为什么会需要 梯度 synchronization，也是以后学习 <code>all-reduce</code> 的第一个真实动机。</p></div>
+        <p>如果两张GPU都拥有同一份模型参数，却各自只看一半数据，那么反向传播后会得到不同梯度。为了让两份模型继续保持一致，更新参数前通常要把各卡梯度聚合成一致的结果。</p>
+        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是数据并行为什么会需要梯度synchronization，也是以后学习 <code>all-reduce</code> 的第一个真实动机。</p></div>
       </section>
 
       <section class="checkpoint" id="checkpoint">
@@ -204,10 +204,10 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         <div class="quiz-item">
           <div class="quiz-q">2. 为什么普通训练循环里要调用 <code>zero_grad()</code>？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为 PyTorch 默认会累加梯度。如果不清零，本轮梯度会叠到之前的 <code>.grad</code> 上。梯度累积是有意利用这个机制，但普通 step 通常需要清零。</div>
+          <div class="quiz-a">因为PyTorch默认会累加梯度。如果不清零，本轮梯度会叠到之前的 <code>.grad</code> 上。梯度累积是有意利用这个机制，但普通step通常需要清零。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">3. 数据并行 中，两张 GPU 各算出自己的梯度以后，为什么通常不能各自直接更新？</div>
+          <div class="quiz-q">3. 数据并行中，两张GPU各算出自己的梯度以后，为什么通常不能各自直接更新？</div>
           <button class="quiz-toggle" type="button">看答案</button>
           <div class="quiz-a">因为它们看到的数据不同，梯度也不同。如果各自直接更新，参数副本就会逐渐分叉。通常需要先同步/聚合梯度，再让各卡做一致的参数更新。</div>
         </div>
@@ -230,7 +230,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
       </section>
 
       <a class="next-lesson" href="./autograd-optimizer.html">
-        <div><small>NEXT · 01.4</small><br /><strong>autograd 与 优化器：梯度从哪里来，显存又花在哪里？</strong></div>
+        <div><small>NEXT · 01.4</small><br /><strong>autograd与优化器：梯度从哪里来，显存又花在哪里？</strong></div>
         <span>→</span>
       </a>
     </main>
@@ -242,7 +242,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
       <a href="#code">完整代码</a>
       <a href="#steps">追踪一轮</a>
       <a href="#inspect">看参数变化</a>
-      <a href="#infra">Infra 视角</a>
+      <a href="#infra">Infra视角</a>
       <a href="#distributed">分布式伏笔</a>
       <a href="#checkpoint">Checkpoint</a>
     </aside>
