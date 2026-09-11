@@ -4,9 +4,10 @@
 Policy:
 - every lesson gets a final "本课术语表" before the next-lesson link;
 - every glossary-eligible abbreviation that appears in lesson prose is listed;
-- first substantive prose use is normalized for Chinese-first teaching:
-    中文名（ABBR）
+- prose is authored Chinese-first by humans; the script does not force an inline
+  expansion at the first occurrence;
 - English full names stay in the per-lesson term table for source/documentation lookup;
+- source-facing abbreviations and product names may remain concise in prose;
 - product names with no official expansion are never given a fake expansion.
 
 Run:
@@ -317,31 +318,14 @@ def found_terms(body: str) -> list[str]:
 
 
 def expand_first_uses(body: str, abbreviations: list[str]) -> str:
-    pending = [abbr for abbr in abbreviations if TERMS[abbr][3]]
-    if not pending:
-        return body
-    parts = []
-    for kind, text, blocked in tokenize_body(body):
-        if kind != "text" or blocked or not pending:
-            parts.append(text)
-            continue
-        resolved = []
-        for abbr in pending:
-            result = first_semantic_match(text, abbr)
-            if result is None:
-                continue
-            state, match = result
-            if state == "normalized":
-                resolved.append(abbr)
-                continue
-            replacement = normalized_form(abbr)
-            text = text[:match.start()] + replacement + text[match.end():]
-            resolved.append(abbr)
-        if resolved:
-            resolved_set = set(resolved)
-            pending = [abbr for abbr in pending if abbr not in resolved_set]
-        parts.append(text)
-    return "".join(parts)
+    """Preserve authored prose; terminology automation only maintains term tables.
+
+    Earlier versions rewrote the first visible acronym in every lesson into a
+    generated Chinese expansion. That made otherwise natural Chinese sentences
+    awkward and could undo manual language edits. First-use phrasing is now an
+    editorial choice; the per-lesson table remains the authoritative expansion.
+    """
+    return body
 
 
 def term_section(abbreviations: list[str]) -> str:
@@ -362,7 +346,7 @@ def term_section(abbreviations: list[str]) -> str:
         '<section class="lesson-terms" id="lesson-terms">\n'
         '        <div class="section-no">TERMS · 本课术语表</div>\n'
         '        <h2>本课出现的缩写与术语</h2>\n'
-        '        <p class="lesson-terms-intro">正文优先使用 <strong>中文名（缩写）</strong> 建立概念；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>\n'
+        '        <p class="lesson-terms-intro">正文以自然中文为主，必要的源码缩写与专名可以保留；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>\n'
         '        <div class="lesson-terms-scroll"><table class="lesson-terms-table">\n'
         '          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>\n'
         '          <tbody>\n' + "\n".join(rows) + '\n          </tbody>\n'
@@ -378,9 +362,8 @@ def normalize_html(source: str) -> str:
     body = TERM_SECTION_RE.sub("", m.group("body"))
     for legacy, current in LEGACY_NORMALIZED_FORMS.items():
         body = body.replace(legacy, current)
-    # Migrate the old English-first generated phrases before applying the new
-    # Chinese-first first-use rule. This keeps --write idempotent while allowing
-    # the whole site to move forward without hand-editing every acronym phrase.
+    # Migrate the old English-first generated phrases. First-use wording is now
+    # authored manually; automation only maintains the lesson term table.
     for abbr, (_, _, _, expand) in TERMS.items():
         if expand:
             body = body.replace(english_first_form(abbr), abbr)
