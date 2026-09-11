@@ -72,10 +72,12 @@ def teaching_text(path: Path) -> str:
     body = match.group("body") if match else source
     body = TERM_SECTION_RE.sub(" ", body)
     body = SKIP_BLOCK_RE.sub(" ", body)
-    body = HEADING_RE.sub(" ", body)
-    body = TAG_RE.sub(" ", body)
-    body = html.unescape(body)
-    return SPACE_RE.sub(" ", body).strip()
+    body = UI_BLOCK_RE.sub(" ", body)
+    chunks = []
+    for match in PROSE_RE.finditer(body):
+        item = TAG_RE.sub(" ", match.group(1))
+        chunks.append(html.unescape(item))
+    return SPACE_RE.sub(" ", " ".join(chunks)).strip()
 
 def standalone_pattern(term: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])", re.I)
