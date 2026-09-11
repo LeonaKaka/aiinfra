@@ -4,8 +4,9 @@
 Policy:
 - every lesson gets a final "本课术语表" before the next-lesson link;
 - every glossary-eligible abbreviation that appears in lesson prose is listed;
-- first substantive prose use is normalized to:
-    English Full Name (ABBR，中文名)
+- first substantive prose use is normalized for Chinese-first teaching:
+    中文名（ABBR）
+- English full names stay in the per-lesson term table for source/documentation lookup;
 - product names with no official expansion are never given a fake expansion.
 
 Run:
@@ -152,6 +153,12 @@ def discovery_pattern(abbr: str) -> re.Pattern[str]:
 
 
 def normalized_form(abbr: str) -> str:
+    _, chinese, _, expand = TERMS[abbr]
+    return f"{chinese}（{abbr}）" if expand else abbr
+
+
+def english_first_form(abbr: str) -> str:
+    """Return the old generated form so --write can migrate existing lessons."""
     english, chinese, _, expand = TERMS[abbr]
     return f"{english} ({abbr}，{chinese})" if expand else abbr
 
@@ -290,8 +297,7 @@ def expand_first_uses(body: str, abbreviations: list[str]) -> str:
             if state == "normalized":
                 resolved.append(abbr)
                 continue
-            english, chinese, _, _ = TERMS[abbr]
-            replacement = f"{english} ({abbr}，{chinese})"
+            replacement = normalized_form(abbr)
             text = text[:match.start()] + replacement + text[match.end():]
             resolved.append(abbr)
         if resolved:
@@ -319,7 +325,7 @@ def term_section(abbreviations: list[str]) -> str:
         '<section class="lesson-terms" id="lesson-terms">\n'
         '        <div class="section-no">TERMS · 本课术语表</div>\n'
         '        <h2>本课出现的缩写与术语</h2>\n'
-        '        <p class="lesson-terms-intro">第一次在正文使用时采用 <strong>English Full Name (ABBR，中文名)</strong>；这里集中复习，避免学习时来回跳总站 Glossary。</p>\n'
+        '        <p class="lesson-terms-intro">正文优先使用 <strong>中文名（缩写）</strong> 建立概念；完整英文名集中放在这里，便于继续阅读英文文档与源码。</p>\n'
         '        <div class="lesson-terms-scroll"><table class="lesson-terms-table">\n'
         '          <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>\n'
         '          <tbody>\n' + "\n".join(rows) + '\n          </tbody>\n'
@@ -335,6 +341,12 @@ def normalize_html(source: str) -> str:
     body = TERM_SECTION_RE.sub("", m.group("body"))
     for legacy, current in LEGACY_NORMALIZED_FORMS.items():
         body = body.replace(legacy, current)
+    # Migrate the old English-first generated phrases before applying the new
+    # Chinese-first first-use rule. This keeps --write idempotent while allowing
+    # the whole site to move forward without hand-editing every acronym phrase.
+    for abbr, (_, _, _, expand) in TERMS.items():
+        if expand:
+            body = body.replace(english_first_form(abbr), abbr)
     abbreviations = found_terms(body)
     body = expand_first_uses(body, abbreviations)
     abbreviations = found_terms(body)
