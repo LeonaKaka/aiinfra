@@ -37,7 +37,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释计算受限（<code>compute-bound</code>）、带宽受限（<code>memory-bound</code>）、通信受限（<code>communication-bound</code>）。</li><li>理解算术强度为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解通信与计算重叠的收益上限，并把它连接到 Megatron。</li><li>解释为什么大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
 
       <section class="article-section" id="triad">
-        <div class="section-no">01 · THREE DIFFERENT CEILINGS</div>
+        <div class="section-no">01 · 三种不同上限</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
         <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / 算术逻辑单元（ALU） 能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但高带宽内存（HBM） / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective、点对点通信（P2P） 或网络传输。</span></div></div>
         <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：计算受限（计算受限） 更关注更快的通用矩阵乘法（GEMM）、precision 和 kernel；带宽受限（带宽受限） 更关注少搬数据、fusion、复用；通信受限（通信受限） 更关注通信量、拓扑、collective 算法和 overlap。</p>
@@ -45,7 +45,7 @@
       </section>
 
       <section class="article-section" id="intensity">
-        <div class="section-no">02 · ARITHMETIC INTENSITY</div>
+        <div class="section-no">02 · 算术强度</div>
         <h2>判断计算还是内存，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
         <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分动态随机存取存储器（DRAM）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
         <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受内存带宽限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入计算受限（计算受限） 区域。</span></div></div>
@@ -53,7 +53,7 @@
       </section>
 
       <section class="article-section" id="roofline">
-        <div class="section-no">03 · A MINIMAL ROOFLINE</div>
+        <div class="section-no">03 · 一个最小 Roofline 心智模型</div>
         <h2>Roofline 只是把两个上限画在一张图上。</h2>
         <p>横轴是算术强度，纵轴是能达到的计算性能。极简版可以想成：</p>
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
@@ -79,7 +79,7 @@
       </section>
 
       <section class="article-section" id="launch">
-        <div class="section-no">06 · A FOURTH THING YOU MUST NOT FORGET</div>
+        <div class="section-no">06 · 还有一个不能忘的成本：内核启动</div>
         <h2>有时既没吃满计算，也没吃满带宽：工作可能太碎了。</h2>
         <p>每次 CUDA kernel 启动都有调度/提交开销。大量非常短的小 kernel 会让 GPU 时间线出现很多缝隙；CPU、Python、调度器也可能来不及持续喂工作。</p>
         <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">启动</span><span class="launch">启动</span><span class="launch">启动</span></div><div class="gpu-line"><small>GPU</small><span class="work a">tiny A</span><span class="work b">tiny B</span></div></div>
@@ -96,7 +96,7 @@
       </section>
 
       <section class="article-section" id="overlap">
-        <div class="section-no">08 · HIDE COMMUNICATION BEHIND 计算</div>
+        <div class="section-no">08 · 把通信藏到计算后面</div>
         <h2>Megatron 很多优化的关键词：不要傻等通信。</h2>
         <p>假设一次 step 有 60ms 计算和 40ms communication。如果完全串行，就是 100ms。若依赖关系允许把一部分通信和计算同时进行，理想上总时间可以更接近两者较大的那个，而不是简单相加。</p>
         <div class="serial-overlap"><div><small>SERIAL</small><div class="bar-track"><span class="bar-compute">计算 · 60</span><span class="bar-comm">comm · 40</span></div></div><div><small>OVERLAP</small><div class="overlap-track"><span class="bar-compute">计算</span><span class="bar-comm">comm hidden</span></div></div></div>
@@ -105,7 +105,7 @@
       </section>
 
       <section class="article-section" id="prefill-decode">
-        <div class="section-no">09 · WHY VLLM CARES ABOUT BATCHING</div>
+        <div class="section-no">09 · 为什么 vLLM 很在意批处理</div>
         <h2>LLM 推理里，Prefill 和 Decode 常常不是同一种性能问题。</h2>
         <div class="prefill-decode-pressure"><div><small>PREFILL</small><b>很多 token 一起算</b><span>Prompt 一次送进大量 token，大矩阵乘更容易形成高效 GEMM，通常更有机会把计算吃起来。</span></div><div><small>DECODE</small><b>每个请求每步只新增少量 token</b><span>单请求很难形成足够大的矩阵；模型权重需要反复被读取，常更容易受到内存带宽、批次大小、键-值（KV） 访问等因素限制。</span></div></div>
         <p>这不是“Prefill 永远计算受限（计算受限）、Decode 永远带宽受限（带宽受限）”的绝对定律。批次大小、模型结构、quantization、hardware、kernel 都会改变瓶颈。但它给了我们一个极其重要的 vLLM 直觉：</p>
@@ -113,7 +113,7 @@
       </section>
 
       <section class="article-section" id="profile">
-        <div class="section-no">10 · HOW TO LOOK AT A REAL SYSTEM</div>
+        <div class="section-no">10 · 怎样分析真实系统</div>
         <h2>不要靠猜，用不同 profiler 回答不同层级的问题。</h2>
         <p>时间线里你会频繁看到 NVIDIA 集体通信库（NCCL） 发起的 collective / P2P；它是通信软件层，不是 NVLink、InfiniBand 或以太网链路本身。</p>
         <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems</b><span>看 CPU、CUDA kernels、NCCL、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight 计算</b><span>看某个 kernel 的计算 / 内存吞吐量、occupancy、roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler</b><span>把 Python/PyTorch op 和 CUDA activities 对起来，定位模型级热点。</span></div></div>
@@ -121,7 +121,7 @@
       </section>
 
       <section class="article-section" id="bridge">
-        <div class="section-no">11 · THE ROAD AHEAD</div>
+        <div class="section-no">11 · 下一步去哪里</div>
         <h2>GPU Systems 到这里结束，下一模块开始研究“通信到底怎么发生”。</h2>
         <p>推理侧后面还会遇到 Prefill/Decode 分离（P/D）：把两阶段放到不同资源池后，除了调度，还要为 KV 交接支付新的通信成本。</p>
         <div class="bridge-grid"><div><small>TRAINING · MEGATRON</small><b>计算 + communication</b><span>TP/流水线并行（PP）/数据并行（DP） 把工作拆开；NCCL collectives 搬数据；overlap 尽量把通信藏起来；parallel size 还会改变 local GEMM efficiency。</span></div><div><small>INFERENCE · vLLM</small><b>内存 + 调度 + communication</b><span>continuous batching 提高利用率；Paged KV 管 HBM；P/D 与 KV Connector 再引入跨设备/节点数据传输。</span></div></div>
