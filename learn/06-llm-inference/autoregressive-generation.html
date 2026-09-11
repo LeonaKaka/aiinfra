@@ -81,7 +81,7 @@
         <h2>端到端 2 秒不能告诉你：用户是在等第一字，还是后面输出一卡一卡。</h2>
         <div class="metric-grid"><div><small>TTFT</small><b>Time To First Token</b><span>request 发出/进入测量范围到第一个输出 token 的时间。排队、Prefill、路由等都可能贡献；具体起点看基准测试。</span></div><div><small>ITL</small><b>Inter-Token 延迟</b><span>相邻输出 token 到达之间的时间间隔，可以形成 p50 / p95 / p99 等分布，直接描述流式输出节奏。</span></div><div><small>TPOT</small><b>Time Per Output Token</b><span>生成阶段平均每个输出 token 的时间。常见基准测试会单独报告 mean / median / percentiles；具体计算方式仍应看工具定义。</span></div></div>
         <p>当前 vLLM 在线推理基准测试也把 <code>TTFT</code>、<code>TPOT</code>、<code>ITL</code> 分成三组统计，同时另外报告request throughput、output-token throughput和 end-to-end latency。这个区分很重要：<strong>延迟是用户侧体验，吞吐量是系统整体产能，它们常常存在 trade-off。</strong></p>
-        <div class="source-note">当前 vLLM 基准测试源码：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/benchmarks/serve.py">vllm/基准测试s/serve.py</a>，<code>BenchmarkMetrics</code> 分别维护 TTFT / TPOT / ITL 的 mean、median、std 与 percentiles。</div>
+        <div class="source-note">当前 vLLM 基准测试源码：<a href="https://github.com/vllm-project/vllm/blob/main/vllm/benchmarks/serve.py">vllm/benchmarks/serve.py</a>，<code>BenchmarkMetrics</code> 分别维护 TTFT / TPOT / ITL 的 mean、median、std 与 percentiles。</div>
       </section>
 
       <section class="article-section" id="bridge">
