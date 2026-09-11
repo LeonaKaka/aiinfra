@@ -44,11 +44,11 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>TP × DP</span></div>
-    <div class="lab-kicker">LAB A6 · 2D PROCESS GROUPS</div>
+    <div class="lab-kicker">LAB A6 · 二维进程组</div>
     <h1>一个 global rank 可以同时属于多个“世界”。<br />TP 通信和 DP 通信绝不能混在一起。</h1>
     <p class="dek">前五个训练实验每次只盯一个并行维度。真正的 Megatron 会同时有 TP、DP、PP、CP、EP。这里先做最小二维拓扑：4 个进程组成 TP=2 × DP=2。每个 DP 副本内，两张卡一起算同一个样本的 TP layer；而相同 TP 分片的两个副本，再通过另一组 DP 进程组同步参数梯度。</p>
 
-    <section class="lab-section" id="topology"><div class="lab-kicker">01 · DRAW THE GROUPS</div><h2>同样四个 rank，按不同问题会被切成两套进程组。</h2>
+    <section class="lab-section" id="topology"><div class="lab-kicker">01 · 先画出进程组</div><h2>同样四个 rank，按不同问题会被切成两套进程组。</h2>
       <div class="command"><div class="command-head"><span>GLOBAL RANKS</span><span>TP=2 · DP=2</span></div><pre>                 TP rank 0     TP rank 1
 DP replica 0        R0  ←──TP──→  R1
                     ↑             ↑
@@ -61,7 +61,7 @@ DP groups = [0,2] [1,3]</pre></div>
       <p>R0 的身份不是单纯“global rank 0”。它同时是 <strong>TP 进程组 [0,1] 的 TP-rank 0</strong>，也是 <strong>DP 进程组 [0,2] 的 DP-rank 0</strong>。后面看 Megatron 的 <code>get_tensor_model_parallel_group()</code> / data-parallel 进程组时，必须带着这种二维坐标思考。</p>
     </section>
 
-    <section class="lab-section" id="flows"><div class="lab-kicker">02 · TWO DIFFERENT COLLECTIVES</div><h2>同一个反向传播里，两个 all-reduce 回答的是完全不同的问题。</h2>
+    <section class="lab-section" id="flows"><div class="lab-kicker">02 · 两种不同集合通信</div><h2>同一个反向传播里，两个 all-reduce 回答的是完全不同的问题。</h2>
       <div class="stage-flow">
         <div class="stage-card train"><small>TP 进程组</small><b>[0,1] or [2,3]</b><span>Row-parallel 输出 partial y 要求和；dX 也是来自不同 weight 分片的 contribution，要在副本内求和。</span></div>
         <div class="stage-card comm"><small>LOCAL 分片 GRAD</small><b>dW1[t] · dW2[t]</b><span>参数梯度本身仍属于 TP 分片 t，不需要和另一个 TP 分片拼成同一个梯度 tensor。</span></div>
@@ -70,7 +70,7 @@ DP groups = [0,2] [1,3]</pre></div>
       <p>这是理解多维并行最重要的一条：<strong>先问这次 collective 在哪个 process 进程组里，再问它是什么 collective。</strong>只看到 <code>all_reduce</code> 这个函数名，不足以知道它在解决什么问题。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>4 个 Gloo ranks 实际跑通，两个 TP 分片的 global 梯度都与 dense reference 对齐。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · 运行并验证</div><h2>4 个 Gloo ranks 实际跑通，两个 TP 分片的 global 梯度都与 dense reference 对齐。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>4 ranks</span></div><pre>torchrun --standalone --nproc-per-node=4 \
   labs/code/mini_tp_dp_2d.py</pre></div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>verified</span></div><pre>backend=gloo world_size=4 TP=2 DP=2
@@ -84,12 +84,12 @@ PASS</pre></div>
       <a class="code-link" href="./code/mini_tp_dp_2d.py"><div><small>FULL SOURCE</small><b>打开 mini_tp_dp_2d.py</b></div><span>→</span></a>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>现在 <code>parallel_state.py</code> 不再是“初始化样板代码”，而是一张通信坐标系。</h2>
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · 映射到 Megatron</div><h2>现在 <code>parallel_state.py</code> 不再是“初始化样板代码”，而是一张通信坐标系。</h2>
       <div class="source-bridge"><div><small>OUR LAB</small><b>global rank → (dp_rank, tp_rank)</b><code>new_group(TP rows) · new_group(DP columns)</code></div><span>maps to →</span><div><small>MEGATRON</small><b>core/parallel_state.py</b><code>TP / DP / PP / CP / EP groups and ranks</code></div></div>
       <p>之后读 <code>tensor_parallel/</code> 时只盯 TP 进程组；读 <code>distributed_data_parallel.py</code> / distributed 优化器时，再追 DP / DP+CP 等进程组。真实 Megatron 的拓扑远比 2×2 丰富，但所有复杂组合都建立在“一个 rank 同时处于多个正交进程组”这个概念上。</p>
     </section>
 
-    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · CHECKPOINT</div><h2>如果这四问能不看答案说清，Megatron 的并行坐标系就真正建立了。</h2>
+    <section class="lab-section" id="checkpoint"><div class="lab-kicker">05 · 检查点</div><h2>如果这四问能不看答案说清，Megatron 的并行坐标系就真正建立了。</h2>
       <div class="check-list"><div>① R1 的 TP peers 是谁？DP peers 又是谁？</div><div>② Row Parallel 的局部输出为什么不能去 DP 进程组求和？</div><div>③ R0 的 dW1 分片应该和 R1 还是 R2 同步？为什么？</div><div>④ 如果再加 PP=2，global world size 至少怎样继续乘上去？</div></div>
     </section>
 
