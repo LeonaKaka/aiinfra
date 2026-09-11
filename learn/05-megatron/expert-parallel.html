@@ -35,7 +35,7 @@
       <h1>专家并行（EP）：路由器一旦把 token 指向远端专家，通信为什么会变成多对多？</h1>
       <p class="dek">稠密 MLP 是“所有 token 都经过同一组权重”。混合专家模型（MoE）则由路由器给每个 token 选择少数专家，只执行被选中的专家 MLP。专家并行再把专家集合分到不同 rank。于是系统问题不再是“把同一个张量求和”，而是“每个 token 应该发给哪个专家，以及那个专家位于哪个 rank”。All-to-All 会自然出现，但它只是分发器的一种实现，不是专家并行（EP）的定义。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE 层 = 路由器 + 专家 + 稀疏的 token→专家分配关系。</li><li>区分三种不同语义：逻辑 token 归属、专家参数归属、临时计算归属。</li><li>从路由推导多对多数据移动为什么适合 All-to-All。</li><li>看懂分发 → local 专家通用矩阵乘法（GEMM） → 合并 → 恢复 token 顺序的完整生命周期。</li><li>知道当前 Megatron 训练分发器当前支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，且 <code>flex</code> 后端当前包括 DeepEP / HybridEP / NVIDIA 集体通信库（NCCL）-EP。</li><li>理解稠密并行网格与专家 grid 是两套 rank 生成器视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道负载均衡解决路由分布不均，分组 GEMM 则优化本地专家计算；两者不是同一个问题。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE 层 = 路由器 + 专家 + 稀疏的 token→专家分配关系。</li><li>区分三种不同语义：逻辑 token 归属、专家参数归属、临时计算归属。</li><li>从路由推导多对多数据移动为什么适合 All-to-All。</li><li>看懂分发 → 本地专家 GEMM → 合并 → 恢复 token 顺序的完整生命周期。</li><li>知道当前 Megatron 训练分发器支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，且 <code>flex</code> 后端当前包括 DeepEP / HybridEP / NVIDIA 集体通信库（NCCL）-EP。</li><li>理解稠密并行网格与专家并行网格是两套 rank 生成视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道负载均衡解决路由分布不均，分组 GEMM 则优化本地专家计算；两者不是同一个问题。</li></ul></div>
 
       <section class="article-section" id="moe">
         <div class="section-no">01 · DENSE MLP → MIXTURE OF EXPERTS</div>
