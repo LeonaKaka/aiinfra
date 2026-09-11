@@ -53,7 +53,7 @@
 
       <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约35 min</span></div>
       <h1>张量到底是什么？</h1>
-      <p class="dek">先别急着记 PyTorch API。AI Infra 里最先要学会的，其实是一种“看 tensor”的能力：它现在是什么 shape、下一步会变成什么 shape、占多少 memory、如果切到多张 GPU 上该怎么切。</p>
+      <p class="dek">先别急着记 PyTorch API（应用程序编程接口：软件组件之间约定的调用方式）。AI（人工智能：这里指大模型训练与推理所服务的计算领域） Infra 里最先要学会“看 tensor（张量：多维数组，是模型中数据和参数的基本载体）”：先看 shape（形状：描述每一维的长度），再估算 memory（内存：保存数据和模型状态的存储空间），最后判断是否要切到多张 GPU（图形处理器：执行大规模并行计算的主要设备）。</p>
 
       <div class="learning-goals">
         <strong>这节课结束时，你应该能做到：</strong>
@@ -79,13 +79,13 @@
         </div>
 
         <p>严格说，标量、向量、矩阵也都可以看作张量，只是维数分别是0、1、2。深度学习里我们经常处理3维、4维甚至更高维的数据，所以大家统一叫张量。</p>
-        <div class="concept-note"><p><strong>Infra 视角：</strong>tensor 里的数值当然重要，但系统工程里你会频繁直接检查三个属性：<strong><code>shape</code>、<code>dtype</code>、<code>device</code></strong>。它们和下面 PyTorch 代码中的属性名完全一致。</p></div>
+        <div class="concept-note"><p><strong>Infra 视角：</strong>tensor 里的数值当然重要，但系统工程里会频繁直接检查 <code>shape</code>、<code>dtype</code>（数据类型：规定每个元素用什么数值格式存储）和 <code>device</code>（设备：表示 tensor 当前位于 CPU、哪张 GPU 或其它设备）。这些名字和下面 PyTorch 代码中的属性名完全一致。</p></div>
       </section>
 
       <section class="article-section" id="shape">
         <div class="section-no">02 · 第一件事：看形状</div>
         <h2><code>[B, S, H]</code> 是以后最常见的三维形状。</h2>
-        <p>先看Transformer里非常典型的一块数据。假设它的形状是：</p>
+        <p>先看 Transformer 里非常典型的一块数据。先认识四个名字：token（词元：语言模型处理文本时使用的基本离散单位）、batch（批次：一次并行送入模型处理的一组样本）、sequence（序列：按顺序排列的一串词元）和 hidden dimension（隐藏维度：每个 token 隐藏表示的向量宽度）。假设这块 tensor 的 shape 是：</p>
 
         <div class="shape-hero">
           <div class="shape-expression">X.shape = [<span class="b">B</span>, <span class="s">S</span>, <span class="h">H</span>]</div>
@@ -133,8 +133,8 @@ print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code>
         <p>现在你第一次看到了刚才说的三个 PyTorch 属性：</p>
         <div class="why-grid">
           <div class="why-card"><b><code>shape</code></b><p>给出各个维度的长度；总元素数由这些维度长度的乘积决定。它决定后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
-          <div class="why-card"><b><code>dtype</code></b><p>每个数字用 <code>FP32</code>、<code>FP16</code>、<code>BF16</code> 还是别的格式存。它直接影响显存占用和计算性能。</p></div>
-          <div class="why-card"><b><code>device</code></b><p>这块数据现在在 CPU、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
+          <div class="why-card"><b><code>dtype</code></b><p>每个数字可以用 <code>FP32</code>（32 位浮点：每个元素通常占 4 bytes）、<code>FP16</code>（16 位浮点：常用于降低显存并提升矩阵计算吞吐）、<code>BF16</code>（BF16 16 位浮点：指数范围更接近 FP32）等格式存。它直接影响显存占用和计算性能。</p></div>
+          <div class="why-card"><b><code>device</code></b><p>这块数据现在在 CPU（中央处理器：主要承担控制流、数据准备与部分通信控制）、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
         </div>
       </section>
 
@@ -156,8 +156,8 @@ if FP16: 80 × 2 bytes = 160 bytes</code></pre>
       <section class="article-section" id="storage-layout">
         <div class="section-no">05 · 存储、视图与步长</div>
         <h2>同一个 shape，不一定以同一种 layout 躺在内存里。</h2>
-        <p>到目前为止，我们一直把张量当成“带形状的数字块”。这对读模型计算已经够用，但读 AI Infra 还差一层：<strong><code>shape</code> 描述逻辑索引空间，<code>storage/layout</code> 描述这些元素怎样映射到底层内存。</strong>两块 tensor 可以拥有相同 <code>shape</code>，却有不同 <code>stride</code>，甚至共享同一块 <code>storage</code>。</p>
-        <div class="code-block"><div class="code-head"><span>python</span><span>shape vs layout</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
+        <p>到目前为止，我们一直把 tensor 当成“带 shape 的数字块”。读 AI Infra 还差一层：<code>storage</code>（底层存储：真正承载 tensor 数据的内存区域）决定数据实际放在哪里；<code>layout</code>（内存布局：描述逻辑维度怎样映射到底层存储）和 <code>stride</code>（步长：某一维索引增加 1 时底层地址跨多少元素）描述怎样访问它。两块 tensor 可以拥有相同 <code>shape</code>，却有不同 <code>stride</code>，甚至共享同一块 <code>storage</code>。</p>
+        <p>下面代码还会遇到 <code>reshape</code>（重塑形状：在元素总数不变时改变 tensor 的逻辑 shape）、<code>transpose</code>（转置维度：交换 tensor 的维度顺序而不必立即复制数据）和 <code>contiguous</code>（连续存储：表示数据是否按当前逻辑维度顺序连续排列）。</p><div class="code-block"><div class="code-head"><span>python</span><span>shape vs layout</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
 y = x.transpose(0, 1)
 
 print(x.shape, x.stride())  <span class="comment"># [3,4], (4,1)</span>
@@ -167,11 +167,11 @@ print(y.is_contiguous())    <span class="comment"># False</span>
 z = y.contiguous()
 print(z.stride())           <span class="comment"># materialize a contiguous layout</span></code></pre></div>
         <div class="why-grid">
-          <div class="why-card"><b><code>storage</code></b><p>底层真正拥有内存的分配。多个 tensor/view 可以引用同一块 storage，而不是每次都复制数据。</p></div>
+          <div class="why-card"><b><code>storage</code></b><p>多个 tensor 可以通过 <code>view</code>（视图：共享底层 storage、但用不同逻辑 shape 解释数据）引用同一块 storage，而不是每次都复制数据。</p></div>
           <div class="why-card"><b><code>stride</code></b><p>某一维索引增加 1 时，在底层 storage 里要跨过多少个元素。它把“逻辑坐标”映射到“物理位置”。</p></div>
-          <div class="why-card"><b><code>contiguous</code></b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel 或 transfer path 可以处理任意 stride，另一些路径会要求或更偏好 contiguous buffer。</p></div>
+          <div class="why-card"><b><code>contiguous</code></b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel（GPU 内核：一次提交到 GPU 上执行的计算程序）或 transfer path 可以处理任意 stride，另一些路径会要求或更偏好 contiguous buffer（缓冲区：暂存 tensor 或传输数据的一块内存）。</p></div>
         </div>
-        <p><code>transpose</code> 常常只改变视图的形状/步长，而不立即复制存储；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 <code>reshape</code>、<code>permute</code>、<code>view</code>、<code>copy</code> 时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
+        <p><code>transpose</code> 常常只改变 view 的 shape/stride，而不立即复制 storage；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 <code>permute</code>（维度重排：重新排列 tensor 各维度的顺序）和 <code>copy</code>（复制：真正生成一份新的数据副本）时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
         <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的 <code>block table</code> 和 08.4 的 registered memory / transfer region，都会把“逻辑 tensor”继续落到更具体的 address、offset、stride 与 lifetime。现在先建立一个底线：<strong>logical shape ≠ physical layout</strong>。</p></div>
       </section>
 
