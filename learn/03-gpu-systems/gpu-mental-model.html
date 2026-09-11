@@ -36,7 +36,7 @@
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 CPU 主存（主机内存）与 GPU 显存（设备显存）的角色，并知道高带宽内存（HBM）和 GDDR 是具体显存技术。</li><li>知道 PyTorch 的 CUDA 操作最终会启动 GPU 内核（kernel），而不是 Python 自己在算矩阵。</li><li>理解流式多处理器（SM）、Tensor Core、GPU 显存、高速外设组件互连（PCIe）/NVLink 分别大致处在什么位置。</li><li>知道 GPU 工作通常具有异步执行特征，为什么计时常需要显式同步（例如 <code>torch.cuda.synchronize()</code>）。</li><li>面对“GPU 利用率不高”时不再只想到“GPU 算力不够”。</li></ul></div>
 
       <section class="article-section" id="machine">
-        <div class="section-no">01 · ONE MACHINE, TWO 内存 WORLDS</div>
+        <div class="section-no">01 · 一台机器里有两套内存世界</div>
         <h2>先把一台 AI 机器想成 CPU 世界和 GPU 世界。</h2>
         <div class="machine-map">
           <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · 调度器 · dataloader</span><div class="memory-box"><small>SYSTEM 内存</small><strong>随机存取存储器（RAM）</strong></div></div>
@@ -52,7 +52,7 @@ print(x.device)                    <span class="comment"># cuda:0</span></code><
       </section>
 
       <section class="article-section" id="inside">
-        <div class="section-no">02 · INSIDE THE GPU</div>
+        <div class="section-no">02 · GPU 里面有什么</div>
         <h2>GPU 不是“一颗超级核心”，而是大量并行执行资源。</h2>
         <p>不同 NVIDIA 架构细节会变化，但为了学 Infra，可以先用下面这个抽象：</p>
         <div class="gpu-anatomy"><div class="gpu-shell"><small>GPU</small><div class="sm-grid"><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div><div><b>…</b><span>many more</span></div><div><b>SM</b><span>CUDA cores</span><span>Tensor Cores</span></div></div><div class="hbm-band"><small>GPU 设备显存</small><b>HBM / GDDR</b></div></div></div>
@@ -61,7 +61,7 @@ print(x.device)                    <span class="comment"># cuda:0</span></code><
       </section>
 
       <section class="article-section" id="kernel">
-        <div class="section-no">03 · WHAT IS A CUDA KERNEL</div>
+        <div class="section-no">03 · 什么是 CUDA Kernel</div>
         <h2>你写一行 PyTorch，GPU 看到的往往是一串 kernel 启动es。</h2>
         <p>例如：</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>high level</span></div><pre><code>Y = X @ W
@@ -72,14 +72,14 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
       </section>
 
       <section class="article-section" id="tensor-core">
-        <div class="section-no">04 · WHY TENSOR CORES MATTER</div>
+        <div class="section-no">04 · 为什么 Tensor Core 重要</div>
         <h2>大模型里的 GEMM，正好是 Tensor Cores 擅长的工作。</h2>
         <p>Tensor Cores 针对特定数据类型和矩阵乘加模式提供很高吞吐。于是模型训练/推理会大量使用 16 位浮点（FP16）、BF16 16 位浮点（BF16）、8 位浮点（FP8） 等较低精度格式，并把 Linear/Attention/多层感知机（MLP） 尽量变成高效的大矩阵运算。</p>
         <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>查询-键-值（QKV） PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
       </section>
 
       <section class="article-section" id="hbm">
-        <div class="section-no">05 · 计算 NEEDS DATA</div>
+        <div class="section-no">05 · 计算之前先要把数据送到位</div>
         <h2>算力再高，如果数据没及时到计算单元，GPU 也只能等。</h2>
         <p>权重、activation、键-值（KV） Cache 等大部分数据常驻在 GPU 显存（设备显存）；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在内存层级之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
         <div class="compare-limits"><div><small>计算</small><b>算得不够快</b><span>Tensor Core / 算术逻辑单元（ALU） 是瓶颈</span></div><div><small>内存</small><b>喂数据不够快</b><span>内存带宽 / data movement 是瓶颈</span></div></div>
@@ -87,7 +87,7 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
       </section>
 
       <section class="article-section" id="async">
-        <div class="section-no">06 · ASYNCHRONOUS EXECUTION</div>
+        <div class="section-no">06 · 异步执行</div>
         <h2>CPU 发出 GPU 工作后，很多 CUDA 操作不会原地傻等 GPU 完成。</h2>
         <p>在常见 PyTorch CUDA 工作流里，CPU 可以把工作提交到 CUDA stream，然后继续往下执行。这样 CPU 启动与 GPU execution 能重叠，但也带来一个新手最容易踩的坑：<strong>直接用 CPU 时钟包住 CUDA 操作，可能只量到“提交工作”的时间。</strong></p>
         <div class="timeline"><div class="cpu-line"><small>CPU</small><span class="launch">启动 A</span><span class="launch">启动 B</span><span class="free">other work</span></div><div class="gpu-line"><small>GPU</small><span class="work a">kernel A</span><span class="work b">kernel B</span></div></div>
@@ -103,7 +103,7 @@ elapsed = time.perf_counter() - start</code></pre></div>
       </section>
 
       <section class="article-section" id="multi-gpu">
-        <div class="section-no">07 · TWO GPUS ARE TWO DEVICES</div>
+        <div class="section-no">07 · 两张 GPU 就是两个独立设备</div>
         <h2><code>cuda:0</code> 和 <code>cuda:1</code> 不是一个更大的共享显存池。</h2>
         <div class="two-gpu"><div><small>GPU 0</small><b>设备显存 0</b><span>X lives here</span></div><div class="gpu-link"><span>NVLink / PCIe / fabric</span><i></i></div><div><small>GPU 1</small><b>设备显存 1</b><span>W lives here</span></div></div>
         <p>如果某个计算需要 GPU 1 用到 GPU 0 上的数据，就必须存在某种数据移动/通信路径。框架、NCCL、点对点通信（P2P）、collective 通信等会帮你完成，但代价不会凭空消失。</p>
@@ -111,14 +111,14 @@ elapsed = time.perf_counter() - start</code></pre></div>
       </section>
 
       <section class="article-section" id="utilization">
-        <div class="section-no">08 · WHY A GPU CAN LOOK IDLE</div>
+        <div class="section-no">08 · 为什么 GPU 看起来会很闲</div>
         <h2>GPU 没跑满，不代表唯一答案是“模型太小”。</h2>
         <div class="stall-grid"><div><b>CPU / 启动</b><span>CPU 没及时提交足够工作</span></div><div><b>内存</b><span>kernel 在等 device-内存数据</span></div><div><b>Communication</b><span>GPU 在等其它 ranks / network</span></div><div><b>Synchronization</b><span>某个 barrier / dependency 阻塞</span></div><div><b>Small kernels</b><span>工作太碎，启动开销占比高</span></div><div><b>Load imbalance</b><span>不同 GPU 工作量不均</span></div></div>
         <p>后面读 Megatron 的通信与计算重叠、读 vLLM 的 batching/调度器，本质上都在想办法减少这些“昂贵 GPU 没在做有效计算”的时间。</p>
       </section>
 
       <section class="article-section" id="bridge">
-        <div class="section-no">09 · CONNECT THE ROADMAP</div>
+        <div class="section-no">09 · 把这一课接回整条路线</div>
         <h2>把今天的硬件词，放回我们的两条终点路线。</h2>
         <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → overlap</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in 设备显存 → 调度器 feeds kernels → KV 传输 across devices/nodes</span></div></div>
         <p>之后再看到 “NCCL all-reduce”“GPUDirect 远程直接内存访问（RDMA）”“NVIDIA 推理传输库（NIXL）”，不要把它们当成凭空冒出来的新技术。它们都在解决同一个非常具体的问题：<strong>让数据在正确的时间，到正确的设备和内存位置。</strong></p>
