@@ -87,16 +87,16 @@ memory = 268,435,456 bytes
       <section class="article-section" id="optimizer">
         <div class="section-no">05 · 优化器状态</div>
         <h2>Adam 为什么显存贵？因为每个参数背后不只存“这个参数自己”。</h2>
-        <p>以常见 Adam/AdamW 心智模型为例，优化器会为参数维护一阶动量 <code>m</code> 和二阶动量 <code>v</code>。很多混合精度训练配置会用 FP32 保存这些状态；某些实现还会保留 FP32 master weight。</p>
-        <div class="state-stack"><div><small>MODEL WEIGHT</small><b>parameter</b><code>e.g. BF16 · 2B</code></div><div><small>GRADIENT</small><b>grad</b><code>e.g. BF16 · 2B</code></div><div><small>ADAM</small><b>m + v</b><code>often 4B + 4B</code></div><div class="optional"><small>SOME SETUPS</small><b>master weight</b><code>possibly FP32 · 4B</code></div></div>
-        <p>于是你会经常听到“混合精度 Adam 训练大约 16 bytes/parameter”这种说法：2B weight + 2B grad + 8B Adam states + 4B master weight = 16B。<strong>这个数字只适用于某些实现假设。</strong>现代优化器、precision 策略、FSDP（全分片数据并行：在数据并行域进一步分片参数、梯度或优化器状态的训练方式）/零冗余优化器（ZeRO）/Megatron 分片方式都可能让实际账单不同。</p>
-        <div class="concept-note"><p><strong>真正应该记住的不是 16。</strong>应该记住：optimizer states 很大，而且它们天然适合在 data-parallel ranks 之间分片——这正是后面 Distributed Optimizer / ZeRO 的动机。</p></div>
+        <p>以常见 Adam/AdamW 心智模型为例，optimizer 会为 parameter 维护一阶动量 <code>m</code> 和二阶动量 <code>v</code>。很多混合精度训练配置会用 FP32 保存这些 state；某些实现还会保留一份 FP32 高精度 weight 副本。</p>
+        <div class="state-stack"><div><small>MODEL WEIGHT</small><b>parameter</b><code>e.g. BF16 · 2B</code></div><div><small>GRADIENT</small><b>grad</b><code>e.g. BF16 · 2B</code></div><div><small>ADAM</small><b>m + v</b><code>often 4B + 4B</code></div><div class="optional"><small>SOME SETUPS</small><b>FP32 weight copy</b><code>possibly FP32 · 4B</code></div></div>
+        <p>于是你会经常听到“混合精度 Adam 训练大约 16 bytes/parameter”这种说法：2B weight + 2B grad + 8B Adam states + 4B FP32 weight copy = 16B。<strong>这个数字只适用于某些实现假设。</strong>现代 optimizer、精度策略、FSDP（全分片数据并行：在数据并行域进一步分片 parameter、gradient 或 optimizer state 的训练方式）、ZeRO 和 Megatron 分片方式都可能让实际账单不同。</p>
+        <div class="concept-note"><p><strong>真正应该记住的不是 16。</strong>应该记住：optimizer state 很大，而且天然适合在数据并行进程之间分片——这正是后面 Distributed Optimizer / ZeRO 的动机。</p></div>
       </section>
 
       <section class="article-section" id="activations">
         <div class="section-no">06 · 激活值</div>
-        <h2>Activation 的麻烦在于：它不只和模型大小有关，还和“这次喂多少 token”有关。</h2>
-        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用；推理同样会产生 layer output、attention / 多层感知机（MLP） 中间结果等 activation，但通常只需短暂存活，不必为 backward 跨阶段保留。批次越大、sequence 越长、hidden 越宽、layer 越多，训练时需要保存的 activation 总量通常越大。</p>
+        <h2>activation 的麻烦在于：它不只和模型大小有关，还和“这次喂多少 token”有关。</h2>
+        <p>训练时 forward 产生的某些中间结果必须留到 backward 使用；推理同样会产生 layer output、Attention / MLP 中间结果等 activation，但通常只需短暂存活，不必为 backward 跨阶段保留。batch 越大、sequence 越长、hidden dimension 越宽、layer 越多，训练时需要保存的 activation 总量通常越大。</p>
         <div class="activation-lifetime"><div><small>FORWARD</small><b>produce activations</b></div><span>→ keep some →</span><div><small>BACKWARD</small><b>reuse to 计算 gradients</b></div><span>→</span><div><small>AFTER USE</small><b>eligible to free/reuse</b></div></div>
         <p>这也解释了 <strong>activation checkpointing</strong> 的基本交易：forward 时少保存一些中间结果，backward 真需要时再重算。你用更多计算，换更低 activation 显存。</p>
         <div class="compare-limits"><div><small>NO CHECKPOINTING</small><b>save more</b><span>显存更高，backward 少重算</span></div><div><small>CHECKPOINTING</small><b>save less, recompute</b><span>显存更低，计算时间通常增加</span></div></div>
@@ -105,7 +105,7 @@ memory = 268,435,456 bytes
       <section class="article-section" id="allocator">
         <div class="section-no">07 · 为什么 nvidia-smi 容易让人误判</div>
         <h2>“PyTorch 没有这么多活张量，为什么显存看起来还没还回去？”</h2>
-        <p>PyTorch 为了避免频繁向 CUDA 申请/释放显存，使用 caching allocator。已经不被 tensor 使用的一些 blocks，可以继续留在 allocator pool里，等下次快速复用。</p>
+        <p>PyTorch 为了避免频繁向 CUDA 申请/释放显存，使用 caching allocator（缓存分配器：保留释放后的显存块以便后续快速复用的 allocator）。已经不被 tensor 使用的一些内存块，可以继续留在 allocator pool 里，等下次快速复用。</p>
         <div class="allocator-compare"><div><small>memory_allocated()</small><b>live tensors</b><span>PyTorch 当前由张量占用的 GPU 显存。</span></div><div><small>memory_reserved()</small><b>allocator pool</b><span>包含当前 allocated，也可能包含暂时空闲、但仍被 PyTorch 保留用于复用的块。</span></div></div>
         <div class="code-block"><div class="code-head"><span>python</span><span>memory inspection</span></div><pre><code>print(torch.cuda.memory_allocated() / 1024**3)
 print(torch.cuda.memory_reserved() / 1024**3)
@@ -113,35 +113,35 @@ print(torch.cuda.max_memory_allocated() / 1024**3)
 
 <span class="comment"># 更详细</span>
 print(torch.cuda.memory_summary())</code></pre></div>
-        <p><code>nvidia-smi</code> 看到的进程占用还可能包含 CUDA context、allocator 保留块以及其它库直接分配的内存，因此通常不会和 <code>memory_allocated()</code> 一模一样。</p>
+        <p><code>nvidia-smi</code> 看到的进程占用还可能包含 CUDA context、allocator 保留块以及其它 library 直接分配的内存，因此通常不会和 <code>memory_allocated()</code> 一模一样。</p>
         <div class="source-note">官方延伸阅读：<a href="https://docs.pytorch.org/docs/stable/torch_cuda_memory.html">PyTorch · Understanding CUDA Memory Usage</a> 与 <a href="https://docs.pytorch.org/docs/stable/notes/cuda.html#memory-management">CUDA Memory Management</a>。</div>
       </section>
 
       <section class="article-section" id="inference">
-        <div class="section-no">08 · 推理阶段的memory ledger不一样</div>
+        <div class="section-no">08 · 推理阶段的显存账本不一样</div>
         <h2>推理省掉 gradients 和 optimizer，却多了一个会越聊越大的 KV Cache。</h2>
-        <p>标准多头注意力（MHA）/GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条序列</strong>：</p>
-        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有 block、alignment、元数据等开销；MLA（多头潜在注意力：通过潜在表示压缩注意力状态的模型结构） 等架构的缓存形式也不同。</p></div>
-        <p>做一个纯教学例子：32 层、4096 个 cached tokens、head_dim=128、BF16。</p>
-        <div class="kv-compare"><div><small>MHA · 32 KV HEADS</small><b>≈ 2.0 GiB（二进制容量单位：二进制容量单位，1 GiB = 2^30 bytes）</b><span>2 × 32 × 4096 × 32 × 128 × 2 bytes</span></div><div><small>GQA · 8 KV HEADS</small><b>≈ 0.5 GiB</b><span>其它条件不变，只把 KV heads 从 32 降到 8。</span></div></div>
+        <p>标准 MHA / GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条 sequence</strong>：</p>
+        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有内存块、对齐、metadata 等开销；MLA（多头潜在注意力：通过潜在表示压缩注意力状态的模型结构）等架构的缓存形式也不同。</p></div>
+        <p>做一个纯教学例子：32 层、4096 个缓存 token、每个 KV head 的维度为 128、BF16。</p>
+        <div class="kv-compare"><div><small>MHA · 32 KV HEADS</small><b>≈ 2.0 GiB（GiB 二进制容量单位：1 GiB = 2^30 bytes）</b><span>2 × 32 × 4096 × 32 × 128 × 2 bytes</span></div><div><small>GQA · 8 KV HEADS</small><b>≈ 0.5 GiB</b><span>其它条件不变，只把 KV heads 从 32 降到 8。</span></div></div>
         <p>这就是上一模块讲 GQA 时那个“KV heads 少了，推理会更省”的具体显存账。服务系统同时跑很多请求时，每个请求都在占一段 KV，KV Cache 很容易从“附属开销”变成<strong>决定并发量的主资源</strong>。</p>
       </section>
 
       <section class="article-section" id="oom">
         <div class="section-no">09 · 像 Infra 工程师一样排查 OOM</div>
         <h2>看到 OOM，先问“哪一类账爆了”，而不是立刻把批次降到 1。</h2>
-        <div class="oom-flow"><div><small>1</small><b>Weights?</b><span>模型本身就放不下？dtype / quantization / model parallel。</span></div><div><small>2</small><b>激活值?</b><span>批次 / sequence / hidden 太大？checkpointing 是否能换计算省显存？</span></div><div><small>3</small><b>Optimizer?</b><span>训练 states 太大？是否需要分片 / offload / 分布式优化器？</span></div><div><small>4</small><b>KV / runtime?</b><span>推理 context / concurrency 太高？allocator、workspace、NCCL 是否也在占？</span></div></div>
+        <div class="oom-flow"><div><small>1</small><b>Weights?</b><span>模型本身就放不下？dtype / quantization（量化：用更低精度表示 weight 或 activation 以降低存储和计算成本）/ 模型并行。</span></div><div><small>2</small><b>Activation?</b><span>batch / sequence / hidden dimension 太大？activation checkpointing 是否能换计算省显存？</span></div><div><small>3</small><b>Optimizer?</b><span>训练 state 太大？是否需要分片 / offload（卸载：把部分 state 移到 CPU 或 host memory 以降低 GPU 占用）/ Distributed Optimizer？</span></div><div><small>4</small><b>KV / runtime?</b><span>推理 context / concurrency（并发量：系统同时保持活跃的 request 数量）太高？allocator、workspace、NCCL 是否也在占？</span></div></div>
         <p>一个非常实用的习惯是记录<strong>峰值</strong>而不是只看某个时刻。很多 OOM 发生在 backward、optimizer step 或某个临时 workspace 峰值，而不是 forward 一开始。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">10 · 接到 Megatron 与 vLLM</div>
         <h2>现在你已经能看懂两条路线为什么会选择完全不同的省显存技术。</h2>
-        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard（分片：把一份 tensor 或 state 拆成多份分到不同 ranks） model states</b><span>张量并行（TP） 切参数/通用矩阵乘法（GEMM）；Sequence/Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer states / gradients / parameters 的不同阶段。</span></div><div><small>vLLM · INFERENCE</small><b>manage KV as a first-class resource</b><span>Paged KV blocks、continuous batching、prefix reuse、KV 传输都围绕“有限 HBM 怎样服务更多 token / 请求”。</span></div></div>
+        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard（分片：把一份 tensor 或 state 拆成多份分到不同 GPU/进程） model states</b><span>TP 切 parameter / GEMM；Sequence Parallel（序列并行：沿 sequence 维减少部分 activation 的重复存储与通信）和 Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer state / gradient / parameter。</span></div><div><small>vLLM · INFERENCE</small><b>把 KV 当作核心资源管理</b><span>分页式 KV 内存块、连续批处理、前缀复用、KV 传输都围绕“有限 HBM 怎样服务更多 token / request”。</span></div></div>
         <div class="concept-note"><p><strong>后面读源码时始终问：</strong>这个优化到底是在减少参数、梯度、优化器状态、激活值、KV Cache，还是只是在改变它们“放在哪里”？</p></div>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.2</span></div><h2>能把显存账算明白，再进性能瓶颈。</h2><div class="quiz-item"><div class="quiz-q">1. 7B BF16 模型权重大约 14GB，为什么不能因此断言“24GB 显卡一定能训练 7B”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">14GB 只是权重粗估。训练还要支付 gradients、optimizer states、activations、workspace/allocator 等显存；峰值通常远高于纯权重。</div></div><div class="quiz-item"><div class="quiz-q">2. activation checkpointing和分布式优化器分别主要在省哪类账？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">activation checkpointing主要减少保存的 activations，用重计算换显存；分布式优化器/ZeRO 类方法主要通过跨 data-parallel ranks 分片 optimizer states，并可进一步分片 gradients/parameters，减少每张卡重复保存的 model states。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 GQA 会直接影响 vLLM 的并发能力？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">标准 KV Cache 的大小与 n_kv_heads 近似成正比。KV heads 更少，每个请求的 KV 占用更低，同样 HBM 往往能容纳更多缓存 token / 活跃请求。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.2</span></div><h2>能把显存账算明白，再进性能瓶颈。</h2><div class="quiz-item"><div class="quiz-q">1. 7B BF16 模型权重大约 14GB，为什么不能因此断言“24GB 显卡一定能训练 7B”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">14GB 只是权重粗估。训练还要支付 gradients、optimizer states、activations、workspace/allocator 等显存；峰值通常远高于纯权重。</div></div><div class="quiz-item"><div class="quiz-q">2. activation checkpointing和分布式优化器分别主要在省哪类账？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">activation checkpointing 主要减少保存的 activation，用重计算换显存；Distributed Optimizer / ZeRO 类方法主要通过跨数据并行进程分片 optimizer state，并可进一步分片 gradient / parameter，减少每张卡重复保存的 model state。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么 GQA 会直接影响 vLLM 的并发能力？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">标准 KV Cache 的大小与 n_kv_heads 近似成正比。KV heads 更少，每个请求的 KV 占用更低，同样 HBM 往往能容纳更多缓存 token / 活跃请求。</div></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">术语表 · 本课词汇</div>
