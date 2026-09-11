@@ -53,7 +53,7 @@
 
       <div class="lesson-kicker"><span>LESSON 01.3 · FOUNDATION</span><span>约35 min</span></div>
       <h1>PyTorch 的最小训练循环：参数是怎么真的变掉的？</h1>
-      <p class="dek">前两课我们只看“数据怎么表示”和“Linear怎么计算”。但模型为什么会越来越会做题？答案并不神秘：不断做 <code>forward</code>，算出 <code>loss</code>，再做 <code>backward</code>，最后用 <code>optimizer.step()</code> 更新参数。训练就是把这套循环重复很多次。</p>
+      <p class="dek">前两课我们只看“数据怎么表示”和“Linear 怎么计算”。但模型为什么会越来越会做题？答案并不神秘：先做 <code>forward</code>（前向计算：用当前 parameter 从输入算出模型输出和中间状态），再得到 <code>loss</code>（损失：衡量模型预测与目标之间的误差），接着做 <code>backward</code>（反向传播：沿计算图反向计算各 parameter 的 gradient），最后由 optimizer（优化器：根据 gradient 更新模型 parameter）执行 <code>optimizer.step()</code>。训练就是把这套循环重复很多次。</p>
 
       <div class="learning-goals">
         <strong>这节课结束时，你应该能做到：</strong>
@@ -68,11 +68,11 @@
       <section class="article-section" id="loop">
         <div class="section-no">01 · 先看完整训练循环</div>
         <h2>先把训练看成一个不断重复的闭环。</h2>
-        <p>先不碰公式。一次最小 training step 可以压缩成五件事：</p>
+        <p>先不碰公式。一次最小训练步骤可以压缩成五件事：</p>
         <div class="shape-flow training-flow">
           <div><small>1 · INPUT</small><code>x, target</code></div>
           <span>→</span>
-          <div><small>2 · forward（前向计算：用当前参数从输入计算模型输出和中间状态）</small><code>prediction</code></div>
+          <div><small>2 · forward</small><code>prediction</code></div>
           <span>→</span>
           <div><small>3 · 损失</small><code>error</code></div>
         </div>
@@ -83,14 +83,14 @@
           <span>→</span>
           <div><small>REPEAT</small><code>next batch</code></div>
         </div>
-        <p>真正训练一个大模型时，外面会套上数据加载、混合精度、gradient accumulation、分布式通信、checkpoint 等复杂系统；但最里面这个闭环没有变。</p>
-        <div class="concept-note"><p><strong>先记住一句：</strong><code>forward</code> 产生 prediction，<code>loss</code> 衡量错误，<code>backward</code> 产生 gradient，<code>optimizer.step()</code> 根据 gradient 修改 parameter。</p></div>
+        <p>真正训练一个大模型时，外面会套上数据加载、混合精度、gradient accumulation（梯度累积：多个小批次的 gradient 先累加，再统一更新 parameter）、分布式通信、checkpoint（检查点：保存模型和训练状态，便于中断后继续训练）等复杂系统；但最里面这个闭环没有变。</p>
+        <div class="concept-note"><p><strong>先记住一句：</strong><code>forward</code> 产生预测结果，<code>loss</code> 衡量错误，<code>backward</code> 产生 gradient（梯度：表示 loss 对 parameter 变化的敏感方向），<code>optimizer.step()</code> 根据 gradient 修改 parameter（参数：训练中会被 optimizer 更新的可学习数值）。</p></div>
       </section>
 
       <section class="article-section" id="toy">
         <div class="section-no">02 · 从一个最小问题开始</div>
-        <h2>我们让一个只有两个参数的模型学会 <code>y = 2x + 1</code>。</h2>
-        <p>模型先完全不知道答案。我们只给它一个最简单的Linear：</p>
+        <h2>我们让一个只有两个 parameter 的模型学会 <code>y = 2x + 1</code>。</h2>
+        <p>模型先完全不知道答案。我们只给它一个最简单的 Linear：</p>
         <div class="shape-hero compact-shape">
           <div class="shape-expression">ŷ = wx + b</div>
           <div class="shape-legend">
@@ -99,7 +99,7 @@
             <div><b>goal</b><small>最后接近w=2, b=1</small></div>
           </div>
         </div>
-        <p>训练的工作不是直接把 <code>w=2, b=1</code> 填进去，而是只告诉模型“你刚才预测得有多错”，让它根据梯度一步步靠近正确参数。</p>
+        <p>训练的工作不是直接把 <code>w=2, b=1</code> 填进去，而是只告诉模型“你刚才预测得有多错”，让它根据 gradient 一步步靠近正确 parameter。</p>
       </section>
 
       <section class="article-section" id="code">
@@ -136,14 +136,14 @@ print(model.weight.item(), model.bias.item())
         <div class="section-no">04 · 跟踪一次训练步骤</div>
         <h2>把一轮训练逐行追一遍。</h2>
         <div class="why-grid">
-          <div class="why-card"><b>① <code>forward</code></b><p><code>prediction = model(x)</code>。输入经过Linear，得到当前参数下的预测。为了之后反向传播，PyTorch还会记录必要的计算关系。</p></div>
-          <div class="why-card"><b>② 损失</b><p><code>MSELoss</code> 把预测和真实y比较，压成一个标量损失。损失越大，说明当前预测越差。</p></div>
-          <div class="why-card"><b>③ <code>zero_grad()</code></b><p>PyTorch默认会把新梯度累加到已有 <code>.grad</code> 上，所以普通 training step 通常先清掉上一次的 gradient。</p></div>
+          <div class="why-card"><b>① <code>forward</code></b><p><code>prediction = model(x)</code>。输入经过 Linear，得到当前 parameter 下的预测。为了之后 backward，PyTorch 还会记录必要的计算关系。</p></div>
+          <div class="why-card"><b>② loss</b><p><code>MSELoss</code>（均方误差损失：把预测值与目标值之差的平方汇总成 loss）把预测和真实 y 比较，压成一个标量 loss。loss 越大，说明当前预测越差。</p></div>
+          <div class="why-card"><b>③ <code>zero_grad()</code>（清零梯度：清掉 parameter 上一次累积的 <code>.grad</code>）</b><p>PyTorch 默认会把新 gradient 累加到已有 <code>.grad</code> 上，所以普通训练步骤通常先清掉上一次的 gradient。</p></div>
         </div>
         <div class="why-grid">
-          <div class="why-card"><b>④ <code>backward</code></b><p><code>loss.backward()</code> 从损失反向沿计算图计算每个可训练参数的梯度，结果放到参数的 <code>.grad</code> 中。</p></div>
-          <div class="why-card"><b>⑤ <code>optimizer.step()</code></b><p><code>optimizer.step()</code> 读取这些梯度，再按随机梯度下降（SGD）的更新规则修改参数。参数真的在这一行发生改变。</p></div>
-          <div class="why-card"><b>⑥ repeat</b><p>参数变了一点，下一轮前向计算的prediction就会不同。只要更新方向总体有效，损失会逐渐下降。</p></div>
+          <div class="why-card"><b>④ <code>backward</code></b><p><code>loss.backward()</code>（执行反向传播：从 loss 沿计算图计算各 parameter 的 gradient）会把结果累积到对应 parameter 的 <code>.grad</code> 中。</p></div>
+          <div class="why-card"><b>⑤ <code>optimizer.step()</code></b><p><code>optimizer.step()</code>（执行参数更新：读取 gradient 并修改 parameter）在这里按 SGD（随机梯度下降：按 gradient 方向更新 parameter 的经典优化方法）规则更新参数。parameter 真的在这一行发生改变。</p></div>
+          <div class="why-card"><b>⑥ repeat</b><p>parameter 变了一点，下一轮 forward 的预测结果就会不同。只要更新方向总体有效，loss 会逐渐下降。</p></div>
         </div>
       </section>
 
@@ -163,7 +163,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           <div class="example-card"><div class="cap">BEFORE</div><p><strong>随机参数。</strong> 例如w≈-0.4、b≈0.2。预测自然很差，损失比较大。</p></div>
           <div class="example-card"><div class="cap">AFTER</div><p><strong>接近目标。</strong> 经过许多小步更新后，w会逼近2、b会逼近1，预测也越来越准。</p></div>
         </div>
-        <p>以后调大模型时，“parameter 有没有 <code>.grad</code>”“<code>.grad</code> 是否异常”“optimizer 有没有真的 <code>step()</code>”仍然是最基本的debugging思路，只是参数数量从2个变成几十亿个。</p>
+        <p>以后调大模型时，“parameter 有没有 <code>.grad</code>”“<code>.grad</code> 是否异常”“optimizer 有没有真的 <code>step()</code>”仍然是最基本的调试思路，只是 parameter 数量从 2 个变成几十亿个。</p>
       </section>
 
       <section class="article-section" id="infra">
@@ -175,7 +175,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           <div><small>optimizer</small><b>除了参数和梯度，还可能维护额外优化器状态，占据大量显存。</b></div>
           <div><small>DISTRIBUTED</small><b>多张图形处理器（GPU）各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
         </div>
-        <p>这就是为什么我们先学训练循环再学人工智能（AI）Infra。以后遇到激活值checkpointing、梯度累积、分布式优化器、数据并行时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
+        <p>这就是为什么我们先学训练循环再学 AI Infra。以后遇到 activation checkpointing、gradient accumulation、分布式 optimizer、Data Parallel 等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
       </section>
 
       <section class="article-section" id="distributed">
@@ -190,7 +190,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           </div>
         </div>
         <p>如果两张GPU都拥有同一份模型参数，却各自只看一半数据，那么反向传播后会得到不同梯度。为了让两份模型继续保持一致，更新参数前通常要把各卡梯度聚合成一致的结果。</p>
-        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是Data Parallel 为什么会需要 gradient synchronization，也是以后学习 <code>all-reduce</code> 的第一个真实动机。</p></div>
+        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 Data Parallel（数据并行：不同 replica 处理不同数据，再同步训练状态）为什么需要梯度同步。具体用什么 collective，后面到 Distributed 再学。</p></div>
       </section>
 
       <section class="checkpoint" id="checkpoint">
