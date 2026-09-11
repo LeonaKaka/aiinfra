@@ -32,12 +32,12 @@
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV 交接</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV 传输</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区描述符</a>
     <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
     <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
@@ -46,7 +46,7 @@
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Context Parallel</span></div>
     <div class="lab-kicker">LAB A10 · CONTEXT PARALLEL</div>
     <h1>长 context 被切开以后，Attention 仍然要看见全局历史。<br />这个 Lab 让 Q 留在本地，让 KV 去“找”它。</h1>
-    <p class="dek">两个 ranks 各持一段 sequence。每个 rank 的 Query 分片 始终留在本地；Key/Value chunk 则按 ring 顺序轮转。每一轮，本地 Q 都和当前 KV chunk 计算一部分 attention scores。把所有轮次合起来以后，输出必须和单卡 dense causal attention 完全一致。</p>
+    <p class="dek">两个 ranks 各持一段 sequence。每个 rank 的 Query 分片始终留在本地；Key/Value chunk 则按 ring 顺序轮转。每一轮，本地 Q 都和当前 KV chunk 计算一部分 attention scores。把所有轮次合起来以后，输出必须和单卡 dense causal attention 完全一致。</p>
 
     <section class="lab-section" id="ownership"><div class="lab-kicker">01 · WHAT STAYS / WHAT MOVES</div><h2>Context Parallel 的第一层直觉不是“每张卡独立做半段 Attention”。</h2>
       <div class="command"><div class="command-head"><span>2-RANK VIEW</span><span>Q local · KV rotates</span></div><pre>Rank 0 owns Q0, KV0        Rank 1 owns Q1, KV1
@@ -64,10 +64,10 @@ KV chunks circulate so every local query can see the required global context</pr
       <p>这正好呼应 02.3 的 position/RoPE 桥：分布式搬运可以改变数据“在哪张卡”，不能改变它在模型语义里的位置。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>正确性标准只有一个：每个 local Q 分片 的输出都等于 dense causal attention 的对应切片。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>正确性标准只有一个：每个 local Q 分片的输出都等于 dense causal attention 的对应切片。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_context_parallel.py</pre></div>
-      <p>CPU/Gloo 只验证 ring dependency、P2P 和数学结果。真实 CP 性能取决于 sequence partition、KV exchange algorithm、FlashAttention integration、topology 与 重叠；这个 Lab 不做这些性能声明。</p>
+      <p>CPU/Gloo 只验证 ring dependency、P2P 和数学结果。真实 CP 性能取决于 sequence partition、KV exchange algorithm、FlashAttention integration、topology 与重叠；这个 Lab 不做这些性能声明。</p>
       <a class="code-link" href="./code/mini_context_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_context_parallel.py</b></div><span>→</span></a>
     </section>
 
@@ -80,7 +80,7 @@ KV chunks circulate so every local query can see the required global context</pr
 
     <nav class="lab-footer-nav"><a href="./mini-pipeline-parallel.html">← Lab A9 · Pipeline Parallel</a><a href="./mini-expert-parallel.html">Lab A11 · 专家 Parallel →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#ownership">Context Parallel 的第一层直觉不是“每张卡独立做半段 Attention”。</a><a href="#causal">KV 搬到另一张卡以后，它的全局 token 位置不能跟着“重编号”。</a><a href="#run">正确性标准只有一个：每个 local Q 分片 的输出都等于 dense causal attention 的对应切片。</a><a href="#source">05.6 的 ring 图现在可以落到一个真的依赖图上。</a><a href="#checkpoint">三个问题决定你是否真的理解 CP。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#ownership">Context Parallel 的第一层直觉不是“每张卡独立做半段 Attention”。</a><a href="#causal">KV 搬到另一张卡以后，它的全局 token 位置不能跟着“重编号”。</a><a href="#run">正确性标准只有一个：每个 local Q 分片的输出都等于 dense causal attention 的对应切片。</a><a href="#source">05.6 的 ring 图现在可以落到一个真的依赖图上。</a><a href="#checkpoint">三个问题决定你是否真的理解 CP。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
