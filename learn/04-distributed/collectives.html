@@ -129,7 +129,7 @@ dist.destroy_process_group()</code></pre></div>
       </section>
 
       <section class="article-section" id="map">
-        <div class="section-no">10 · 把集合通信映射回 AI Infra</div>
+        <div class="section-no">10 · 把集合通信映射回训练与推理系统</div>
         <h2>现在把几个 primitive 放回真实系统。</h2>
         <div class="collective-table"><div class="collective-table-row head"><b>Pattern</b><span>典型数据状态</span><span>你以后会在哪见</span></div><div class="collective-table-row"><b>all-reduce</b><span>每 rank 有完整 shape 的不同值 → 每 rank 得到聚合后的完整结果</span><span>经典 DP 梯度 sync；部分 TP reduction 边界</span></div><div class="collective-table-row"><b>all-gather</b><span>每 rank 有分片 → 每 rank 得到完整拼接结果</span><span>分片ed parameters / sequence 分片在需要完整视图时</span></div><div class="collective-table-row"><b>reduce-scatter</b><span>每 rank 有完整贡献 → reduce 后每人只留结果分片</span><span>分片ed 梯度 / sequence-parallel outputs 等</span></div><div class="collective-table-row"><b>all-to-all</b><span>不同数据发往不同对端进程</span><span>MoE expert token dispatch / combine 的典型路径</span></div><div class="collective-table-row"><b>send / recv</b><span>一个 peer → 另一个 peer</span><span>Pipeline Parallel 阶段-to-阶段 activation / 梯度</span></div></div>
         <p>这里的“在哪见”是建立路线感，不表示每个框架在所有配置下都固定使用唯一一种集合通信。Megatron 会根据 parallel mode、Sequence Parallel、分发器和 overlap 策略组合不同通信操作。</p>
