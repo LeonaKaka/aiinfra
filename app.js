@@ -59,6 +59,12 @@ if (labSidebar) {
 document.querySelectorAll('.toc > strong').forEach((node) => {
   if (node.textContent.trim() === 'ON THIS PAGE') node.textContent = '本页内容';
 });
+document.querySelectorAll('.course-sidebar .side-label').forEach((node) => {
+  if (node.textContent.trim() === 'COURSE MAP') node.textContent = '课程地图';
+});
+document.querySelectorAll('.lesson-terms .section-no').forEach((node) => {
+  node.textContent = '术语表 · 本课词汇';
+});
 
 const lessonPreviewButton = document.querySelector('.lesson-preview button');
 if (lessonPreviewButton) {
