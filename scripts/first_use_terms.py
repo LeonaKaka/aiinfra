@@ -97,6 +97,9 @@ SOURCE_TERMS = {
     "launch overhead": ("启动开销", "提交 kernel 等工作本身带来的固定成本"),
     "profiler": ("性能分析器", "记录算子、时间线和资源使用情况的工具"),
     "buffer": ("缓冲区", "临时或持久保存待处理数据的一块内存"),
+    "warp": ("线程束", "NVIDIA GPU 中一组按同一指令路径并行执行的线程"),
+    "NVLink": ("GPU 高速互连", "NVIDIA GPU 之间常见的专用高带宽连接"),
+    "NVSwitch": ("GPU 互连交换芯片", "把多条 NVLink 连接组织成更大规模 GPU 互连"),
 
     # 04 · Distributed
     "process": ("进程", "独立运行程序并拥有自己状态的执行实例"),
