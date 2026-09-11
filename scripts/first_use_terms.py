@@ -72,6 +72,18 @@ SOURCE_TERMS = {
     "LayerNorm": ("层归一化", "按特征维对单个样本的表示做归一化"),
     "RMSNorm": ("均方根归一化", "用均方根尺度归一化表示的常见方法"),
     "residual connection": ("残差连接", "把子层输入直接加回输出以稳定深层网络"),
+    "Transformer block": ("Transformer 块", "由 Attention、MLP、Norm 和 residual 等子模块组成的一层计算单元"),
+    "pre-norm": ("前置归一化", "先做 Norm 再进入 Attention 或 MLP 分支的结构"),
+    "post-norm": ("后置归一化", "先完成子层和 residual 相加，再做 Norm 的结构"),
+    "intermediate size": ("中间维度", "MLP 扩展后的隐藏表示宽度"),
+    "gated MLP": ("门控 MLP", "用门控分支调制前馈输出的 MLP 变体"),
+    "position encoding": ("位置编码", "把 token 在序列中的位置信息注入模型表示"),
+    "runtime": ("运行时", "模型实际执行时负责组织计算、通信和数据状态的系统层"),
+    "fused kernel": ("融合 kernel", "把多个操作合并到一次或更少 GPU kernel 中执行"),
+    "KV reuse": ("KV 复用", "在语义兼容时直接使用已经计算好的 KV state"),
+    "logits": ("未归一化分数", "模型在 softmax 前对候选 token 给出的原始分数"),
+    "Context Parallel": ("上下文并行", "沿 sequence 或 context 维把长序列分给不同 GPU"),
+    "Pipeline Parallel": ("流水线并行", "把不同 model layers 分给不同 GPU 阶段执行"),
 
     # 03 · GPU Systems
     "Tensor Core": ("张量核心", "NVIDIA GPU 中专门加速矩阵乘法的硬件单元"),
