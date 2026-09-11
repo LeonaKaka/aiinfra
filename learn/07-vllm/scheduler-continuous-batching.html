@@ -49,7 +49,7 @@
         <p>图里故意让 running queue中可以同时存在类似 Decode requests和仍处于 Prefill 的请求。因为当前Scheduler 的核心抽象不是“切换 Prefill 模式 / Decode 模式”，而是：这个请求已计算到哪、还欠多少 token 工作、本轮资源允许推进多少。</p>
         <div class="vllm-core-wrap"><div class="vllm-core-meta"><span>vLLM V1 · 调度器</span><span>运行 / 等待 → 预算 + KV → SchedulerOutput</span></div><img class="vllm-core-svg" src="./scheduler-continuous-batching.svg" alt="vLLM V1 Scheduler 与 continuous batching 架构图：RUNNING和WAITING的请求 进入 调度器；调度器 先推进 running，再在剩余资源允许时接纳 waiting，受 max_num_scheduled_tokens、max_num_batched_tokens、max_num_running_reqs 和 KVCacheManager allocation 共同约束；生成 混合的 SchedulerOutput。KV allocation 失败时可 preempt victim 并释放资源；每轮输出更新后，下一iteration 重新组成 batch。"/></div>
         <div class="vllm-core-takeaway"><strong>调度器的核心不是“拼一张批次表”，而是解决一个online resource-allocation problem：</strong>谁先推进、推进多少 token、cache hit 了多少、还要多少 physical blocks、这一轮总 budget 是否够。continuous batching 则是这个选择过程在每次iteration重新执行的直接结果。</div>
-        <div class="queue-map"><div class="queue-box"><small>WAITING</small><b>本轮尚未进入运行资源域</b><div class="queue-list"><span>长输入</span><span>短输入</span><span>优先级 / 阻塞状态等</span></div></div><span>准入 / 抢占 / 恢复 ↔</span><div class="queue-box"><small>RUNNING</small><b>已有 request execution state</b><div class="queue-list"><span>Decode 类进度</span><span>进行中的 Prefill 分块</span><span>投机 / 结构化状态等</span></div></div></div>
+        <div class="queue-map"><div class="queue-box"><small><code>WAITING</code></small><b>本轮尚未进入运行资源域</b><div class="queue-list"><span>长输入</span><span>短输入</span><span>优先级 / 阻塞状态等</span></div></div><span>准入 / 抢占 / 恢复 ↔</span><div class="queue-box"><small><code>RUNNING</code></small><b>已有 request execution state</b><div class="queue-list"><span>Decode 类进度</span><span>进行中的 Prefill 分块</span><span>投机 / 结构化状态等</span></div></div></div>
         <p>当前源码还处理数据并行（DP） prefill balancing、encoder input、低秩适配（LoRA）、structured output、投机解码、KV Connector 远端加载 等额外条件。初学时不要一次吃完；先把上图的三件事分清：<strong>request state、resource budgets、KV ownership</strong>。</p>
         <div class="source-note">当前 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a> 的 <code>schedule()</code> 先遍历 <code>self.running</code>，再在没有本轮抢占且未暂停等条件下处理 waiting queue；KV blocks通过 <code>kv_cache_manager.allocate_slots(...)</code> 约束可调度量。</div>
       </section>
@@ -57,7 +57,7 @@
       <section class="article-section" id="budgets">
         <div class="section-no">04 · 调度器有哪些硬预算</div>
         <h2>“想跑谁”不够，必须同时满足本轮 token 数、输入规模、并发数和 KV 空间。</h2>
-        <div class="budget-grid"><div class="budget-card tokens"><small>SCHEDULED-TOKEN BUDGET</small><b>max_num_scheduled_tokens</b><span>Scheduler 初始化时若该值未单独给出，会使用 <code>max_num_batched_tokens</code>；每轮 <code>token_budget</code> 从这里开始扣。</span></div><div class="budget-card seqs"><small>RUNNING 请求 LIMIT</small><b>max_num_running_reqs</b><span>当前值来自 <code>scheduler_config.max_num_seqs</code>；waiting admission 不能让运行资源域无限增长。</span></div><div class="budget-card kv"><small>KV BUDGET</small><b>available blocks</b><span>即使 token budget 还有，<code>allocate_slots</code> 失败也会改变调度甚至触发抢占。</span></div></div>
+        <div class="budget-grid"><div class="budget-card tokens"><small>SCHEDULED-TOKEN BUDGET</small><b>max_num_scheduled_tokens</b><span>Scheduler 初始化时若该值未单独给出，会使用 <code>max_num_batched_tokens</code>；每轮 <code>token_budget</code> 从这里开始扣。</span></div><div class="budget-card seqs"><small><code>RUNNING</code> request limit</small><b>max_num_running_reqs</b><span>当前值来自 <code>scheduler_config.max_num_seqs</code>；waiting admission 不能让运行资源域无限增长。</span></div><div class="budget-card kv"><small>KV BUDGET</small><b>available blocks</b><span>即使 token budget 还有，<code>allocate_slots</code> 失败也会改变调度甚至触发抢占。</span></div></div>
         <p>当前 <code>schedule()</code> 同时维护 <code>input_budget = max_num_batched_tokens</code>，并叠加 speculative draft slots、encoder 计算/cache、max model length 等约束。所以调度器不是只看一个“批次 size”。</p>
       </section>
 
@@ -74,7 +74,7 @@
         <h2>长 prompt 不必被当成一个不可切分的大石头。</h2>
         <p>Chunked prefill 允许一个长 prompt 分多轮推进。例如 8000-token prompt 不必在一次调度器iteration中全部处理；可以只推进受当前 token/input budget限制的一段，之后继续。</p>
         <div class="shape-flow"><div><small>LONG PROMPT</small><code>8000 tokens</code></div><span>→</span><div><small>iteration</small><code>budget-limited chunk</code></div><span>→</span><div><small>NEXT</small><code>continue later</code></div></div>
-        <p>当前 vLLM V1 优化文档说明：在条件允许时分块 Prefill 默认启用；scheduling policy优先 pending decode work，再用剩余的 <code>max_num_batched_tokens</code> budget 安排 prefill，放不下的 prefill 自动切 chunk。这个高层 policy 与当前调度器的RUNNING请求优先实现可以一起理解：已有 decode-like work 通常已经在 running 集合里，而长 Prefill 也可能以 in-progress chunk 的身份留在 running。</p>
+        <p>当前 vLLM V1 优化文档说明：在条件允许时分块 Prefill 默认启用；scheduling policy优先 pending decode work，再用剩余的 <code>max_num_batched_tokens</code> budget 安排 prefill，放不下的 prefill 自动切 chunk。这个高层 policy 与当前调度器对 <code>RUNNING</code> requests 的优先实现可以一起理解：已有 decode-like work 通常已经在 running 集合里，而长 Prefill 也可能以 in-progress chunk 的身份留在 running。</p>
         <div class="source-note">当前说明：<a href="https://github.com/vllm-project/vllm/blob/main/docs/configuration/optimization.md">vLLM · Optimization and Tuning</a>，见 Chunked Prefill；源码主循环见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a>。</div>
       </section>
 
