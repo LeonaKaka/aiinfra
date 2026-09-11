@@ -47,7 +47,7 @@
       <section class="article-section" id="intensity">
         <div class="section-no">02 · ARITHMETIC INTENSITY</div>
         <h2>判断 compute 还是 memory，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
-        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>AI = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分 动态随机存取存储器（DRAM）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
+        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分 动态随机存取存储器（DRAM）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
         <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受 memory 带宽 限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入 计算受限（compute-bound） 区域。</span></div></div>
         <p>“某类算子永远 带宽受限（memory-bound）”也不是绝对规律。shape、batch、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
       </section>
