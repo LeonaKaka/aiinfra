@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Mini Bucketed Async Reduce-Scatter：模拟 backward 中不同 gradient bucket 依次 ready，并在继续计算时启动异步 reduce-scatter。" />
-  <title>Lab A5 · Bucketed Async Reduce-Scatter</title>
+  <title>Lab A5 · Bucketed 异步 Reduce-Scatter</title>
   <link rel="stylesheet" href="../styles.css" />
   <link rel="stylesheet" href="../lesson.css" />
   <link rel="stylesheet" href="./lab.css" />
@@ -19,42 +19,42 @@
   <a class="side-home" href="./index.html">← Hands-on Labs</a>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>A</b> Training</div>
     <a class="lesson-link lab-side-link" href="./mini-megatron.html">A1 · Mini Megatron TP</a>
-    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP Backward</a>
-    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + Gradient Accumulation</a>
-    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed Optimizer</a>
-    <a class="lesson-link lab-side-link current train-current" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed Async Reduce-Scatter</a>
+    <a class="lesson-link lab-side-link" href="./mini-tp-backward.html">A2 · Mini TP 反向传播</a>
+    <a class="lesson-link lab-side-link" href="./mini-dp-grad-accum.html">A3 · DP + 梯度 Accumulation</a>
+    <a class="lesson-link lab-side-link" href="./mini-distributed-optimizer.html">A4 · Mini Distributed 优化器</a>
+    <a class="lesson-link lab-side-link current train-current" href="./mini-bucketed-reduce-scatter.html">A5 · Bucketed 异步 Reduce-Scatter</a>
     <a class="lesson-link lab-side-link" href="./mini-tp-dp-2d.html">A6 · TP × DP 2D Topology</a>
-    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready Overlap</a>
+    <a class="lesson-link lab-side-link" href="./mini-profiler-overlap.html">A7 · Profiler-ready 重叠</a>
     <a class="lesson-link lab-side-link" href="./mini-sequence-parallel.html">A8 · Mini Sequence Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-pipeline-parallel.html">A9 · Mini Pipeline Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-context-parallel.html">A10 · Mini Context Parallel</a>
-    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini Expert Parallel</a>
+    <a class="lesson-link lab-side-link" href="./mini-expert-parallel.html">A11 · Mini 专家 Parallel</a>
     <a class="lesson-link lab-side-link" href="./mini-training-system.html">A12 · Mini Training System</a>
   </div>
   <div class="module-block lab-side-group"><div class="module-name lab-side-name"><b>B</b> Inference</div>
     <a class="lesson-link lab-side-link" href="./mini-kv-handoff.html">B1 · Mini KV Handoff</a>
     <a class="lesson-link lab-side-link" href="./mini-block-kv-handoff.html">B2 · Mini Block KV Handoff</a>
-    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini Async KV Transfer</a>
+    <a class="lesson-link lab-side-link" href="./mini-async-kv-transfer.html">B3 · Mini 异步 KV Transfer</a>
     <a class="lesson-link lab-side-link" href="./mini-layerwise-kv-stream.html">B4 · Layer-wise KV Streaming</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + Lifetime</a>
-    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · Registered Region Descriptor</a>
-    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV Lease / Expiry</a>
-    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference Engine</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-handshake-lifetime.html">B5 · KV Handshake + 生命周期</a>
+    <a class="lesson-link lab-side-link" href="./mini-registered-region-descriptor.html">B6 · 已注册内存区 描述符</a>
+    <a class="lesson-link lab-side-link" href="./mini-kv-lease-expiry.html">B7 · KV 租约 / Expiry</a>
+    <a class="lesson-link lab-side-link" href="./mini-inference-engine.html">B8 · Mini Inference 推理引擎</a>
   </div>
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
-    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Bucketed Async Reduce-Scatter</span></div>
-    <div class="lab-kicker">LAB A5 · COMMUNICATION OVERLAP</div>
-    <h1>真正的 overlap 不是“最后异步一下”。<br />而是哪个 bucket ready，就尽早把它发出去。</h1>
-    <p class="dek">A4 已经知道 Distributed Optimizer 为什么喜欢 reduce-scatter，但通信仍然放在 backward 之后。这里再前进一步：两层 MLP 的 W2 gradient 会比 W1 更早 ready。W2 一算完就立刻发起 async reduce-scatter；主线程随后继续算 dH、ReLU backward 和 dW1。等 W1 bucket 也 ready，再发起第二个 collective。这样“backward 计算”和“梯度通信”第一次出现在同一条时间线里。</p>
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Bucketed 异步 Reduce-Scatter</span></div>
+    <div class="lab-kicker">LAB A5 · COMMUNICATION 重叠</div>
+    <h1>真正的 重叠 不是“最后异步一下”。<br />而是哪个 通信桶 ready，就尽早把它发出去。</h1>
+    <p class="dek">A4 已经知道 Distributed 优化器 为什么喜欢 reduce-scatter，但通信仍然放在 反向传播 之后。这里再前进一步：两层 MLP 的 W2 梯度 会比 W1 更早 ready。W2 一算完就立刻发起 异步 reduce-scatter；主线程随后继续算 dH、ReLU 反向传播 和 dW1。等 W1 通信桶 也 ready，再发起第二个 collective。这样“反向传播 计算”和“梯度通信”第一次出现在同一条时间线里。</p>
 
-    <section class="lab-section" id="timeline"><div class="lab-kicker">01 · READY ORDER</div><h2>Backward 天然有顺序；bucket 就利用这个顺序。</h2>
-      <div class="stage-flow"><div class="stage-card train"><small>BUCKET 0 READY</small><b>dW2</b><span>输出层先得到 gradient。不要等整个模型 backward 完成。</span></div><div class="stage-card comm"><small>LAUNCH</small><b>async reduce-scatter W2</b><span>拿到 Work handle 后调用方可以继续；底层是否真正并行 progress 要看 backend 与硬件。</span></div><div class="stage-card train"><small>KEEP COMPUTING</small><b>dH → dPre → dW1</b><span>这段计算不依赖 W2 reduction 的最终结果，所以可以继续。</span></div></div>
-      <p>随后 W1 bucket ready，再启动自己的 reduce-scatter。工业实现会有很多 bucket，并由 autograd hook / grad buffer 追踪“这个 bucket 的所有参数梯度是否都 ready”。</p>
+    <section class="lab-section" id="timeline"><div class="lab-kicker">01 · READY ORDER</div><h2>反向传播 天然有顺序；通信桶 就利用这个顺序。</h2>
+      <div class="stage-flow"><div class="stage-card train"><small>通信桶 0 READY</small><b>dW2</b><span>输出层先得到 梯度。不要等整个模型 反向传播 完成。</span></div><div class="stage-card comm"><small>启动</small><b>异步 reduce-scatter W2</b><span>拿到 Work 句柄 后调用方可以继续；底层是否真正并行 progress 要看 backend 与硬件。</span></div><div class="stage-card train"><small>KEEP COMPUTING</small><b>dH → dPre → dW1</b><span>这段计算不依赖 W2 reduction 的最终结果，所以可以继续。</span></div></div>
+      <p>随后 W1 通信桶 ready，再启动自己的 reduce-scatter。工业实现会有很多 通信桶，并由 autograd hook / grad 缓冲区 追踪“这个 通信桶 的所有参数梯度是否都 ready”。</p>
     </section>
 
-    <section class="lab-section" id="pseudo"><div class="lab-kicker">02 · THE MINIMUM OVERLAP PATTERN</div><h2>只看四个时间点，就知道“哪里有机会重叠”。</h2>
-      <div class="command"><div class="command-head"><span>BACKWARD TIMELINE</span><span>conceptual</span></div><pre>dW2 ready
+    <section class="lab-section" id="pseudo"><div class="lab-kicker">02 · THE MINIMUM 重叠 PATTERN</div><h2>只看四个时间点，就知道“哪里有机会重叠”。</h2>
+      <div class="command"><div class="command-head"><span>反向传播 时间线</span><span>conceptual</span></div><pre>dW2 ready
   └─ work2 = reduce_scatter(dW2, async=True)
 
 compute dH
@@ -67,10 +67,10 @@ dW1 ready
 wait(work2)
 wait(work1)
 optimizer can consume local shards</pre></div>
-      <p><strong>关键不是 <code>async=True</code> 这个布尔值，而是 wait 被推迟到了真正需要 gradient shard 的位置。</strong>如果 launch 后立刻 wait，逻辑上仍然是同步执行。</p>
+      <p><strong>关键不是 <code>async=True</code> 这个布尔值，而是 等待 被推迟到了真正需要 梯度 分片 的位置。</strong>如果 启动 后立刻 等待，逻辑上仍然是同步执行。</p>
     </section>
 
-    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>两个 gradient shard 都与完整 global-batch reference 对齐。</h2>
+    <section class="lab-section" id="run"><div class="lab-kicker">03 · RUN + VERIFY</div><h2>两个 梯度 分片 都与完整 global-batch reference 对齐。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_bucketed_reduce_scatter.py</pre></div>
       <div class="command"><div class="command-head"><span>ACTUAL CPU/GLOO CHECK</span><span>ordering only</span></div><pre>bucket ready order          : W2 → W1
@@ -80,21 +80,21 @@ max W2 shard error          : 5.960e-08
 max W1 shard error          : 2.980e-08
 PASS</pre></div>
       <a class="code-link" href="./code/mini_bucketed_reduce_scatter.py"><div><small>FULL SOURCE</small><b>打开 mini_bucketed_reduce_scatter.py</b></div><span>→</span></a>
-      <div class="truth-note"><b>这里仍然不能宣称“通信被隐藏了”。</b><p>CPU/Gloo 的本地小 tensor 只验证依赖顺序和 correctness。要证明真正 overlap，必须在 GPU 上同时看到 compute kernel 与 NCCL collective 的时间区间重叠，并比较 end-to-end step time。</p></div>
+      <div class="truth-note"><b>这里仍然不能宣称“通信被隐藏了”。</b><p>CPU/Gloo 的本地小 tensor 只验证依赖顺序和 correctness。要证明真正 重叠，必须在 GPU 上同时看到 compute kernel 与 NCCL collective 的时间区间重叠，并比较 end-to-end 单步时间。</p></div>
     </section>
 
-    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>这次应该去看 grad buffer / bucket，而不仅是 optimizer。</h2>
-      <div class="source-bridge"><div><small>LAB</small><b>W2 bucket ready first</b><code>async reduce_scatter → continue backward → wait later</code></div><span>same scheduling idea →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket · grad ready · communication handle · overlap</code></div></div>
-      <p>然后再回 <code>distributed_data_parallel.py</code> 看这些 buffer 如何挂到模型和 backward 上，最后到 <code>distrib_optimizer.py</code> 看 local shard 怎样进入 optimizer。这样阅读顺序是：<strong>gradient 何时 ready → 通信何时启动 → shard 最后被谁消费。</strong></p>
+    <section class="lab-section" id="source"><div class="lab-kicker">04 · MAP TO MEGATRON</div><h2>这次应该去看 grad 缓冲区 / 通信桶，而不仅是 优化器。</h2>
+      <div class="source-bridge"><div><small>LAB</small><b>W2 通信桶 ready first</b><code>async reduce_scatter → continue backward → wait later</code></div><span>same scheduling idea →</span><div><small>MEGATRON</small><b>distributed/param_and_grad_buffer.py</b><code>bucket · grad ready · communication handle · overlap</code></div></div>
+      <p>然后再回 <code>distributed_data_parallel.py</code> 看这些 缓冲区 如何挂到模型和 反向传播 上，最后到 <code>distrib_optimizer.py</code> 看 local 分片 怎样进入 优化器。这样阅读顺序是：<strong>梯度 何时 ready → 通信何时启动 → 分片 最后被谁消费。</strong></p>
     </section>
 
-    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Training 线下一步要引入第二个 process group：TP × DP。</h2>
-      <div class="check-list"><div>① 用 4 ranks 创建 TP=2、DP=2 的二维拓扑。</div><div>② 区分 TP group 内的 layer communication 与 DP group 内的 gradient reduction。</div><div>③ 画出每个 global rank 同时属于哪两个 group。</div><div>④ 最后用 profiler 把 TP collective、DP reduce-scatter 和 GEMM 放在同一张 timeline。</div></div>
+    <section class="lab-section" id="next"><div class="lab-kicker">05 · NEXT</div><h2>Training 线下一步要引入第二个 process 进程组：TP × DP。</h2>
+      <div class="check-list"><div>① 用 4 ranks 创建 TP=2、DP=2 的二维拓扑。</div><div>② 区分 TP 进程组 内的 layer communication 与 DP 进程组 内的 梯度 reduction。</div><div>③ 画出每个 global rank 同时属于哪两个 进程组。</div><div>④ 最后用 profiler 把 TP collective、DP reduce-scatter 和 GEMM 放在同一张 时间线。</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-distributed-optimizer.html">← Lab A4 · Distributed Optimizer</a><a href="./mini-tp-dp-2d.html">Lab A6 · TP × DP Topology →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-distributed-optimizer.html">← Lab A4 · Distributed 优化器</a><a href="./mini-tp-dp-2d.html">Lab A6 · TP × DP Topology →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#timeline">Backward 天然有顺序；bucket 就利用这个顺序。</a><a href="#pseudo">只看四个时间点，就知道“哪里有机会重叠”。</a><a href="#run">两个 gradient shard 都与完整 global-batch reference 对齐。</a><a href="#source">这次应该去看 grad buffer / bucket，而不仅是 optimizer。</a><a href="#next">Training 线下一步要引入第二个 process group：TP × DP。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#timeline">反向传播 天然有顺序；通信桶 就利用这个顺序。</a><a href="#pseudo">只看四个时间点，就知道“哪里有机会重叠”。</a><a href="#run">两个 梯度 分片 都与完整 global-batch reference 对齐。</a><a href="#source">这次应该去看 grad 缓冲区 / 通信桶，而不仅是 优化器。</a><a href="#next">Training 线下一步要引入第二个 process 进程组：TP × DP。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
