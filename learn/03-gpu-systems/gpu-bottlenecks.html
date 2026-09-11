@@ -59,7 +59,7 @@
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
         <div class="roof-caption"><div><b>左边 · memory-bound</b><span>每 byte 做的计算太少，性能上限随带宽和 arithmetic intensity 增长。</span></div><div><b>右边 · compute-bound</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
         <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
-        <div class="source-note">官方延伸阅读：NVIDIA Nsight 计算的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
+        <div class="source-note">官方延伸阅读：NVIDIA Nsight Compute 的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
       </section>
 
       <section class="article-section" id="compute">
@@ -90,7 +90,7 @@
         <div class="section-no">07 · 通信受限</div>
         <h2>一旦跨 GPU，就多了一份“必须把数据送到别人那里”的时间。</h2>
         <p>单 GPU 里主要盯计算和 memory hierarchy；多 GPU 还要把 GPU↔GPU、节点↔节点的通信加进账本。最简单的传输时间直觉：</p>
-        <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency + bytes / bandwidth（带宽：单位时间内链路能够传输的数据量）</b><p>小消息时固定 latency 更显眼；大消息时有效 bandwidth 更关键。collective 通信还会包含多轮传输、topology 和算法因素，所以不能直接把链路峰值带宽当实际 collective throughput。</p></div>
+        <div class="comm-card"><small>IDEALIZED TRANSFER MODEL</small><b>time ≈ latency + bytes / bandwidth（带宽：单位时间内链路能够传输的数据量）</b><p>小消息时固定 latency 更显眼；大消息时有效 bandwidth 更关键。collective 通信还会包含多轮传输、topology 和算法因素，所以不能直接把链路峰值带宽当实际 collective 吞吐量。</p></div>
         <p>这里先认几个后面会反复出现的链路名：PCIe 是常见主机互连；RoCE（基于融合以太网的 RDMA：在以太网上承载 RDMA 语义的网络技术）在以太网上承载 RDMA；InfiniBand（高性能网络互连：数据中心常用的低延迟高带宽网络技术）则是另一类常见高性能网络。它们和 NVLink 分别处在不同硬件/网络路径上。</p><div class="latency-bandwidth"><div><small>SMALL MESSAGE</small><b>latency matters</b><span>消息很小时，几十微秒级的固定开销都可能占很大比例。</span></div><div><small>LARGE MESSAGE</small><b>bandwidth matters</b><span>数据量大时，NVLink / PCIe / InfiniBand / RoCE 的有效吞吐决定搬完要多久。</span></div></div>
         <p>后面学 all-reduce（全归约：归约各 GPU/进程的数据并把结果返回给所有参与者）、all-gather（全收集：收集各 GPU/进程的分片并让所有参与者得到完整结果）、reduce-scatter（归约分散：先归约，再让每个参与者只保留一份分片）时，我们会把“需要搬多少 bytes、走几轮、哪些参与者互相交换”算得更具体。</p>
       </section>
