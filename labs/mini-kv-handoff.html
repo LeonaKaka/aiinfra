@@ -47,7 +47,7 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini KV 交接</span></div>
-    <div class="lab-kicker">LAB B · PREFILL / DECODE</div>
+    <div class="lab-kicker">LAB B · Prefill / Decode KV 交接</div>
     <h1>让 Prefill 算 KV，<br />让另一进程直接接着 Decode。</h1>
     <p class="dek">KV Connector 最核心的正确性契约不是“网络很快”，而是：Decode 收到的远端 KV 必须等价于自己对同一 prompt 重新计算出来的 KV。这个实验先把调度器、paged blocks、NIXL、RDMA 全部拿掉，只验证这条最小契约。</p>
 
