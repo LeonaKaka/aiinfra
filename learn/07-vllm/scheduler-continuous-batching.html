@@ -51,7 +51,7 @@
         <div class="vllm-core-takeaway"><strong>调度器的核心不是“拼一张批次表”，而是解决一个在线资源分配问题：</strong>谁先推进、推进多少 token、缓存命中了多少、还要多少物理块、这一轮总 budget 是否够。连续批处理 则是这个选择过程在每次执行轮次重新执行的直接结果。</div>
         <div class="queue-map"><div class="queue-box"><small>等待中</small><b>本轮尚未进入运行资源域</b><div class="queue-list"><span>长输入</span><span>短输入</span><span>优先级 / 阻塞状态等</span></div></div><span>准入 / 抢占 / 恢复 ↔</span><div class="queue-box"><small>运行中</small><b>已有请求执行状态</b><div class="queue-list"><span>Decode 类进度</span><span>进行中的 Prefill 分块</span><span>投机 / 结构化状态等</span></div></div></div>
         <p>当前源码还处理数据并行（DP） prefill balancing、encoder input、低秩适配（LoRA）、structured output、投机解码、KV Connector 远端加载 等额外条件。初学时不要一次吃完；先把上图的三件事分清：<strong>请求状态、资源预算、KV 归属关系</strong>。</p>
-        <div class="source-note">当前 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a> 的 <code>schedule()</code> 先遍历 <code>self.running</code>，再在没有本轮抢占且未暂停等条件下处理 waiting 队列；KV 块通过 <code>kv_cache_manager.allocate_slots(...)</code> 约束可调度量。</div>
+        <div class="source-note">当前 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">调度器源码</a> 的 <code>schedule()</code> 先遍历 <code>self.running</code>，再在没有本轮抢占且未暂停等条件下处理 waiting 队列；KV 块通过 <code>kv_cache_manager.allocate_slots(...)</code> 约束可调度量。</div>
       </section>
 
       <section class="article-section" id="budgets">
@@ -75,7 +75,7 @@
         <p>Chunked prefill 允许一个长 prompt 分多轮推进。例如 8000-token prompt 不必在一次调度器执行轮次中全部处理；可以只推进受当前 token/输入预算限制的一段，之后继续。</p>
         <div class="shape-flow"><div><small>LONG PROMPT</small><code>8000 tokens</code></div><span>→</span><div><small>执行轮次</small><code>budget-limited chunk</code></div><span>→</span><div><small>NEXT</small><code>continue later</code></div></div>
         <p>当前 vLLM V1 优化文档说明：在条件允许时分块 Prefill 默认启用；调度策略优先 pending decode work，再用剩余的 <code>max_num_batched_tokens</code> budget 安排 prefill，放不下的 prefill 自动切 chunk。这个高层 policy 与当前调度器的运行中请求优先实现可以一起理解：已有 decode-like work 通常已经在 running 集合里，而长 Prefill 也可能以 in-progress chunk 的身份留在 running。</p>
-        <div class="source-note">当前说明：<a href="https://github.com/vllm-project/vllm/blob/main/docs/configuration/optimization.md">vLLM · Optimization and Tuning</a>，见 Chunked Prefill；源码主循环见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">scheduler.py</a>。</div>
+        <div class="source-note">当前说明：<a href="https://github.com/vllm-project/vllm/blob/main/docs/configuration/optimization.md">vLLM · Optimization and Tuning</a>，见 Chunked Prefill；源码主循环见 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">调度器源码</a>。</div>
       </section>
 
       <section class="article-section" id="preempt">
