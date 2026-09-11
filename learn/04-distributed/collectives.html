@@ -32,17 +32,17 @@
       <div class="mobile-course-bar"><span>04 · Distributed</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>Collectives</span></div>
       <div class="lesson-kicker"><span>LESSON 04.2 · DISTRIBUTED</span><span>约 60 min</span></div>
-      <h1>Collectives（集合通信）：每张 GPU 开始有什么，结束又得到什么？</h1>
+      <h1>collective：每张 GPU 开始有什么，结束又得到什么？</h1>
       <p class="dek">all-reduce、all-gather、reduce-scatter 这些名字很像，背定义特别容易混。我们只用一个方法学：固定 4 个 rank，画出通信前每个 rank 手里的张量，再画通信后每个 rank 得到什么。只要这个状态变化看懂，Megatron 里大部分集合通信名字就不再神秘。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>不用背英文定义，直接画出 broadcast（广播：由一个 rank 把同一份数据发送给其它参与者）、all-reduce、all-gather、reduce-scatter 的输入/输出。</li><li>区分“reduce values”“gather shards”“scatter results”这几种不同语义。</li><li>解释 Data Parallel 为什么常用 all-reduce / reduce-scatter 处理梯度。</li><li>解释 Tensor Parallel 为什么经常需要 gather / reduce 一类通信。</li><li>理解MoE（混合专家模型：由 router 为 token 选择少数 experts 的稀疏模型结构） token dispatch 为什么天然会遇到 all-to-all。</li><li>知道集合通信是进程组级别的调用约定：参与的 rank、调用顺序、张量元信息不匹配都可能造成错误或卡住。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>不用背英文定义，直接画出 broadcast（广播：由一个 rank 把同一份数据发送给其它参与者）、all-reduce、all-gather、reduce-scatter 的输入/输出。</li><li>区分“归约数值”“收集分片”“分散结果”这几种不同语义。</li><li>解释 Data Parallel 为什么常用 all-reduce / reduce-scatter 处理 gradient。</li><li>解释 TP 为什么经常需要收集或归约一类通信。</li><li>理解 MoE（混合专家模型：通过路由机制为 token 选择少量专家子网络的稀疏模型结构）的 token 分发为什么天然会遇到 all-to-all（全交换：每个 rank 都向其它 ranks 发送不同的数据分片）。</li><li>知道 collective 是 process group 级别的调用约定：参与的 ranks、调用顺序、tensor 元信息不匹配都可能造成错误或卡住。</li></ul></div>
 
       <section class="article-section" id="rule">
         <div class="section-no">01 · 用一条规则理解所有集合通信</div>
-        <h2>不要先背 API 名字。固定 process group，然后看 before → contract → after。</h2>
-        <div class="pattern-grid"><div><small>WHO</small><b>哪些ranks 参加？</b><span>global process group（进程组：定义一组共同参与通信的 ranks）还是某个张量并行（TP） / 数据并行（DP） / 流水线并行（PP） subgroup？</span></div><div><small>BEFORE</small><b>每个 rank 手里有什么？</b><span>完整张量、一个分片，还是各自不同的数据？</span></div><div><small>AFTER</small><b>每个 rank 要拿到什么？</b><span>完整聚合结果、拼接后的完整张量，还是一个 reduced 分片？</span></div></div>
-        <p>下面把四个最常用集合通信放进同一张画布。你会看到：名字看似相近，本质只是不同的 ownership（归属关系：说明某个资源当前由哪个 request、rank 或组件持有） / state transformation。</p>
-        <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>COLLECTIVES · BEFORE → CONTRACT → AFTER</span><span>fixed process（进程：独立运行程序并拥有自己状态的执行实例） group · 4 ranks</span></div><img class="distributed-core-svg" src="./collectives-state-map.svg" alt="四个核心 collective 的状态变换：Broadcast 从一个 source 把 A 分发给所有 ranks；All-Reduce 把每 rank 的局部贡献做 SUM 并让所有 ranks 都得到完整 reduced result；All-Gather 把各 rank 的 A、B、C、D shards 拼成完整 tensor 并复制给所有 ranks；Reduce-Scatter 先对完整向量逐元素求和，再让各 rank 只保留一个 reduced shard。" /></div>
+        <h2>不要先背 API 名字。固定 process group，然后看“通信前 → 通信规则 → 通信后”。</h2>
+        <div class="pattern-grid"><div><small>WHO</small><b>哪些 ranks 参加？</b><span>default process group 还是某个 TP / DP / Pipeline Parallel subgroup？</span></div><div><small>BEFORE</small><b>每个 rank 手里有什么？</b><span>完整 tensor、一个 shard，还是各自不同的数据？</span></div><div><small>AFTER</small><b>每个 rank 要拿到什么？</b><span>完整聚合结果、拼接后的完整 tensor，还是一个 reduced shard？</span></div></div>
+        <p>下面把四个最常用 collective 放进同一张画布。你会看到：名字看似相近，本质只是不同的 ownership（归属关系：说明某个资源当前由哪个参与者或组件持有）和状态变换。</p>
+        <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>COLLECTIVES · BEFORE → CONTRACT → AFTER</span><span>fixed process group · 4 ranks</span></div><img class="distributed-core-svg" src="./collectives-state-map.svg" alt="四个核心 collective 的状态变换：Broadcast 从一个 source 把 A 分发给所有 ranks；All-Reduce 把每 rank 的局部贡献做 SUM 并让所有 ranks 都得到完整 reduced result；All-Gather 把各 rank 的 A、B、C、D shards 拼成完整 tensor 并复制给所有 ranks；Reduce-Scatter 先对完整向量逐元素求和，再让各 rank 只保留一个 reduced shard。" /></div>
         <div class="distributed-core-takeaway"><strong>选择集合通信的核心不是名字，而是目标数据状态。</strong>所有人都要完整 reduced result → all-reduce；只需要 reduced 分片 → reduce-scatter；不做 reduction、只是让所有人拿齐分片 → all-gather；一个 source 复制给整个进程组 → broadcast。</div>
       </section>
 
@@ -50,28 +50,28 @@
         <div class="section-no">02 · Broadcast</div>
         <h2>一个 rank 有数据，把同一份数据发给所有 ranks。</h2>
         <div class="collective-demo"><small>BEFORE · source rank = 0</small><div class="collective-row"><div class="collective-rank active"><b>R0</b><code>[A]</code></div><div class="collective-rank"><b>R1</b><code>[?]</code></div><div class="collective-rank"><b>R2</b><code>[?]</code></div><div class="collective-rank"><b>R3</b><code>[?]</code></div></div><div class="collective-arrow">broadcast ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><code>[A]</code></div><div class="collective-rank active"><b>R1</b><code>[A]</code></div><div class="collective-rank active"><b>R2</b><code>[A]</code></div><div class="collective-rank active"><b>R3</b><code>[A]</code></div></div></div>
-        <p>注意 broadcast 没有“求和”这一步，它只是从一个 source 复制/传播。典型直觉是某个 rank 先拥有配置、随机种子或张量，其它参与的 rank 最后都拿到同一份。</p>
+        <p>注意 broadcast 没有“求和”这一步，它只是从一个源 rank 复制或传播数据。典型直觉是某个 rank 先拥有配置、随机种子或 tensor，其它参与 ranks 最后都拿到同一份。</p>
       </section>
 
       <section class="article-section" id="allreduce">
         <div class="section-no">03 · All-Reduce</div>
-        <h2>每个 rank 都有一份贡献：先 reduce，再让所有 rank 都拿到完整聚合结果。</h2>
+        <h2>每个 rank 都有一份贡献：先 reduce（归约：按 SUM、MAX 等规则把多个参与者的数据聚合起来），再让所有 rank 都拿到完整聚合结果。</h2>
         <div class="collective-demo"><small>SUM EXAMPLE</small><div class="collective-row"><div class="collective-rank"><b>R0</b><code>[1]</code></div><div class="collective-rank"><b>R1</b><code>[2]</code></div><div class="collective-rank"><b>R2</b><code>[3]</code></div><div class="collective-rank"><b>R3</b><code>[4]</code></div></div><div class="collective-arrow">all-reduce(sum) ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><code>[10]</code></div><div class="collective-rank active"><b>R1</b><code>[10]</code></div><div class="collective-rank active"><b>R2</b><code>[10]</code></div><div class="collective-rank active"><b>R3</b><code>[10]</code></div></div></div>
-        <p><strong>Reduce</strong> 表示按某个 op 聚合，例如 SUM、MAX；all-reduce 的关键是聚合后的完整结果最后出现在所有参与的 rank 上。</p>
-        <div class="concept-note"><p>Data Parallel 的经典场景：各 rank 看不同 mini-batch，backward 得到不同梯度；对应梯度必须聚合，模型副本才能继续做数学上一致的更新。</p></div>
+        <p>reduce 可以使用不同 op，例如 SUM、MAX；all-reduce 的关键是聚合后的完整结果最后出现在所有参与 ranks 上。</p>
+        <div class="concept-note"><p>Data Parallel 的经典场景：各 rank 看不同小批次，backward 得到不同 gradient；对应 gradient 必须聚合，模型副本才能继续做数学上一致的更新。</p></div>
       </section>
 
       <section class="article-section" id="allgather">
         <div class="section-no">04 · All-Gather</div>
         <h2>每个 rank 只有一个分片，最后所有 rank 都拿到完整拼接结果。</h2>
         <div class="collective-demo"><small>SHARD → FULL TENSOR</small><div class="collective-row"><div class="collective-rank"><b>R0</b><code>[A]</code></div><div class="collective-rank"><b>R1</b><code>[B]</code></div><div class="collective-rank"><b>R2</b><code>[C]</code></div><div class="collective-rank"><b>R3</b><code>[D]</code></div></div><div class="collective-arrow">all-gather ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div><div class="collective-rank active"><b>R1</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div><div class="collective-rank active"><b>R2</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div><div class="collective-rank active"><b>R3</b><div class="collective-split"><span>A</span><span>B</span><span>C</span><span>D</span></div></div></div></div>
-        <p>这里没有 reduce；只是把各 rank 的分片收集并按约定排列成完整数据。以后 Tensor Parallel / Sequence Parallel 中，经常会遇到“某个维度当前被分片，但下一步需要完整张量”的情况。</p>
+        <p>这里没有 reduce；只是把各 rank 的 shard 收集并按约定排列成完整数据。以后 TP / Sequence Parallel 中，经常会遇到“某个维度当前被分片，但下一步需要完整 tensor”的情况。</p>
       </section>
 
       <section class="article-section" id="reducescatter">
         <div class="section-no">05 · Reduce-Scatter</div>
         <h2>先 reduce，但最后每人只留一个结果分片。</h2>
-        <p>用一个能看见“不同输出分片”的例子。四个ranks 分别持有：</p>
+        <p>用一个能看见“不同输出分片”的例子。四个 ranks 分别持有：</p>
         <div class="collective-demo"><small>ELEMENTWISE SUM → SCATTER</small><div class="collective-row"><div class="collective-rank"><b>R0</b><code>[1,2,3,4]</code></div><div class="collective-rank"><b>R1</b><code>[10,20,30,40]</code></div><div class="collective-rank"><b>R2</b><code>[100,200,300,400]</code></div><div class="collective-rank"><b>R3</b><code>[1000,2000,3000,4000]</code></div></div><div class="collective-arrow">reduce-scatter(sum) ↓</div><div class="collective-row collective-result"><div class="collective-rank active"><b>R0</b><code>[1111]</code></div><div class="collective-rank active"><b>R1</b><code>[2222]</code></div><div class="collective-rank active"><b>R2</b><code>[3333]</code></div><div class="collective-rank active"><b>R3</b><code>[4444]</code></div></div></div>
         <p>完整逐元素 SUM 是 <code>[1111,2222,3333,4444]</code>，但 reduce-scatter 不要求每个 rank 保存整条结果：每个 rank 只拿自己的 reduced 分片。这个语义正适合“最终本来就只需要每 rank 一部分”的场景。</p>
       </section>
