@@ -32,22 +32,22 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">GPU Systems</a><span>/</span><span>Bottlenecks</span></div>
       <div class="lesson-kicker"><span>LESSON 03.3 · GPU SYSTEMS</span><span>约 55 min</span></div>
       <h1>GPU 到底在等什么：计算、访存还是通信？</h1>
-      <p class="dek">“图形处理器（GPU）利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做推理基础设施时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 kernel 启动 / 中央处理器（CPU）调度开销。优化方向必须跟瓶颈对上。</p>
+      <p class="dek">“GPU 利用率 95%”并不等于“代码已经最优”，“算力翻倍”也不保证程序快一倍。真正做推理 Infra 时，要先判断当前工作到底被什么上限卡住：计算单元、显存带宽、跨设备通信，还是更碎的 kernel launch / CPU 调度开销。优化方向必须跟瓶颈对上。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释<code>compute-bound</code>、<code>memory-bound</code>、<code>communication-bound</code>。</li><li>理解算术强度为什么是“每搬 1 byte 数据做多少计算”的关键指标。</li><li>看懂一个极简 Roofline 图，知道斜坡区和平台区代表什么。</li><li>理解通信带宽与延迟是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解通信与计算重叠的收益上限，并把它连接到 Megatron。</li><li>解释为什么大语言模型（LLM）的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用自己的话解释 <code>compute-bound</code>（计算受限：性能主要受计算吞吐限制）、<code>memory-bound</code>（内存带宽受限：性能主要受数据读写带宽限制）、<code>communication-bound</code>（通信受限：性能主要受跨设备通信限制）。</li><li>理解 arithmetic intensity（算术强度：衡量每搬运 1 byte 数据能完成多少计算）为什么是判断瓶颈的重要指标。</li><li>看懂一个极简 Roofline（屋顶线模型：把计算吞吐上限和内存带宽上限放在同一张图里比较），知道斜坡区和平台区代表什么。</li><li>理解通信带宽与 latency（延迟：一次操作从开始到完成所花的时间）是两个不同问题，以及为什么小消息和大消息的优化方向不同。</li><li>理解 overlap（重叠执行：让计算与通信并行以隐藏部分等待时间）的收益上限，并把它连接到 Megatron。</li><li>解释为什么 LLM 的 Prefill 和 Decode 常有不同的性能压力，并把它连接到 vLLM。</li></ul></div>
 
       <section class="article-section" id="triad">
         <div class="section-no">01 · 三种不同上限</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
-        <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元） 能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但HBM（高带宽内存：数据中心 GPU/加速器常见的高带宽设备内存技术） / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective（集合通信：一组 ranks 共同参与的数据通信操作）、P2P（点对点通信：两个 peer/rank 之间直接发送和接收数据的通信模式） 或网络传输。</span></div></div>
-        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的通用矩阵乘法（GEMM）、precision 和 kernel；<code>memory-bound</code> 更关注少搬数据、fusion、复用；<code>communication-bound</code> 更关注通信量、拓扑、collective 算法和 overlap（重叠执行：让计算与通信并行以隐藏部分等待时间）。</p>
+        <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元）能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但 HBM / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective（集合通信：一组 GPU 或进程共同参与的数据通信操作）、P2P 或网络传输。</span></div></div>
+        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的 GEMM、精度策略和 kernel；<code>memory-bound</code> 更关注少搬数据、kernel fusion 和复用；<code>communication-bound</code> 更关注通信量、topology、collective 算法和 overlap。</p>
         <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
       </section>
 
       <section class="article-section" id="intensity">
         <div class="section-no">02 · 算术强度</div>
         <h2>判断计算还是内存，一个很重要的视角是：每搬 1 byte，做了多少计算？</h2>
-        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分DRAM（动态随机存取存储器：主机内存和部分设备内存常用的易失性存储技术）、L2、L1 等层级；我们先用“从显存搬多少数据”建立直觉。</p></div>
+        <div class="intensity-card"><small>ARITHMETIC INTENSITY</small><code>算术强度 = FLOPs / bytes moved</code><p>这里的 bytes moved 指某个分析层级上的数据流量。严格 profiler 会区分 DRAM（动态随机存取存储器：主机内存和部分设备内存常用的易失性存储技术）、L2、L1 等 memory hierarchy；我们先用“从显存搬多少数据”建立直觉。</p></div>
         <div class="pressure-grid"><div class="pressure-card"><small>LOW INTENSITY</small><b>搬很多，算很少</b><span>例如某些逐元素操作、拷贝、简单归一化步骤，往往更容易受内存带宽限制。</span></div><div class="pressure-card"><small>HIGH INTENSITY</small><b>同一批数据反复参与很多乘加</b><span>足够大的 GEMM 往往能做很多计算，更有机会把 Tensor Core 吃满并进入<code>compute-bound</code> 区域。</span></div></div>
         <p>“某类算子永远<code>memory-bound</code>”也不是绝对规律。shape、批次、dtype、kernel 实现、缓存命中和硬件都会改变实际位置。Infra 工程师要养成<strong>用测量确认</strong>的习惯。</p>
       </section>
@@ -57,7 +57,7 @@
         <h2>Roofline 只是把两个上限画在一张图上。</h2>
         <p>横轴是算术强度，纵轴是能达到的计算性能。极简版可以想成：</p>
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
-        <div class="roof-caption"><div><b>左边 · memory-bound（内存带宽受限：性能主要受数据读写带宽限制）</b><span>每 byte 做的计算太少，性能上限随带宽和算术强度增长。</span></div><div><b>右边 · compute-bound（计算受限：性能主要受计算吞吐限制）</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
+        <div class="roof-caption"><div><b>左边 · memory-bound</b><span>每 byte 做的计算太少，性能上限随带宽和 arithmetic intensity 增长。</span></div><div><b>右边 · compute-bound</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
         <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
         <div class="source-note">官方延伸阅读：NVIDIA Nsight 计算的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
       </section>
