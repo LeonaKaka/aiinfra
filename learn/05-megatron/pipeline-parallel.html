@@ -34,7 +34,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>流水线并行</span></div>
       <div class="lesson-kicker"><span>LESSON 05.4 · MEGATRON</span><span>约 70 min</span></div>
       <h1>Pipeline Parallel (PP)：把 Transformer layers 按深度分到不同 GPU。</h1>
-      <p class="dek">张量并行是“一个层内大家一起算”，流水线并行则换了一个维度：前几层放在 pipeline stage 0，中间几层放在 pipeline stage 1，后几层继续往后。这样单张图形处理器（GPU）不再保存整模型深度，但代价是forward activations 要沿 pipeline 向后续 stages 传递，backward gradients 则沿相反方向返回。</p>
+      <p class="dek">张量并行是“一个层内大家一起算”，流水线并行则换了一个维度：前几层放在 pipeline stage 0，中间几层放在 pipeline stage 1，后几层继续往后。这样单张GPU不再保存整模型深度，但代价是forward activations 要沿 pipeline 向后续 stages 传递，backward gradients 则沿相反方向返回。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释流水线并行（PP）与张量并行（TP）的切分维度为什么完全不同。</li><li>把 24 层 Transformer 按 PP=4 切成四个 pipeline stages。</li><li>理解forward activations发送与backward gradients发送的点对点通信（P2P）数据流。</li><li>解释为什么不切 microbatches 会产生严重 pipeline bubble。</li><li>理解1F1B 的 warmup / steady state / cooldown。</li><li>知道 Megatron 的non-interleaved / interleaved pipeline schedules 对应哪些源码入口。</li></ul></div>
 
@@ -52,7 +52,7 @@
         <h2>Pipeline 的接口就是pipeline stage边界那块激活值张量。</h2>
         <div class="p2p-pair"><div><small>FORWARD</small><b>阶段 0 → 阶段 1</b><span>发送pipeline stage 0 的输出激活值</span></div><span>激活值 →<br/>← dActivation</span><div><small>BACKWARD</small><b>阶段 1 → 阶段 0</b><span>把对边界激活值的梯度传回去</span></div></div>
         <p>因此 PP 的核心通信 primitive 更接近 <code>send / recv</code>，而不是 TP 那种层-internal 集合通信。Megatron Core 当前的 <code>P2PCommunicator</code> 就专门管理相邻流水线pipeline stage的tensor exchanges。</p>
-        <div class="source-note">官方应用程序编程接口（API）：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.pipeline_parallel.p2p_communication</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive 流水线pipeline stage之间张量交换的通信器。</div>
+        <div class="source-note">官方API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.pipeline_parallel.p2p_communication.html">core.pipeline_parallel.p2p_communication</a>。当前文档把 <code>P2PCommunicator</code> 定义为负责 consecutive 流水线pipeline stage之间张量交换的通信器。</div>
       </section>
 
       <section class="article-section" id="bubble">
