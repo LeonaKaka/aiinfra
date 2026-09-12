@@ -61,7 +61,7 @@ Megatron 05 模块与 KV Connector 08 模块的核心课程现在会在 checkpoi
 
 Megatron 主线：
 
-`TP layers/mappings → parallel groups → PP schedule/P2P → CP attention / EP dispatcher → distributed optimizer → param/grad buckets + overlap`
+`TP layers/mappings → parallel groups → PP schedule/P2P → CP attention / EP dispatcher → DDP gradient sync → distributed optimizer → param/grad buckets + overlap`
 
 vLLM / NIXL 主线：
 
