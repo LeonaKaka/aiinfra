@@ -49,7 +49,7 @@
         <div class="source-row">
           <span class="order">00</span>
           <div><em class="phase-label">CONTROL · EXECUTION SPINE</em><b>GPT 入口 → 训练步骤 → 调度</b><code>pretrain_gpt.py → megatron/training/training.py → core/pipeline_parallel/schedules.py</code></div>
-          <p>先别追局部张量。第一遍只追调用关系：<code>pretrain_gpt.py</code> 组装配置、数据集提供器与 <code>forward_step</code> 后进入 <code>pretrain()</code>；训练循环的 <code>train_step()</code> 再把当前 model / iterator 交给 <code>get_forward_backward_func()</code> 选出的调度，完成 forward/backward 后才进入 optimizer 更新。这里比只看某个并行层更适合作为源码第一站。</p>
+          <p>先别追局部张量。第一遍只追调用关系：<code>pretrain_gpt.py</code> 组装配置、数据集提供器与 <code>forward_step</code> 后进入 <code>pretrain()</code>；训练循环先用 <code>get_forward_backward_func()</code> 选出当前 forward/backward schedule，再把这个函数连同 model / iterator 传给 <code>train_step()</code> 执行，之后才进入 optimizer 更新。这里比只看某个并行层更适合作为源码第一站。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/pretrain_gpt.py">入口 ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/training/training.py">训练循环 ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py">调度选择器 ↗</a><a href="../labs/mini-training-system.html">A12 →</a></div>
         </div>
         <div class="source-row">
