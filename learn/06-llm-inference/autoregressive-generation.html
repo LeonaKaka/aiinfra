@@ -35,7 +35,7 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么“下一个 token”必须依赖已经确认的前缀。</li><li>知道目标模型先输出一组候选分数，再由选择策略决定真正接受哪个 token。</li><li>理解为什么单个普通请求的生成步骤之间存在串行条件依赖。</li><li>知道有些加速方法可以一次提出或验证多个候选，但不能删除目标模型的条件概率关系。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分“等首个 token”“后续 token 是否流畅”“平均生成速度”和系统吞吐量这几类不同指标。</li></ul></div>
 
-            <div class="concept-note"><p><strong>从训练切到推理，先把心智模型重置一下。</strong>Transformer forward 还在，GPU / TP / PP 等执行基础也还在；但一次在线请求通常不再做 backward、gradient accumulation 和 optimizer step。取而代之的是长期活着的请求状态、不断增长的 KV Cache、逐步生成的 token，以及决定“下一轮谁能推进”的 scheduler。06–08 的主角因此从“训练状态怎样同步”变成“请求状态和 KV 怎样安全、高效地活下去”。</p></div>
+            <div class="concept-note"><p><strong>从训练切到推理，先把心智模型重置一下。</strong>Transformer forward 还在，GPU / TP / PP 等执行基础也还在；但一次在线请求通常不再做 backward、gradient accumulation 和 optimizer step。取而代之的是长期活着的请求状态、不断增长的 KV Cache、逐步生成的 token，以及决定“下一轮谁能推进”的调度逻辑。06–08 的主角因此从“训练状态怎样同步”变成“请求状态和 KV 怎样安全、高效地活下去”。</p></div>
 
 <section class="article-section" id="tokens">
         <div class="section-no">01 · 文本如何变成 Token</div>
