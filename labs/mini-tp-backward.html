@@ -93,7 +93,7 @@ PASS</pre></div>
 
     <section class="lab-section" id="next"><div class="lab-kicker">05 · 下一步</div><h2>下一层才是“训练系统”，而不是更多矩阵公式。</h2><div class="check-list"><div>① 把手写反向传播换成 autograd-aware collective，观察计算图里的通信节点。</div><div>② 加 microbatch 梯度累积：什么时候可以延迟同步？</div><div>③ 加 DP 进程组：区分 TP 内的 dX 通信与 DP 的参数-梯度同步。</div><div>④ 再进入 Distributed 优化器：为什么 reduce-scatter 比完整 all-reduce 更省状态复制。</div></div></section>
 
-    <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A1 · TP 前向计算</a><a href="./mini-block-kv-handoff.html">Lab B2 · Block KV 交接 →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A1 · TP 前向</a><a href="./mini-dp-grad-accum.html">Lab A3 · DP + 梯度 Accumulation →</a></nav>
   </main>
   <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#map">从 replicated dY 往回走，逐个问：这个梯度属于谁？</a><a href="#math">脚本故意不用分布式 autograd，把公式写出来。</a><a href="#run">四项误差全部对 dense autograd。</a><a href="#source">现在最值得读的是 mappings，而不是更大的 model 文件。</a><a href="#next">下一层才是“训练系统”，而不是更多矩阵公式。</a></aside>
 </div>
