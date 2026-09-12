@@ -36,6 +36,8 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么复制式数据并行不能解决“每个 rank 都要常驻的单份模型本身就放不下”的问题。</li><li>区分 DP 如何切数据和模型副本，以及 TP、PP如何分别切一层内部的张量和模型深度。</li><li>知道 CP与专家并行又分别切序列/上下文和 MoE 专家。</li><li>理解 Megatron 为什么要维护多种 process groups，而不是所有并行维度共用一个 process group。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道读源码时先扫 <code>pretrain_gpt.py → training.py → schedules.py</code> 的训练执行主干，再下钻 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
 
+      <div class="concept-note"><p><strong>第一次学 05.1，不需要同时掌握所有并行缩写。</strong>先把三条主轴记牢：DP 切数据副本，TP 切一层内部，PP 切模型深度。CP、EP 和分片式 DP 在这一课只负责“先知道还有这些方向”；等到 05.6、05.7 和 05.5 再分别学清数据流与通信。后面遇到不熟的缩写，先继续主线，不要停下来背配置表。</p></div>
+
       <section class="article-section" id="fit">
         <div class="section-no">01 · 第一堵墙：模型放不下</div>
         <h2>70B 模型只算 BF16 权重，就已经大约 140 GB。</h2>
@@ -121,7 +123,7 @@
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.1</span></div><h2>先确认你知道 Megatron 在解决什么。</h2><div class="quiz-item"><div class="quiz-q">1. 8 张 80GB GPU 总计 640GB，为什么一个 130GiB 模型仍然不能直接当成“放进一张 640GB 卡”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每张 GPU 的 device memory 独立。模型必须显式 shard 到多张卡；任何跨分片的依赖还需要真实通信。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么传统数据并行不能解决“完整模型单卡放不下”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">传统 DP 在每个 data-parallel rank 上复制完整模型，只切批次。它提高吞吐，但完整模型仍要在每张卡上存在，所以无法解决单份模型超过单卡容量的问题。</div></div><div class="quiz-item"><div class="quiz-q">3. TP、PP、DP 最稳定的区分方式是什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">看“切哪个维度”：DP 切批次，TP 切一个层内的张量/计算，PP 切模型深度。不同切法自然产生不同通信模式。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模参考实现验证正确性与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A3 · DP + Gradient Accumulation</strong><br />先看复制式 DP 的本地梯度与同步，再把它和模型分片问题区分开。 <a href="../../labs/mini-dp-grad-accum.html">打开实验 →</a></p></div><div class="concept-note"><p><strong>Lab A6 · TP × DP 2D Topology</strong><br />亲手构造 TP×DP 进程组，验证同一个 rank 为什么同时属于多条并行轴。 <a href="../../labs/mini-tp-dp-2d.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">实验导航 · 先认对应关系</div><h2>A3 / A6 对应这节的概念，但第一次学习不要从中间跳进 Lab。</h2><p>Training Labs 是一条递进线，推荐按 <strong>A1 → A12</strong> 顺序执行。05.1 这里只告诉你后面哪些实验会重新用到今天的概念；真正开始动手，从 05.2 对应的 A1 / A2 开始更顺。</p><div class="concept-note"><p><strong>Lab A3 · DP + Gradient Accumulation</strong><br />后面用它看复制式 DP 的本地梯度与同步，再把它和模型分片问题区分开。 <a href="../../labs/mini-dp-grad-accum.html">查看对应实验 →</a></p></div><div class="concept-note"><p><strong>Lab A6 · TP × DP 2D Topology</strong><br />后面用它构造 TP×DP 进程组，验证同一个 rank 为什么同时属于多条并行轴。 <a href="../../labs/mini-tp-dp-2d.html">查看对应实验 →</a></p></div><p><a href="../../labs/index.html">查看完整 A1–A12 Training Lab 路线 →</a></p></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">术语表 · 本课词汇</div>
