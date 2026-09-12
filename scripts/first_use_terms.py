@@ -48,6 +48,7 @@ SOURCE_TERMS = {
     "activation checkpointing": ("激活值检查点", "不保存全部 activation，而在 backward 时重算以节省显存"),
     "autograd": ("自动求导", "PyTorch 自动记录计算图并计算 gradient 的机制"),
     "Adam": ("Adam 优化器", "利用一阶和二阶动量统计更新参数的常用 optimizer"),
+    "Megatron Distributed Optimizer": ("分布式优化器", "把训练状态按数据并行进程分片以减少每卡冗余"),
     "gradient accumulation": ("梯度累积", "多个小批次的 gradient 先累加，再统一更新 parameter"),
     "checkpoint": ("检查点", "保存模型和训练状态，便于中断后继续训练"),
     "Data Parallel": ("数据并行", "不同 replica 处理不同数据，再同步训练状态"),
