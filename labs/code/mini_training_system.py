@@ -10,7 +10,7 @@ import torch.distributed as dist
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="TP x DP training step with sharded optimizer state and bucketed async reduce-scatter."
+        description="TP x DP training step with DP-owned parameter updates and bucketed async reduce-scatter."
     )
     p.add_argument("--batch-per-replica", type=int, default=4)
     p.add_argument("--in-dim", type=int, default=6)
@@ -111,8 +111,9 @@ def main() -> None:
         w1_grad_shard, flat_w1_grad, group=dp_group, async_op=True
     )
 
-    # Long-lived optimizer/master state can remain DP-sharded. This toy uses
-    # SGD, so the only sharded state is the owned parameter/update chunk.
+    # Real optimizers may keep momentum/Adam/master state DP-sharded. This toy
+    # uses plain SGD, so there is no extra optimizer state: it only shards
+    # parameter/update ownership across the DP group.
     w2_work.wait()
     flat_w2 = w2_local.flatten()
     w2_param_shard = torch.chunk(flat_w2, 2)[dp_idx].contiguous()
