@@ -47,7 +47,7 @@
 
       <section class="article-section" id="value"><div class="section-no">06 · 权重怎样混合 V</div><h2>最后一步：<code>attention weights @ V</code>。</h2><p>仍然看单条序列：</p><div class="shape-rule"><code>weights [S,S]</code><span>@</span><code>V [S,H]</code><span>→</span><code>context [S,H]</code></div><p>每一行权重都对应一个query token。它拿这S个权重去加权S条Value向量，最后得到一条新的H维向量。所以输出又回到“每个 token 一条向量”的结构。</p><div class="attention-pipeline"><div><small>1</small><b>X</b><code>[B,S,H]</code></div><span>→</span><div><small>2</small><b>Q K V</b><code>3 × [B,S,H]</code></div><span>→</span><div><small>3</small><b>分数</b><code>[B,S,S]</code></div><span>→</span><div><small>4</small><b>weights</b><code>[B,S,S]</code></div><span>→</span><div><small>5</small><b>上下文</b><code>[B,S,H]</code></div></div><p>这里故意还是“单头教学版”。下一课会把 H 拆成“头数 × 每头维度”，到时分数会多一个头维度。标准多头 Attention 在各头结果拼回去以后，通常还会经过一个 output projection（输出投影：把多头 Attention 结果重新映射回隐藏维度） <code>Wₒ</code>；我们也留到下一课一起讲。</p></section>
 
-      <section class="article-section" id="code"><div class="section-no">07 · 在 PyTorch 里跟踪 tensor shape</div><h2>不用高级Attention API，自己把这条数据流跑一次。</h2><div class="code-block"><div class="code-head"><span>python</span><span>04_attention_single_head.py</span></div><pre><code>import math
+      <section class="article-section" id="code"><div class="section-no">07 · 在 PyTorch 里跟踪 tensor shape</div><h2>不用高级 Attention 接口，自己把这条数据流跑一次。</h2><div class="code-block"><div class="code-head"><span>python</span><span>04_attention_single_head.py</span></div><pre><code>import math
 import torch
 
 B, S, H = <span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>
