@@ -27,7 +27,7 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 static batching 为什么容易被长尾请求拖住。</li><li>准确理解 continuous batching：批次成员可以在 iterations 之间持续变化。</li><li>知道当前 V1 <code>Scheduler</code> 内部没有两套独立的 “Prefill 阶段 / Decode 阶段” 调度器，而是围绕 token 进度统一推进 requests。</li><li>知道调度器同时受本轮 token 预算、输入预算、最大运行请求数和 KV 容量等资源约束。</li><li>理解当前 V1 的 chunked Prefill 与运行中请求优先策略怎样细化调度粒度。</li><li>知道当前 V1 的默认抢占恢复方式是重计算，而不是旧式 SWAP。</li></ul></div>
 
-            <div class="concept-note"><p><strong>建议两遍读。</strong>第一遍只回答三个问题：哪些 requests 还活着、本轮 token budget 能推进谁、KV 空间够不够。第二遍再进入 chunked Prefill、preemption 和当前 V1 Scheduler 的具体字段。先学调度约束，再记实现名。</p></div>
+            <div class="concept-note"><p><strong>建议两遍读。</strong>第一遍只回答三个问题：哪些请求还活着、本轮 token 预算能推进谁、KV 空间够不够。第二遍再进入长 Prefill 如何分块、资源不足时怎样让请求暂时退出，以及当前 V1 Scheduler 的具体字段。先学调度约束，再记实现名。</p></div>
 
 <section class="article-section" id="static">
         <div class="section-no">01 · 静态批处理为什么浪费资源</div>
