@@ -349,6 +349,11 @@ SOURCE_TERMS = {
     "region": ("内存区域", "传输层注册或操作的一段内存范围"),
     "lease": ("租约", "在有效期内保证远端资源继续保留的生命周期机制"),
     "heartbeat": ("心跳", "周期性证明 consumer 仍存活并维持资源有效期的消息"),
+    "capacity planning": ("容量规划", "根据真实工作负载估算各资源池需要多少计算与内存资源"),
+    "heterogeneous TP": ("异构张量并行", "Prefill 与 Decode 使用不同的 TP degree"),
+    "bidirectional KV transfer": ("双向 KV 传输", "P/D 可以根据多轮会话需要在两个方向复用和搬运已有 KV"),
+    "TTL": ("生存时间", "资源或缓存保持有效、超过后即可过期回收的时间窗口"),
+    "QPS": ("每秒查询数", "系统每秒处理请求或查询数量的吞吐指标"),
     "completion": ("完成状态", "表示异步操作已经安全结束的确认"),
     "peer": ("对端", "通信或 transfer 中的另一侧 process 或实例"),
 }
