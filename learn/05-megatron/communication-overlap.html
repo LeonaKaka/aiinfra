@@ -58,7 +58,7 @@
         <div class="section-no">03 · bucket size 是双刃剑</div>
         <h2>太大的 bucket 启动太晚；太小的 bucket 又可能掉进 latency / launch overhead。</h2>
         <div class="hidden-exposed"><div><small>TOO LARGE</small><b>就绪 late</b><span>必须等很多参数的梯度都完成，通信虽然大，但能覆盖它的剩余 backward 窗口变短。</span></div><i>↔</i><div><small>TOO SMALL</small><b>too many collectives</b><span>更早就绪，却产生大量小消息；collective launch/延迟与低带宽利用可能反过来吃掉收益。</span></div></div>
-        <p>当前默认值不是由配置 dataclass 自己计算，而是在 <code>DistributedDataParallel.__init__</code> 里解析：如果没有显式设置 <code>bucket_size</code>，MCore 使用 <code>max(40,000,000, 1,000,000 × dp_size)</code> 个参数；源码注释给出的理由是更大 DP 通常需要更大 bucket，避免 collective 过度 latency-bound（延迟受限：固定启动与往返延迟占比过高，带宽还没充分利用）。如果 <code>overlap_grad_reduce=False</code>，当前实现会把 <code>bucket_size</code> 设回 <code>None</code>；部分非首个 pipeline stage 也会关闭 bucketing，因为这些通信不一定处在同一条关键路径上。</p>
+        <p>当前默认值不是由配置对象自己计算，而是在 <code>DistributedDataParallel.__init__</code> 里解析：如果没有显式设置 <code>bucket_size</code>，MCore 使用 <code>max(40,000,000, 1,000,000 × dp_size)</code> 个参数；源码注释给出的理由是更大 DP 通常需要更大 bucket，避免 collective 过度 latency-bound（延迟受限：固定启动与往返延迟占比过高，带宽还没充分利用）。如果 <code>overlap_grad_reduce=False</code>，当前实现会把 <code>bucket_size</code> 设回 <code>None</code>；部分非首个 pipeline stage 也会关闭 bucketing，因为这些通信不一定处在同一条关键路径上。</p>
         <div class="concept-note"><p><strong>所以 bucket 不是纯显存参数。</strong>它实际上在调“就绪粒度、消息大小、可隐藏窗口”三者之间的平衡。</p></div>
       </section>
 
