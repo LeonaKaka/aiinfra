@@ -269,6 +269,8 @@ SOURCE_TERMS = {
     "iteration": ("执行轮次", "scheduler 规划并执行一次模型工作的循环"),
     "batch": ("批次", "一次共同送入模型执行的一组数据或 token 工作"),
     "continuous batching": ("连续批处理", "每个调度轮次都可以重新组成执行 batch"),
+    "static batching": ("静态批处理", "固定一组 requests 一起运行，直到这一批全部结束"),
+    "recompute": ("重计算", "被抢占请求恢复时重新计算必要状态，而不是保留完整 KV"),
     "engine": ("推理引擎", "把 request 管理、scheduler 和模型执行组织成服务循环"),
     "workload": ("工作负载", "系统实际接收的一组 request 规模与分布特征"),
     "prefix cache": ("前缀缓存", "复用相同输入前缀已经计算好的 KV state"),
