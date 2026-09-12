@@ -174,11 +174,30 @@ def source_case_sensitive(term: str) -> bool:
     return any(ch.isupper() for ch in term)
 
 
+def concept_name(value: str) -> str:
+    """Normalize a term/full name so source terms and acronyms can share one concept key."""
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def source_concept_key(term: str) -> str:
+    # If SOURCE_TERMS contains the abbreviation itself (NIC, NVLS, A2A, 1F1B),
+    # or the English full name of a registered acronym (Expert Parallel -> EP,
+    # all-gather -> AG), treat them as one pedagogical concept. Explaining the
+    # full term once must not force a second explanation on its shorthand.
+    if term in TERMS:
+        return f"abbr:{term}"
+    normalized = concept_name(term)
+    for abbr, (english, _chinese, _meaning, _curated) in TERMS.items():
+        if concept_name(english) == normalized:
+            return f"abbr:{abbr}"
+    return f"source:{term}"
+
+
 def source_specs():
     out = []
     for term, (chinese, hint) in SOURCE_TERMS.items():
         out.append({
-            "key": f"source:{term}",
+            "key": source_concept_key(term),
             "aliases": SOURCE_ALIASES.get(term, (term,)),
             "chinese": chinese,
             "hint": hint,
