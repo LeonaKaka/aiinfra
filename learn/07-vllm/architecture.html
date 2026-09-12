@@ -21,7 +21,7 @@
   <div class="lesson-shell">
     <aside class="course-sidebar" aria-label="课程目录">
       <div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a>
-      <div class="module-block"><div class="module-name"><b>06</b> LLM Inference</div><a class="lesson-link" href="../06-llm-inference/autoregressive-generation.html">06.1–06.3 Inference</a></div>
+      <div class="module-block"><div class="module-name"><b>06</b> LLM Inference</div><a class="lesson-link" href="../06-llm-inference/autoregressive-generation.html">06.1–06.4 LLM Inference</a></div>
       <div class="module-block"><div class="module-name"><b>07</b> vLLM</div><a class="lesson-link current" href="./architecture.html">07.1 Architecture</a><a class="lesson-link" href="./scheduler-continuous-batching.html">07.2 调度器 / Continuous Batching</a><a class="lesson-link" href="./kv-cache-manager.html">07.3 KV Cache Manager</a><a class="lesson-link" href="./model-runner-paged-attention.html">07.4 ModelRunner / Paged Attention</a><a class="lesson-link" href="./prefix-cache-preemption.html">07.5 前缀缓存 / 抢占</a></div>
       <div class="module-block"><div class="module-name"><b>08</b> KV Connector</div><a class="lesson-link" href="../08-kv-connector/why-move-kv.html">08.1 为什么要搬 KV</a></div>
     </aside>
@@ -123,7 +123,7 @@
         </table></div>
       </section>
 
-      <div class="next-lesson muted-next"><div><small>NEXT · 07.2</small><br /><strong>调度器与 Continuous Batching：GPU 下一轮到底算谁？</strong></div><span>→</span></div>
+      <a class="next-lesson" href="./scheduler-continuous-batching.html"><div><small>NEXT · 07.2</small><br /><strong>调度器与 Continuous Batching：GPU 下一轮到底算谁？</strong></div><span>→</span></a>
     </main>
 
     <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#one-line">请求 loop</a><a href="#control-data">控制 vs 执行</a><a href="#enginecore">EngineCore</a><a href="#scheduler-output">SchedulerOutput</a><a href="#kv-manager">KVCacheManager</a><a href="#runner">Runner 选择逻辑</a><a href="#source-map">源码地图</a><a href="#one-request">走一次请求</a><a href="#checkpoint">Checkpoint</a></aside>
