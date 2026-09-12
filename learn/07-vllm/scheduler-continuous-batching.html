@@ -22,7 +22,7 @@
       <div class="mobile-course-bar"><span>07 · vLLM</span><a href="../../index.html#roadmap">课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>vLLM</span><span>/</span><span>调度器</span></div>
       <div class="lesson-kicker"><span>LESSON 07.2 · VLLM</span><span>约 80 min</span></div>
-      <h1>Scheduler 与 Continuous Batching（连续批处理：每个调度轮次都可以重新组成执行 batch）：GPU 下一轮到底算谁？</h1>
+      <h1>Scheduler 与 Continuous Batching：GPU 下一轮到底算谁？</h1>
       <p class="dek">在线推理的 requests不会整齐地同时到达，也不会同时结束。A 还在 Decode，B 刚结束，C 正在处理长 prompt 的一段 Prefill，D/E 又在等待。如果沿用 static batching（静态批处理：固定一组 requests 一起运行，直到这一批全部结束）的思路，空槽和长尾会浪费 GPU。vLLM 的核心变化之一，是让每个 scheduler iteration 都能根据最新状态重新组成要执行的 token 工作集合。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 static batching 为什么容易被长尾请求拖住。</li><li>准确理解 continuous batching：批次成员可以在 iterations 之间持续变化。</li><li>知道当前 V1 <code>Scheduler</code> 内部没有两套独立的 “Prefill 阶段 / Decode 阶段” 调度器，而是围绕 token 进度统一推进 requests。</li><li>知道调度器同时受本轮 token 预算、输入预算、最大运行请求数和 KV 容量等资源约束。</li><li>理解当前 V1 的 chunked Prefill 与运行中请求优先策略怎样细化调度粒度。</li><li>知道当前 V1 的默认抢占恢复方式是重计算，而不是旧式 SWAP。</li></ul></div>
