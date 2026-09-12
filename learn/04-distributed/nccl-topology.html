@@ -163,7 +163,6 @@ NIC0    ...   ...   ...   ...    X
         <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
-        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
         <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>
         <tr><td><code>HBM</code></td><td>High Bandwidth Memory</td><td>高带宽内存</td><td>数据中心 GPU/加速器常见的高带宽设备内存技术。</td></tr>
         <tr><td><code>GDDR</code></td><td>Graphics Double Data Rate</td><td>图形双倍数据速率存储器</td><td>很多消费级/工作站 GPU 使用的显存技术。</td></tr>
