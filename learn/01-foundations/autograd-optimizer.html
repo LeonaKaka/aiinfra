@@ -29,8 +29,8 @@
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>autograd &amp; 优化器</span></div>
       <div class="lesson-kicker"><span>LESSON 01.4 · FOUNDATION</span><span>约40 min</span></div>
-      <h1>autograd（自动求导：PyTorch 自动记录计算图并计算 gradient 的机制）与 Optimizer：gradient 从哪里来，显存又花在哪里？</h1>
-      <p class="dek">上一课你已经会写 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。现在把这两个黑盒拆开一点：gradient 到底表达什么？PyTorch 怎么沿计算关系把它算回来？Adam（Adam 优化器：利用一阶和二阶动量统计更新 parameter 的常用 optimizer）为什么会比“只存 parameter”多吃很多显存？这些问题后面会自然变成一个系统问题：当训练状态大到每张设备都重复保存很浪费时，哪些状态可以安全地分片保存和更新？</p>
+      <h1>自动求导与优化器：gradient 从哪里来，显存又花在哪里？</h1>
+      <p class="dek">上一课你已经会写 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。现在把这两个黑盒拆开一点：autograd（自动求导：PyTorch 自动记录计算关系并计算 gradient 的机制）怎样把 gradient 算回来？gradient 到底表达什么？Adam（Adam 优化器：利用一阶和二阶动量统计更新 parameter 的常用 optimizer）为什么会比“只存 parameter”多吃很多显存？这些问题后面会自然变成一个系统问题：当训练状态大到每张设备都重复保存很浪费时，哪些状态可以安全地分片保存和更新？</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用直觉解释“梯度”而不是只背“导数”。</li><li>看懂一个最小 autograd 计算图，以及 <code>.grad</code> 是什么时候出现的。</li><li>区分 autograd 负责计算 gradient，而 optimizer 负责用 gradient 更新 parameter。</li><li>理解 Adam 为什么需要额外 optimizer state（优化器状态：optimizer 为更新 parameter 额外保存的历史量），以及为什么它们值得被分片。</li></ul></div>
 
