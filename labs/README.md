@@ -112,7 +112,7 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_handshake_lifetime.py
 ```bash
 torchrun --standalone --nproc-per-node=2 labs/code/mini_registered_region_descriptor.py
 ```
-用一个底层 storage allocation 承载多个 layer KV views，分别计算 region offset、block length、block stride，再交换几何 metadata 并验证 block transfer。对应当前 vLLM NIXL `register_kv_caches()` 里“allocation registration 与 logical transfer regions 分开”的设计，但不模拟真实 `register_memory`、rkey、UCX 或 RDMA。
+用一个底层 storage allocation 承载多个 layer KV views，分别计算 region offset、block length、block stride，再交换几何 metadata 并验证 block transfer。对应当前 vLLM NIXL `register_kv_caches()` 的核心阅读原则：先区分“哪些底层内存范围被 transport 注册”和“后续按哪些 logical regions / geometry 构造 block transfer”。当前 Mamba、CSA-linear、host-resident 等路径说明二者不能机械等同；本实验仍不模拟真实 `register_memory`、rkey、UCX 或 RDMA。
 
 ### Lab B7 — KV Lease / Expiry
 ```bash
@@ -124,7 +124,7 @@ torchrun --standalone --nproc-per-node=2 labs/code/mini_kv_lease_expiry.py
 ```bash
 torchrun --standalone --nproc-per-node=2 labs/code/mini_inference_engine.py
 ```
-把三类 request 放进同一个最小 scheduler：local KV hit 直接 decode；cold miss 消耗 token budget 做本地 prefill；remote KV request 先验证 descriptor、分配 logical→physical block table，并在异步传输期间等待真正的 KV dependency。最后 remote decode 与本地重算 prompt KV 的 correctness reference 对齐，并通过 completion acknowledgement 才释放 producer-side lifetime。request state、descriptor 字段和 block ID 都是教学模型，不宣称是当前 vLLM 的逐字段复刻。
+把三类 request 放进同一个最小 scheduler：local KV hit 直接 decode；cold miss 消耗 token budget 做本地 prefill；remote KV request 先验证 descriptor、分配 logical→physical block table，并在异步传输期间等待真正的 KV dependency。最后 remote decode 与本地重算 prompt KV 的 correctness reference 对齐；两条路径都会把当前 decode token 自己的 K/V 接到历史 KV 后再算 attention，并通过 completion acknowledgement 才释放 producer-side lifetime。request state、descriptor 字段和 block ID 都是教学模型，不宣称是当前 vLLM 的逐字段复刻。
 
 ## Environment
 
