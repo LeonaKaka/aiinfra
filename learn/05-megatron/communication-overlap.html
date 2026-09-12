@@ -32,7 +32,7 @@
       <div class="mobile-course-bar"><span>05 · Megatron</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Communication Overlap</span></div>
       <div class="lesson-kicker"><span>LESSON 05.8 · MEGATRON</span><span>约 75 min</span></div>
-      <h1>Communication Overlap：真正要找的不是第二条 stream，而是“第一次不得不 wait”的位置。</h1>
+      <h1>Communication Overlap：真正要找的不是第二条 stream，而是“第一次不得不等待”的位置。</h1>
       <p class="dek">前面每加一种并行都会出现通信：DP 要同步 gradients / parameters，TP 要交换 activations，PP 要在不同 stages 之间传数据，EP 还要搬运 routed tokens。communication overlap 的目标不是把这些通信量变没，而是尽早启动 communication，让不依赖它的计算继续推进，把真正的等待推迟到数据第一次必须被消费的位置。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“就绪 → 异步启动 → 独立计算 → 等待”四个事件解释 overlap。</li><li>区分 collective 的总时长与关键路径上真正暴露的通信尾部。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解 bucket size 为什么同时控制“多久才能就绪”和“单次 collective 的数据量是否足够大”。</li><li>把同一个方法迁移到 TP 的 AG/RS、PP P2P 与 EP A2A。</li><li>知道打开 overlap flag 不等于吞吐量一定提高，最终必须用 timeline 与单步时间验证。</li></ul></div>
