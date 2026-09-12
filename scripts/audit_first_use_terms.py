@@ -127,7 +127,6 @@ SOURCE_ALIASES = {
     "benchmark": ("benchmark", "benchmarks"),
     "worker": ("worker", "workers"),
     "executor": ("executor", "executors"),
-    "block": ("block", "blocks"),
     "block table": ("block table", "block tables"),
     "slot mapping": ("slot mapping", "slot mappings"),
     "eviction": ("eviction", "evict"),
