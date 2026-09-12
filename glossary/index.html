@@ -31,8 +31,8 @@
     </nav>
 
     <section class="glossary-group" id="tensor"><h2>张量 / 模型</h2><div class="term-grid">
-      <div class="term"><small>SHAPE</small><b>[B, S, H]</b><p>批次（Batch）、序列（Sequence）、隐藏维（Hidden）是三个最常见维度；后面几乎所有切分、显存和通信分析都从张量形状开始。</p><em>先问：哪个维度被切了？</em></div>
-      <div class="term"><small>GEMM</small><b>General Matrix Multiply</b><p>大多数 Linear / MLP 的核心矩阵乘；LLM 训练与 Prefill 的大量算力最终都落成 GEMM。</p><em>不要把“模型层”与“GPU 内核（kernel）”混成一个层级。</em></div>
+      <div class="term"><small>SHAPE</small><b>[B, S, H]</b><p>Batch（批次：一次共同处理的样本维度）、Sequence（序列：token 顺序对应的长度维度）、Hidden（隐藏维：每个 token 表示的特征宽度）是三个最常见维度；后面几乎所有切分、显存和通信分析都从张量形状开始。</p><em>先问：哪个维度被切了？</em></div>
+      <div class="term"><small>GEMM</small><b>General Matrix Multiply</b><p>大多数 Linear / MLP 的核心矩阵乘；LLM 训练与 Prefill 的大量算力最终都落成 GEMM。</p><em>不要把“模型层”与 GPU kernel（GPU 内核：在 GPU 上实际执行的一段并行计算程序）混成一个层级。</em></div>
       <div class="term"><small>ATTENTION</small><b>Q / K / V</b><p>Query 表示当前查询，Key 用来匹配，Value 提供被聚合的信息；自回归推理的 KV Cache 保存历史 token 的 K/V。</p><em>概念上 Q/K/V 分开，高性能实现可能把 QKV projection 融合。</em></div>
       <div class="term"><small>GQA</small><b>Grouped-Query Attention</b><p>多个 Q heads 共享更少的 KV heads，用更窄的 K/V 表示降低 KV Cache 与 KV 数据移动成本。</p><em>影响 KV Cache 大小，也会影响 TP / KV layout；不要默认 K/V heads 与 Q heads 一样多。</em></div>
     </div></section>
