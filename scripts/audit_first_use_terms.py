@@ -117,6 +117,7 @@ SOURCE_ALIASES = {
     "assignment": ("assignment", "assignments"),
     "request": ("request", "requests"),
     "prefix cache": ("prefix cache", "prefix caching"),
+    "chunked Prefill": ("chunked Prefill", "Chunked Prefill"),
     "scheduler": ("scheduler", "Scheduler"),
     "iteration": ("iteration", "iterations"),
     "batch": ("batch", "batches"),
