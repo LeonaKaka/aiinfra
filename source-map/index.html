@@ -54,55 +54,55 @@
         </div>
         <div class="source-row">
           <span class="order">01</span>
-          <div><em class="phase-label">DATA · TP</em><b>张量 Parallel layers</b><code>megatron/core/tensor_parallel/layers.py</code></div>
-          <p>先找 <code>ColumnParallelLinear</code> / <code>RowParallelLinear</code>：权重在哪个维度切、输入是否 完整复制、输出什么时候保持 分片，什么时候需要 reduce / gather。</p>
+          <div><em class="phase-label">DATA · TP</em><b>张量并行层</b><code>megatron/core/tensor_parallel/layers.py</code></div>
+          <p>先找 <code>ColumnParallelLinear</code> / <code>RowParallelLinear</code>：权重在哪个维度切、输入是否完整复制、输出什么时候保持分片，什么时候需要 reduce / gather。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/layers.py">源码 ↗</a><a href="../learn/05-megatron/tensor-parallel.html">05.2 →</a><a href="../labs/mini-megatron.html">A1 →</a><a href="../labs/mini-tp-backward.html">A2 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">02</span>
-          <div><em class="phase-label">SYNC · TP</em><b>张量 mappings</b><code>megatron/core/tensor_parallel/mappings.py</code></div>
+          <div><em class="phase-label">SYNC · TP</em><b>张量并行映射</b><code>megatron/core/tensor_parallel/mappings.py</code></div>
           <p>把 copy / scatter / gather / reduce / reduce-scatter 与 autograd 语义对应起来。这里适合回答“forward 为什么这样通信，backward 为什么又不一样”。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/tensor_parallel/mappings.py">源码 ↗</a><a href="../learn/05-megatron/sequence-parallel.html">05.3 →</a><a href="../labs/mini-tp-backward.html">A2 →</a><a href="../labs/mini-sequence-parallel.html">A8 SP →</a></div>
         </div>
         <div class="source-row">
           <span class="order">03</span>
-          <div><em class="phase-label">CONTROL · GROUPS</em><b>Parallel groups</b><code>megatron/core/parallel_state.py</code></div>
-          <p>当 TP / DP / PP / CP / EP 混在一起时，先用它回答：这个 global rank 同时属于哪些 进程组，各组的 进程数 与 本地 rank 是什么。</p>
+          <div><em class="phase-label">CONTROL · GROUPS</em><b>并行进程组</b><code>megatron/core/parallel_state.py</code></div>
+          <p>当 TP / DP / PP / CP / EP 混在一起时，先用它回答：这个 global rank 同时属于哪些进程组，各组规模与组内 rank 是什么。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py">源码 ↗</a><a href="../learn/05-megatron/why-model-parallel.html">05.1 →</a><a href="../labs/mini-tp-dp-2d.html">A6 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">04</span>
-          <div><em class="phase-label">CONTROL · PP</em><b>Pipeline schedules</b><code>megatron/core/pipeline_parallel/schedules.py</code></div>
-          <p>带着 微批次、预热、稳态、收尾、1F1B 去看。重点不是函数名，而是每个 阶段 什么时候 forward / backward、哪里产生 气泡。</p>
+          <div><em class="phase-label">CONTROL · PP</em><b>流水线调度</b><code>megatron/core/pipeline_parallel/schedules.py</code></div>
+          <p>带着 微批次、预热、稳态、收尾、1F1B 去看。重点不是函数名，而是每个阶段什么时候 forward / backward、哪里产生气泡。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/schedules.py">源码 ↗</a><a href="../learn/05-megatron/pipeline-parallel.html">05.4 →</a><a href="../labs/mini-pipeline-parallel.html">A9 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">05</span>
-          <div><em class="phase-label">DATA · PP</em><b>Pipeline P2P</b><code>megatron/core/pipeline_parallel/p2p_communication.py</code></div>
-          <p>把 PP timeline 与 send/recv 连起来：阶段 之间传的是 激活值 / 梯度，而不是每个 微批次 都搬整套参数。</p>
+          <div><em class="phase-label">DATA · PP</em><b>流水线 P2P</b><code>megatron/core/pipeline_parallel/p2p_communication.py</code></div>
+          <p>把 PP timeline 与 send/recv 连起来：阶段之间传的是激活值 / 梯度，而不是每个微批次都搬整套参数。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/pipeline_parallel/p2p_communication.py">源码 ↗</a><a href="../learn/05-megatron/pipeline-parallel.html">05.4 →</a><a href="../labs/mini-pipeline-parallel.html">A9 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">CP</span>
-          <div><em class="phase-label">DATA · CONTEXT</em><b>Context Parallel attention</b><code>megatron/core/transformer/attention.py → core/extensions/transformer_engine.py</code></div>
+          <div><em class="phase-label">DATA · CONTEXT</em><b>上下文并行 Attention</b><code>megatron/core/transformer/attention.py → core/extensions/transformer_engine.py</code></div>
           <p>先在 <code>attention.py</code> 看 <code>cp_comm_type</code> 与 CP 进程组 怎样传给 core attention；再到 Transformer Engine 的 <code>TEDotProductAttention</code> 看 CP group / communication mode 怎样交给后端执行。A10 的 ring P2P 只对应当前 <code>cp_comm_type="p2p"</code> 这一种模式；当前还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，因此不要把 ring 当成 CP 定义本身。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py">attention ↗</a><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/extensions/transformer_engine.py">TE 后端 ↗</a><a href="../learn/05-megatron/context-parallel.html">05.6 →</a><a href="../labs/mini-context-parallel.html">A10 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">EP</span>
           <div><em class="phase-label">DATA · MOE</em><b>MoE token 分发器</b><code>megatron/core/transformer/moe/token_dispatcher.py</code></div>
-          <p>按 路由 → 分发 → 专家计算 → 合并 的生命周期读；先看 token 归属 / 重排，再区分 all-gather、all-to-all 或其他 分发后端。</p>
+          <p>按“路由 → 分发 → 专家计算 → 合并”的生命周期读；先看 token 归属 / 重排，再区分 all-gather、all-to-all 或其他分发后端。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/token_dispatcher.py">源码 ↗</a><a href="../learn/05-megatron/expert-parallel.html">05.7 →</a><a href="../labs/mini-expert-parallel.html">A11 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">06</span>
-          <div><em class="phase-label">STATE · OPTIMIZER</em><b>Distributed optimizer</b><code>megatron/core/optimizer/distrib_optimizer.py</code></div>
-          <p>先找 参数 / 梯度 / 优化器状态 的 分片 与 范围，再看每个 rank 究竟更新哪一段。最后再追 reduce-scatter 与参数 all-gather 的配合。</p>
+          <div><em class="phase-label">STATE · OPTIMIZER</em><b>Distributed Optimizer</b><code>megatron/core/optimizer/distrib_optimizer.py</code></div>
+          <p>先找参数 / 梯度 / 优化器状态的分片与范围，再看每个 rank 究竟更新哪一段。最后再追 reduce-scatter 与参数 all-gather 的配合。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/distrib_optimizer.py">源码 ↗</a><a href="../learn/05-megatron/distributed-optimizer.html">05.5 →</a><a href="../labs/mini-distributed-optimizer.html">A4 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">07</span>
-          <div><em class="phase-label">SYNC · OVERLAP</em><b>参数 / 梯度 buckets</b><code>megatron/core/distributed/param_and_grad_buffer.py</code></div>
+          <div><em class="phase-label">SYNC · OVERLAP</em><b>参数 / 梯度通信桶</b><code>megatron/core/distributed/param_and_grad_buffer.py</code></div>
           <p>这里把“梯度 ready”变成真正的通信启动时机：通信桶、异步 reduce-scatter / all-reduce、参数 all-gather、句柄 与 等待。读 overlap 时比只盯 optimizer 类更直接。</p>
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/distributed/param_and_grad_buffer.py">源码 ↗</a><a href="../learn/05-megatron/communication-overlap.html">05.8 →</a><a href="../labs/mini-bucketed-reduce-scatter.html">A5 →</a><a href="../labs/mini-profiler-overlap.html">A7 →</a></div>
         </div>
@@ -117,67 +117,67 @@
       <div class="source-list infer-source">
         <div class="source-row">
           <span class="order">00</span>
-          <div><em class="phase-label">MEASURE · 指标</em><b>Serving benchmark</b><code>vllm/benchmarks/serve.py</code></div>
+          <div><em class="phase-label">MEASURE · 指标</em><b>在线服务基准测试</b><code>vllm/benchmarks/serve.py</code></div>
           <p>先把 06.4 的 TTFT、TPOT、ITL 和 throughput 落到真实测量代码：看客户端在哪里记录首个流式输出、相邻流式输出与请求结束时间，再看聚合公式。这样后面评价 scheduler、KV 或 Connector 优化时，不会只说“更快”。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/benchmarks/serve.py">源码 ↗</a><a href="../learn/06-llm-inference/inference-performance.html">06.4 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">01</span>
-          <div><em class="phase-label">CONTROL · 请求</em><b>Engine core</b><code>vllm/v1/engine/core.py</code></div>
-          <p>先看一个 engine step 怎样变成 调度 → execute model → update output。它给你 请求 生命周期的主干，后面的 KV Connector 都是挂在这条主干上的。若已经跑过 B8，就把 toy engine 里的 请求状态 / token budget / remote KV / 完成确认 逐项在这里找真实落点。</p>
+          <div><em class="phase-label">CONTROL · 请求</em><b>EngineCore 主循环</b><code>vllm/v1/engine/core.py</code></div>
+          <p>先看一个 engine step 怎样变成 调度 → execute model → update output。它给你请求生命周期的主干，后面的 KV Connector 都是挂在这条主干上的。若已经跑过 B8，就把 toy engine 里的 请求状态 / token budget / remote KV / 完成确认 逐项在这里找真实落点。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">源码 ↗</a><a href="../learn/06-llm-inference/autoregressive-generation.html">06.1 →</a><a href="../learn/07-vllm/architecture.html">07.1 →</a><a href="../labs/mini-inference-engine.html">B8 end-to-end →</a></div>
         </div>
         <div class="source-row">
           <span class="order">02</span>
           <div><em class="phase-label">CONTROL · 调度器</em><b>调度器</b><code>vllm/v1/core/sched/scheduler.py</code></div>
-          <p>看 token budget、RUNNING / WAITING、抢占，以及 外部 KV 命中时 调度器 如何决定“本地算多少、外部加载多少、什么时候继续调度”。</p>
+          <p>看 token budget、RUNNING / WAITING、抢占，以及外部 KV 命中时调度器如何决定“本地算多少、外部加载多少、什么时候继续调度”。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">源码 ↗</a><a href="../learn/06-llm-inference/prefill-decode.html">06.2 →</a><a href="../learn/07-vllm/scheduler-continuous-batching.html">07.2 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">03</span>
-          <div><em class="phase-label">STATE · KV BLOCKS</em><b>KV cache manager</b><code>vllm/v1/core/kv_cache_manager.py</code></div>
-          <p>理解一个 请求 需要多少 blocks、哪些 prefix 已经算过、什么时候 分配 / 释放 / 截断。先把逻辑 KV 状态看清，再谈跨节点搬运。</p>
+          <div><em class="phase-label">STATE · KV BLOCKS</em><b>KV Cache Manager</b><code>vllm/v1/core/kv_cache_manager.py</code></div>
+          <p>理解一个请求需要多少 blocks、哪些 prefix 已经算过、什么时候分配 / 释放 / 截断。先把逻辑 KV 状态看清，再谈跨节点搬运。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">源码 ↗</a><a href="../learn/06-llm-inference/kv-cache.html">06.3 →</a><a href="../learn/07-vllm/kv-cache-manager.html">07.3 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">04</span>
-          <div><em class="phase-label">STATE · ADDRESSING</em><b>Block pool + execution block tables</b><code>core/block_pool.py · worker/gpu/block_table.py | worker/block_table.py</code></div>
-          <p>先把 调度器侧 physical KV 块归属 与 runner-side addressing 分开：<code>BlockPool</code> 管 物理块 生命周期；V2 runner 使用 <code>worker/gpu/block_table.py</code> 的 <code>BlockTables</code>，旧 V1 runner 使用 <code>worker/block_table.py</code> 的 <code>BlockTable</code>/<code>MultiGroupBlockTable</code>。两条路径都在解决“逻辑 缓存块 怎样变成设备可用地址表”。</p>
+          <div><em class="phase-label">STATE · ADDRESSING</em><b>物理块池 + 执行块表</b><code>core/block_pool.py · worker/gpu/block_table.py | worker/block_table.py</code></div>
+          <p>先把调度器侧 physical KV 块归属与 runner-side addressing 分开：<code>BlockPool</code> 管 物理块 生命周期；V2 runner 使用 <code>worker/gpu/block_table.py</code> 的 <code>BlockTables</code>，旧 V1 runner 使用 <code>worker/block_table.py</code> 的 <code>BlockTable</code>/<code>MultiGroupBlockTable</code>。两条路径都在解决“逻辑 缓存块 怎样变成设备可用地址表”。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py">block pool ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/block_table.py">V2 tables ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/block_table.py">V1 table ↗</a><a href="../learn/07-vllm/model-runner-paged-attention.html">07.4 →</a><a href="../labs/mini-block-kv-handoff.html">B2 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">05</span>
-          <div><em class="phase-label">DATA · MODEL RUNNER</em><b>GPU model runner selection</b><code>gpu_worker.py → gpu/model_runner.py | gpu_model_runner.py</code></div>
+          <div><em class="phase-label">DATA · MODEL RUNNER</em><b>GPU ModelRunner 选择</b><code>gpu_worker.py → gpu/model_runner.py | gpu_model_runner.py</code></div>
           <p>先看 <code>gpu_worker.py</code>：当前上游会根据 <code>vllm_config.use_v2_model_runner</code> 选择 V2 runner 路径或 V1 runner 路径。然后再追 SchedulerOutput 怎样变成 model input、attention 元数据 与 KV 写入；不要把一个文件名背成永久入口。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py">selector ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu/model_runner.py">V2 ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">V1 ↗</a><a href="../learn/07-vllm/model-runner-paged-attention.html">07.4 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">06</span>
-          <div><em class="phase-label">CONTRACT · CONNECTOR</em><b>KVConnector base</b><code>vllm/distributed/kv_transfer/kv_connector/v1/base.py</code></div>
+          <div><em class="phase-label">CONTRACT · CONNECTOR</em><b>KVConnector Base 协议</b><code>vllm/distributed/kv_transfer/kv_connector/v1/base.py</code></div>
           <p>先只分清 调度器侧 与 工作进程侧 两半：matched tokens / 分配 / 元数据 对应 加载 / 保存 / 完成确认。后面所有 NIXL 细节都必须服从这份接口契约。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/base.py">源码 ↗</a><a href="../learn/08-kv-connector/connector-architecture.html">08.2 →</a><a href="../learn/08-kv-connector/transfer-lifecycle.html">08.3 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">07</span>
           <div><em class="phase-label">CONTRACT · NIXL</em><b>NIXL 门面层</b><code>.../kv_connector/v1/nixl/connector.py</code></div>
-          <p>先看 门面层 怎样把 base 接口拆给 NIXL 调度器 与 工作进程。这里代码反而不该最难；它的价值是告诉你“哪部分属于控制面，哪部分属于传输实现”。</p>
+          <p>先看 门面层 怎样把 base 接口拆给 NIXL 调度器与工作进程。这里代码反而不该最难；它的价值是告诉你“哪部分属于控制面，哪部分属于传输实现”。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py">源码 ↗</a><a href="../learn/08-kv-connector/nixl-rdma.html">08.4 →</a><a href="../labs/mini-kv-handshake-lifetime.html">B5 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">08</span>
           <div><em class="phase-label">CONTROL · LIFETIME</em><b>NIXL 调度器侧 生命周期</b><code>.../nixl/base_scheduler.py</code></div>
-          <p>重点看 请求跟踪、<code>build_connector_meta()</code>、心跳 打包与 调度器 clock。这里解释“远端 KV 为什么不能算完就立刻 释放”，也解释 截止时间 为什么要带时钟参考。</p>
+          <p>重点看请求跟踪、<code>build_connector_meta()</code>、心跳 打包与 调度器 clock。这里解释“远端 KV 为什么不能算完就立刻 释放”，也解释 截止时间 为什么要带时钟参考。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py">源码 ↗</a><a href="../learn/08-kv-connector/production-pd.html">08.5 →</a><a href="../labs/mini-kv-lease-expiry.html">B7 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">09</span>
           <div><em class="phase-label">STATE · WIRE FORMAT</em><b>NIXL 元数据</b><code>.../nixl/metadata.py</code></div>
-          <p>把 <code>NixlAgentMetadata</code>、handshake payload、<code>ReqMeta</code>、remote block IDs、心跳 与 <code>scheduler_clock</code> 放在一张表里。它是控制面和 工作进程 数据面的共同语言。</p>
+          <p>把 <code>NixlAgentMetadata</code>、handshake payload、<code>ReqMeta</code>、remote block IDs、心跳 与 <code>scheduler_clock</code> 放在一张表里。它是控制面和工作进程数据面的共同语言。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py">源码 ↗</a><a href="../labs/mini-kv-handshake-lifetime.html">B5 →</a><a href="../labs/mini-kv-lease-expiry.html">B7 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">10</span>
-          <div><em class="phase-label">DATA · 内存</em><b>NIXL base 工作进程</b><code>.../nixl/base_worker.py</code></div>
+          <div><em class="phase-label">DATA · 内存</em><b>NIXL Base 工作进程</b><code>.../nixl/base_worker.py</code></div>
           <p>再进重实现：KV 存储区注册、区域基址 / 块长度 / 步长、远端 agent handshake、兼容性检查、TP mapping 与 prepared 传输 handles。此时你已经知道这些状态为什么存在。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py">源码 ↗</a><a href="../learn/08-kv-connector/nixl-rdma.html">08.4 →</a><a href="../labs/mini-registered-region-descriptor.html">B6 →</a></div>
         </div>
