@@ -95,6 +95,12 @@
           <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/token_dispatcher.py">源码 ↗</a><a href="../learn/05-megatron/expert-parallel.html">05.7 →</a><a href="../labs/mini-expert-parallel.html">A11 →</a></div>
         </div>
         <div class="source-row">
+          <span class="order">DP</span>
+          <div><em class="phase-label">SYNC · DATA PARALLEL</em><b>DistributedDataParallel</b><code>megatron/core/distributed/distributed_data_parallel.py</code></div>
+          <p>先用 A3 的最小语义读这一层：不同 DP replicas 处理不同样本，参数梯度先在本地累积，再由 DDP 管理的 grad buffers / bucket groups 进入同步。这里先回答“什么时候同步、哪些参数属于同一通信桶”，再继续向下读 <code>param_and_grad_buffer.py</code> 的真实 collective 与 overlap。</p>
+          <div class="source-actions"><a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/distributed/distributed_data_parallel.py">源码 ↗</a><a href="../labs/mini-dp-grad-accum.html">A3 →</a><a href="../learn/05-megatron/communication-overlap.html">05.8 →</a></div>
+        </div>
+        <div class="source-row">
           <span class="order">06</span>
           <div><em class="phase-label">STATE · OPTIMIZER</em><b>Distributed Optimizer</b><code>megatron/core/optimizer/distrib_optimizer.py</code></div>
           <p>先找参数 / 梯度 / 优化器状态的分片与范围，再看每个 rank 究竟更新哪一段。最后再追 reduce-scatter 与参数 all-gather 的配合。</p>
