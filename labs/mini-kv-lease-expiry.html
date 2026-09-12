@@ -90,14 +90,14 @@ worker: rebase / reason about lifetime in its own clock domain</pre></div>
       <p>这是一个非常典型的分布式坑：即使两个数都叫“seconds”，也不代表零点相同。当前 vLLM 的 connector 元数据明确携带 <code>scheduler_clock</code>，NIXL handshake 还会用往返时间估计 peer clock offset。B7 的 virtual clock 故意只有一个时间域，避免把这个工程问题藏在 toy 代码里。</p>
     </section>
 
-    <section class="lab-section" id="close"><div class="lab-kicker">06 · 推理软件阶段收尾</div><h2>到这里，KV Connector 的软件心智模型已经闭合。</h2>
+    <section class="lab-section" id="close"><div class="lab-kicker">06 · 单机制阶段收尾</div><h2>到这里，KV Connector 的单项机制已经齐了；下一步用 B8 把它们装进同一个推理引擎生命周期。</h2>
       <div class="check-list"><div>① 调度器决定远端 KV 是否可用、需要哪些 blocks。</div><div>② 块表 / region 描述符决定逻辑 KV 对应哪块可传输内存。</div><div>③ Handshake 检查兼容性并交换远端 agent/布局信息。</div><div>④ 异步 / layer-wise 传输追踪“什么时候发起、什么时候真正需要”。</div><div>⑤ 完成确认 + 租约 / 心跳 / expiry 决定“什么时候可以安全释放”。</div></div>
-      <p>再往后就不是继续发明 toy 协议，而是把同一套问题放到真实 NIXL / UCX / RDMA / GPUDirect 环境里验证 transport、带宽、并发与失败恢复。没有对应硬件时，网站会停在源码级解释，不伪造 benchmark。</p>
+      <p>B8 会先把本地 KV hit、远端 KV、cold prefill、token budget、块表、异步 load 与完成确认装进同一个 toy engine。完成这个 capstone 后，再往后才是把同一套问题放到真实 NIXL / UCX / RDMA / GPUDirect 环境里验证 transport、带宽、并发与失败恢复。没有对应硬件时，网站会停在源码级解释，不伪造 benchmark。</p>
     </section>
 
     <nav class="lab-footer-nav"><a href="./mini-registered-region-descriptor.html">← Lab B6 · 已注册内存区</a><a href="./mini-inference-engine.html">Lab B8 · Inference 推理引擎 →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#state">一块远端 KV 只有两条安全释放路径：明确完成，或者租约到期。</a><a href="#run">一个请求正常心跳 + 完成确认；另一个请求完全失联，最后靠 expiry 回收。</a><a href="#stale">旧请求的心跳不能把已经复用的新内存又“续活”。</a><a href="#real">当前代码已经能找到这套生命周期机制的几个关键锚点。</a><a href="#clock">perf_counter() 是进程本地时钟，不能把另一个进程的 deadline 原样拿来比较。</a><a href="#close">到这里，KV Connector 的软件心智模型已经闭合。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#state">一块远端 KV 只有两条安全释放路径：明确完成，或者租约到期。</a><a href="#run">一个请求正常心跳 + 完成确认；另一个请求完全失联，最后靠 expiry 回收。</a><a href="#stale">旧请求的心跳不能把已经复用的新内存又“续活”。</a><a href="#real">当前代码已经能找到这套生命周期机制的几个关键锚点。</a><a href="#clock">perf_counter() 是进程本地时钟，不能把另一个进程的 deadline 原样拿来比较。</a><a href="#close">单项机制齐了以后，用 B8 装成完整推理生命周期。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
