@@ -77,14 +77,14 @@
           <div><small>3 · 损失</small><code>error</code></div>
         </div>
         <div class="shape-flow training-flow second-row">
-          <div><small>4 · backward</small><code>gradients</code></div>
+          <div><small>4 · backward</small><code>gradients</code>（梯度：表示 loss 对模型参数变化的敏感方向）</div>
           <span>→</span>
           <div><small>5 · STEP</small><code>update params</code></div>
           <span>→</span>
           <div><small>REPEAT</small><code>next batch</code></div>
         </div>
         <p>真正训练一个大模型时，外面会套上数据加载、混合精度、gradient accumulation（梯度累积：多个小批次的 gradient 先累加，再统一更新 parameter）、分布式通信、checkpoint（检查点：保存模型和训练状态，便于中断后继续训练）等复杂系统；但最里面这个闭环没有变。</p>
-        <div class="concept-note"><p><strong>先记住一句：</strong><code>forward</code> 产生预测结果，<code>loss</code> 衡量错误，<code>backward</code> 产生 gradient（梯度：表示 loss 对 parameter 变化的敏感方向），<code>optimizer.step()</code> 根据 gradient 修改 parameter（参数：训练中会被 optimizer 更新的可学习数值）。</p></div>
+        <div class="concept-note"><p><strong>先记住一句：</strong><code>forward</code> 产生预测结果，<code>loss</code> 衡量错误，<code>backward</code> 产生 gradient，<code>optimizer.step()</code> 根据 gradient 修改 parameter（参数：训练中会被 optimizer 更新的可学习数值）。</p></div>
       </section>
 
       <section class="article-section" id="toy">
@@ -170,12 +170,12 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         <div class="section-no">06 · 从系统角度看训练循环</div>
         <h2>一旦模型和批次变大，这五步就都变成系统问题。</h2>
         <div class="cost-panel">
-          <div><small>forward</small><b>需要算大量通用矩阵乘法（GEMM），还要保存反向传播时会用到的激活值。</b></div>
+          <div><small>forward</small><b>需要算大量 GEMM，还要保存反向传播时会用到的激活值。</b></div>
           <div><small>backward</small><b>通常计算量很大，还会生成与参数相关的梯度。</b></div>
           <div><small>optimizer</small><b>除了参数和梯度，还可能维护额外优化器状态，占据大量显存。</b></div>
-          <div><small>DISTRIBUTED</small><b>多张图形处理器（GPU）各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
+          <div><small>DISTRIBUTED</small><b>多张 GPU 各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
         </div>
-        <p>这就是为什么我们先学训练循环再学 AI Infra。以后遇到 activation checkpointing（激活值检查点：不保存全部 activation，而在 backward 时重算以节省显存）、gradient accumulation、分布式 optimizer、Data Parallel 等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
+        <p>这就是为什么我们先学训练循环再学 AI Infra。以后遇到 activation checkpointing（激活值检查点：不保存全部 activation，而在 backward 时重算以节省显存）、gradient accumulation、分布式 optimizer、Data Parallel（数据并行：不同模型副本处理不同数据，再同步训练状态）等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
       </section>
 
       <section class="article-section" id="distributed">
@@ -190,7 +190,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           </div>
         </div>
         <p>如果两张GPU都拥有同一份模型参数，却各自只看一半数据，那么反向传播后会得到不同梯度。为了让两份模型继续保持一致，更新参数前通常要把各卡梯度聚合成一致的结果。</p>
-        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 Data Parallel（数据并行：不同模型副本处理不同数据，再同步训练状态）为什么需要梯度同步。具体用什么集合通信操作，后面到 Distributed 再学。</p></div>
+        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 Data Parallel 为什么需要梯度同步。具体用什么集合通信操作，后面到 Distributed 再学。</p></div>
       </section>
 
       <section class="checkpoint" id="checkpoint">
