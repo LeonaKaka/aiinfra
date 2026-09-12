@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 750" role="img" aria-labelledby="title desc">
-  <title id="title">Process identity, 本地 GPU binding, and process groups</title>
-  <desc id="desc">A two-node distributed job. 启动器 and rendezvous form one world of eight processes. Global ranks are unique; 本地 ranks repeat on each node and commonly map to 本地 GPUs. Process groups select subsets of 全局 ranks.</desc>
+  <title id="title">进程身份、本地 GPU 绑定与进程组</title>
+  <desc id="desc">两节点分布式任务中，launcher 与 rendezvous 建立包含八个进程的默认 world；global rank 全局唯一，local rank 会在不同节点重复并常绑定本地 GPU，process group 再从全局 ranks 中选择通信子集。</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#7c847d"/></marker>
     <style>
@@ -70,7 +70,7 @@
     </g>
   </g>
   <text class="sans small" x="52" y="528">每个节点都会重复本地 0…3</text>
-  <text class="sans small" x="407" y="528">全局 ranks remain unique across the job</text>
+  <text class="sans small" x="407" y="528">global rank 在整个作业中保持唯一</text>
 
   <text class="mono sec" x="34" y="577">3 · 进程组选择全局 RANK 子集</text>
   <rect class="panel" x="34" y="594" width="692" height="126" rx="14"/>
