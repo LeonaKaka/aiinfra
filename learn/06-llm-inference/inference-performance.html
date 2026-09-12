@@ -50,7 +50,7 @@
     <li>估算 model weights 与 per-request KV Cache 的数量级。</li>
     <li>用“数据量 ÷ 有效带宽”理解显存带宽给出的理想下界。</li>
     <li>知道为什么提高 concurrency 和 batch size 可能增加 throughput，却同时恶化用户延迟。</li>
-    <li>设计一个可比较的推理 benchmark（基准测试：在固定条件下测量和比较系统性能），而不是只记录一个孤立的吞吐数字。</li>
+    <li>设计一个可比较的推理 benchmark，而不是只记录一个孤立的吞吐数字。</li>
     <li>读到性能声明时，主动检查 workload、分位数、缓存状态和 SLO（服务级目标：系统希望达到的延迟、可用性或吞吐目标）。</li>
   </ul></div>
 
@@ -147,7 +147,7 @@
       <div class="time-row"><small>USEFUL RANGE</small><span class="prefill">吞吐持续上升</span><span class="decode">延迟仍在目标内</span></div>
       <div class="time-row"><small>SATURATION</small><span class="wait">排队增长</span><span class="wait">p95 / p99 延迟恶化</span></div>
     </div>
-    <p>因此更有意义的比较方式，是扫一组并发或 request arrival rate，画出“throughput—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种延迟–throughput trade-off（权衡：一个指标改善时往往需要牺牲另一个指标），而不是只汇报单个峰值数字。</p>
+    <p>因此更有意义的比较方式，是扫一组并发或 request arrival rate，画出“throughput—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种延迟–throughput trade-off，而不是只汇报单个峰值数字。</p>
     <div class="source-note">补充阅读：<a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">NVIDIA · 推理benchmark基础概念</a>。这篇适合核对指标与测试口径，不作为本站当前 vLLM 实现细节的权威来源。</div>
   </section>
 
