@@ -112,26 +112,32 @@
     <section class="track" id="vllm">
       <div class="track-head">
         <div><small>路线 B · 推理基础设施</small><h2>vLLM：从一个请求追到 KV 的完整生命周期。</h2></div>
-        <p>不要把 NIXL 当成一个“搬 KV 的函数”。先追 请求 调度与 block 状态，再读 Connector contract，最后把 调度器侧 生命周期、元数据、内存注册 与 工作进程侧 传输 串起来。</p>
+        <p>06 模块先建立请求状态、Prefill / Decode、KV 容量和性能指标；从这里开始把这些概念逐个落到当前 vLLM 源码。不要直接跳进 NIXL：先追请求调度与 block 状态，再读 Connector contract，最后把调度器侧生命周期、元数据、内存注册与工作进程侧传输串起来。</p>
       </div>
       <div class="source-list infer-source">
+        <div class="source-row">
+          <span class="order">00</span>
+          <div><em class="phase-label">MEASURE · 指标</em><b>Serving benchmark</b><code>vllm/benchmarks/serve.py</code></div>
+          <p>先把 06.4 的 TTFT、TPOT、ITL 和 throughput 落到真实测量代码：看客户端在哪里记录首个流式输出、相邻流式输出与请求结束时间，再看聚合公式。这样后面评价 scheduler、KV 或 Connector 优化时，不会只说“更快”。</p>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/benchmarks/serve.py">源码 ↗</a><a href="../learn/06-llm-inference/inference-performance.html">06.4 →</a></div>
+        </div>
         <div class="source-row">
           <span class="order">01</span>
           <div><em class="phase-label">CONTROL · 请求</em><b>Engine core</b><code>vllm/v1/engine/core.py</code></div>
           <p>先看一个 engine step 怎样变成 调度 → execute model → update output。它给你 请求 生命周期的主干，后面的 KV Connector 都是挂在这条主干上的。若已经跑过 B8，就把 toy engine 里的 请求状态 / token budget / remote KV / 完成确认 逐项在这里找真实落点。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">源码 ↗</a><a href="../learn/07-vllm/architecture.html">07.1 →</a><a href="../labs/mini-inference-engine.html">B8 end-to-end →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">源码 ↗</a><a href="../learn/06-llm-inference/autoregressive-generation.html">06.1 →</a><a href="../learn/07-vllm/architecture.html">07.1 →</a><a href="../labs/mini-inference-engine.html">B8 end-to-end →</a></div>
         </div>
         <div class="source-row">
           <span class="order">02</span>
           <div><em class="phase-label">CONTROL · 调度器</em><b>调度器</b><code>vllm/v1/core/sched/scheduler.py</code></div>
           <p>看 token budget、RUNNING / WAITING、抢占，以及 外部 KV 命中时 调度器 如何决定“本地算多少、外部加载多少、什么时候继续调度”。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">源码 ↗</a><a href="../learn/07-vllm/scheduler-continuous-batching.html">07.2 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py">源码 ↗</a><a href="../learn/06-llm-inference/prefill-decode.html">06.2 →</a><a href="../learn/07-vllm/scheduler-continuous-batching.html">07.2 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">03</span>
           <div><em class="phase-label">STATE · KV BLOCKS</em><b>KV cache manager</b><code>vllm/v1/core/kv_cache_manager.py</code></div>
           <p>理解一个 请求 需要多少 blocks、哪些 prefix 已经算过、什么时候 分配 / 释放 / 截断。先把逻辑 KV 状态看清，再谈跨节点搬运。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">源码 ↗</a><a href="../learn/07-vllm/kv-cache-manager.html">07.3 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py">源码 ↗</a><a href="../learn/06-llm-inference/kv-cache.html">06.3 →</a><a href="../learn/07-vllm/kv-cache-manager.html">07.3 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">04</span>
