@@ -57,9 +57,9 @@
       <div class="stage-flow">
         <div class="stage-card infer"><small>RANK 0 · 生产端</small><b>prompt → K,V</b><span>只对 prompt 做 K/V projection，代表 Prefill 已经完成的状态。</span></div>
         <div class="stage-card comm"><small>P2P 交接</small><b>send K · send V</b><span>当前用 torch.distributed P2P；真实生产系统可替换成 NIXL/RDMA。</span></div>
-        <div class="stage-card infer"><small>RANK 1 · 消费端</small><b>received KV → decode</b><span>只计算新 token 的 q/k/v，再让 q attend 已收到的 prompt KV。</span></div>
+        <div class="stage-card infer"><small>RANK 1 · 消费端</small><b>received KV → decode</b><span>计算新 token 的 q/k/v，再把当前 token 的 K/V 接到已收到的 prompt KV 后面，让 q attend 完整可见历史。</span></div>
       </div>
-      <p>Rank 1 同时会偷偷做一遍 dense reference：重新从 prompt 计算 K/V。最后比较两条路径的 attention output。如果交接没破坏状态，最大误差应该接近 0。</p>
+      <p>Rank 1 同时会做一遍 correctness-only reference：重新从 prompt 计算 K/V，并和交接路径一样追加当前 token 的 K/V。最后比较两条路径的 attention output；如果远端交接没有破坏历史状态，最大误差应该接近 0。</p>
     </section>
 
     <section class="lab-section" id="run">
@@ -76,7 +76,7 @@
       <h2>最重要的一行不是 send，而是交接与重新计算的比较。</h2>
       <div class="result-grid">
         <div class="result-card"><small>REMOTE STATE</small><b>K,V = [S,H]</b><span>Rank 1 预先分配接收缓冲区，再从 Rank 0 收到 prompt KV。</span></div>
-        <div class="result-card"><small>DECODE</small><b>q_new @ Kᵀ</b><span>新 token 的 q 直接消费收到的历史 KV，不重新做 prompt projection。</span></div>
+        <div class="result-card"><small>DECODE</small><b>q_new @ [K_prompt; K_new]ᵀ</b><span>新 token 不重新做 prompt projection；它只生成自己的 Q/K/V，并把自己的 K/V 接到收到的 prompt KV 后再做 attention。</span></div>
         <div class="result-card"><small>REFERENCE</small><b>max error &lt; 1e-5</b><span>与 Decoder 本地重算 prompt KV 的结果保持一致。</span></div>
       </div>
       <div class="command"><div class="command-head"><span>EXAMPLE OUTPUT</span><span>CPU / Gloo</span></div><pre>prompt KV shape      : K=(6, 8) V=(6, 8)
