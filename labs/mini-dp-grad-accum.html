@@ -44,7 +44,7 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Data Parallel + Grad Accum</span></div>
-    <div class="lab-kicker">LAB A3 · 数据并行（DP）</div>
+    <div class="lab-kicker">LAB A3 · DP</div>
     <h1>TP 是“同一个样本一起算”。<br />DP 是“同一份模型，各算不同样本”。</h1>
     <p class="dek">前两课一直在 Tensor Parallel 进程组里切权重。现在换一个维度：两个 rank 都保留同样的参数，但各自拿不同训练样本。它们可以先在本地连续做多个 microbatch 的反向传播，把梯度累积起来，最后再做一次 all-reduce。这样你会第一次把“梯度累积”和“梯度同步”拆成两件独立的事。</p>
 
