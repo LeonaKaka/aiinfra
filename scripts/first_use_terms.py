@@ -301,6 +301,8 @@ SOURCE_TERMS = {
     "producer": ("生产端", "产生并提供 KV state 的一侧"),
     "consumer": ("消费端", "接收 KV 并继续使用它的一侧"),
     "control plane": ("控制面", "负责 scheduler、状态和传输计划等控制信息"),
+    "execution plane": ("执行面", "把调度计划转换成设备上的 tensors、kernels 和模型执行"),
+    "request state": ("请求状态", "记录一个请求当前处于等待、运行、已计算多少 token 等逻辑进度"),
     "data plane": ("数据面", "负责真正的大块 KV 数据移动"),
     "transfer": ("传输", "把数据从一个位置移动到另一个位置"),
     "handoff": ("交接", "把已有 KV state 转移给另一个实例继续使用"),
