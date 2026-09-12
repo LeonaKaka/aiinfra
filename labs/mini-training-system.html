@@ -88,7 +88,7 @@ DP groups: [0,2] [1,3]
 
     <section class="lab-section" id="checkpoint"><div class="lab-kicker">06 · 检查点</div><h2>能画出依赖图，比背配置项更重要。</h2><div class="check-list"><div>① 为什么 DP 进程组只能连接“相同 TP coordinate”的 ranks？</div><div>② reduce-scatter 后为什么每个 rank 不能直接拿自己的优化器分片去做下一次完整 TP 前向计算？</div><div>③ W2 reduce-scatter 应该在什么时候启动，为什么等整个反向传播结束再启动会浪费重叠窗口？</div><div>④ 这个 CPU/Gloo Lab 证明了什么，又没有证明什么？</div></div></section>
 
-    <nav class="lab-footer-nav"><a href="./mini-expert-parallel.html">← Lab A11 · 专家 Parallel</a><a href="./index.html">返回 Labs 总览 →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-expert-parallel.html">← Lab A11 · 专家 Parallel</a><a href="../source-map/index.html#megatron">进入 Megatron Source Map →</a></nav>
   </main>
   <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#step">不要再把 TP、DP、优化器 sharding 和重叠当四个独立功能。</a><a href="#overlap">通信能否隐藏，首先取决于你有没有在正确时机启动它。</a><a href="#ownership">同一个 rank 的“邻居”会随着当前问题改变。</a><a href="#run">最终验收不是“collective 全跑完”，而是更新后的每个 TP 参数分片都等于 dense global-批次 SGD。</a><a href="#source">现在再看 Megatron，应该从“一个 class”升级为“一个训练步骤的生命周期”。</a><a href="#checkpoint">能画出依赖图，比背配置项更重要。</a></aside>
 </div>
