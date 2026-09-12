@@ -101,5 +101,5 @@
 
   <rect class="box" x="52" y="842" width="654" height="38" rx="9"/>
   <text class="sans small" x="70" y="862">Prefill / Decode 描述 token 工作与请求状态；一次在线推理轮次可以同时包含二者。</text>
-  <text class="sans tiny" x="34" y="912">Exact mix varies with cache hits, chunking, speculative tokens, 模型, hardware and load.</text>
+  <text class="sans tiny" x="34" y="912">实际混合比例会随缓存命中、分块策略、投机 token、模型、硬件和负载变化。</text>
 </svg>
