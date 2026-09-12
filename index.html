@@ -144,8 +144,8 @@
             <div class="road-line"><span></span></div>
             <div class="road-content">
               <div class="road-title"><h3>基础入门</h3><span>零基础入口</span></div>
-              <p>只学阅读 AI Infra 源码真正需要的 Python、张量、PyTorch 与训练循环。</p>
-              <div class="road-tags"><span>类与对象</span><span>张量形状</span><span>autograd</span><span>优化器</span></div>
+              <p>只学后面真正会反复用到的张量形状、Linear、PyTorch 训练循环、autograd 与优化器状态。</p>
+              <div class="road-tags"><span>张量形状</span><span>Linear</span><span>训练循环</span><span>autograd / 优化器</span></div>
               <div class="road-outcome"><small>完成后</small> 能顺着一个最小训练循环追踪数据、参数和梯度。</div>
               <a class="road-enter" href="./learn/01-foundations/tensor.html">进入模块 <span>→</span></a>
             </div>
@@ -216,8 +216,8 @@
             <div class="road-line"><span></span></div>
             <div class="road-content">
               <div class="road-title"><h3>vLLM</h3><span>推理主线</span></div>
-              <p>先理解调度器、连续批处理、KV Cache Manager 与 PagedAttention，再读实现。</p>
-              <div class="road-tags"><span>调度器</span><span>KV 块</span><span>连续批处理</span><span>PagedAttention</span></div>
+              <p>先理解调度器、连续批处理、KV Cache Manager、分页式 KV 寻址与 ModelRunner，再沿当前 Attention backend 读实现。</p>
+              <div class="road-tags"><span>调度器</span><span>KV 块</span><span>连续批处理</span><span>ModelRunner / Attention backend</span></div>
               <div class="road-outcome"><small>完成后</small> 能沿着一次请求追踪调度、KV 块分配与生成。</div>
               <a class="road-enter" href="./learn/07-vllm/architecture.html">进入模块 <span>→</span></a>
             </div>
@@ -230,7 +230,7 @@
               <div class="road-title"><h3>KV Connector</h3><span>最终关</span></div>
               <p>从单机 KV 传输一路进入多节点：P/D 分离、RDMA、GPUDirect 与 NIXL。</p>
               <div class="road-tags"><span>KV 传输</span><span>P/D 分离</span><span>RDMA</span><span>GPUDirect</span><span>NIXL</span></div>
-              <div class="road-outcome"><small>毕业项目</small> B1–B7 从原始 KV 交接一路做到内存注册、握手与租约/过期生命周期。</div>
+              <div class="road-outcome"><small>毕业项目</small> B1–B8 从原始 KV 交接一路做到内存注册、握手、租约/过期生命周期与最小推理引擎闭环。</div>
               <a class="road-enter" href="./learn/08-kv-connector/why-move-kv.html">进入模块 <span>→</span></a>
             </div>
           </article>
