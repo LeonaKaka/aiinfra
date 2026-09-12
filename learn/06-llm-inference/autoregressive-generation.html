@@ -63,7 +63,7 @@
       <section class="article-section" id="training">
         <div class="section-no">04 · 训练与在线推理暴露不同瓶颈</div>
         <h2>同一个 Transformer，训练时的数据组织和在线生成时的 runtime state 完全不同。</h2>
-        <div class="train-infer"><div><small>TRAINING</small><b>已知 token 批次 → forward + backward</b><span>更关注训练吞吐 / MFU；需要 activation、gradients、optimizer state；通过大批次 / sequence 构造大 GEMM。</span></div><div><small>SERVING</small><b>dynamic requests → state 持续增长</b><span>普通生成没有 training backward/optimizer；更关注 latency、throughput（吞吐量：单位时间内系统完成的 request 或 token 数量）、KV Cache capacity、queueing（排队：request 等待可用执行资源的过程）、scheduler 与 request lifecycle（请求生命周期：从进入系统、持续生成到完成并释放资源的全过程）。</span></div></div>
+        <div class="train-infer"><div><small>TRAINING</small><b>已知 token 批次 → forward + backward</b><span>更关注训练吞吐和硬件利用率；需要 activation、gradients、optimizer state；通过大批次 / sequence 构造大 GEMM。</span></div><div><small>SERVING</small><b>dynamic requests → state 持续增长</b><span>普通生成没有 training backward/optimizer；更关注 latency、throughput（吞吐量：单位时间内系统完成的 request 或 token 数量）、KV Cache capacity、queueing（排队：request 等待可用执行资源的过程）、scheduler 与 request lifecycle（请求生命周期：从进入系统、持续生成到完成并释放资源的全过程）。</span></div></div>
         <p>所以“训练 kernel 很快”并不能自动推出在线推理很快。在线推理还必须解决一个训练里弱很多的问题：<strong>requests 在时间上不断到达、不断结束，而且每个请求当前可计算的 token 数不同。</strong></p>
       </section>
 
