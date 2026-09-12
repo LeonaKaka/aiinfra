@@ -44,7 +44,7 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>专家 Parallel</span></div>
-    <div class="lab-kicker">LAB A11 · 专家并行（EP）</div>
+    <div class="lab-kicker">LAB A11 · EP</div>
     <h1>EP 的核心不是“有很多专家”。<br />而是 token 被路由器分流以后，必须去专家真正所在的 rank。</h1>
     <p class="dek">这个实验用 2 个 EP ranks、4 个专家。每个原始 rank 都产生自己的 tokens；确定性路由器为每个 token 指定专家 owner。随后 all-to-all 把 token features 发到远端专家，专家本地计算，再 reverse all-to-all 把结果送回原来的 token owner。最终输出必须与“不分布式、直接按 expert_id 计算”的 reference 一致。</p>
 
