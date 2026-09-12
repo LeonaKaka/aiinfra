@@ -40,7 +40,7 @@
         <div class="section-no">01 · 三种不同上限</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
         <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元）能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但 HBM / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective（集合通信：一组 GPU 或进程共同参与的数据通信操作）、P2P 或网络传输。</span></div></div>
-        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的 GEMM、精度策略和 kernel；<code>memory-bound</code> 更关注少搬数据、kernel fusion 和复用；<code>communication-bound</code> 更关注通信量、topology（拓扑：描述 GPU、CPU、NIC 与网络之间的连接关系）、collective 算法和 overlap。</p>
+        <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的 GEMM、精度策略和 kernel；<code>memory-bound</code> 更关注少搬数据、kernel fusion 和复用；<code>communication-bound</code> 更关注通信量、topology（拓扑：描述 GPU、CPU、网络接口卡与网络之间的连接关系）、collective 算法和 overlap。</p>
         <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
       </section>
 
