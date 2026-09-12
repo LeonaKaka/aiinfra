@@ -33,7 +33,7 @@ ALLOW = {
 # independent glossary abbreviations. Keep this list narrow.
 NON_GLOSSARY_TOKENS = {
     "AllGather", "AllReduce", "AllToAll", "FC1", "INFO", "MAX",
-    "NixlConnector", "READ", "README", "SUM", "SWAP", "WRITE",
+    "NixlConnector", "RANK", "READ", "README", "SUM", "SWAP", "WRITE",
 }
 ALLOW.update(NON_GLOSSARY_TOKENS)
 ALLOW.update(TERMS)
