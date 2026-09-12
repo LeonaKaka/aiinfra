@@ -27,7 +27,7 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 <code>SchedulerOutput</code> 到 GPU 执行之间还需要一次元数据整理与传输。</li><li>知道输入批次对象、<code>BlockTable/BlockTables</code> 和 slot mapping 在执行路径里分别解决什么。</li><li>解释 Paged Attention 如何让 Attention 读取不连续的 physical KV blocks。</li><li>知道分页式 KV 是核心思想，但当前 vLLM 会根据平台/模型选择不同 Attention 实现后端，不能把系统等同于某一个固定 kernel。</li><li>理解新 token 的 K/V 怎样写入已分配 slot，Q 又怎样按 block table 读取历史 KV。</li><li>知道“所有缓存组都必须用同一套 token→KV 槽位的 API”不是稳定事实；不同缓存/状态类型会有不同寻址语义。</li><li>知道当前上游同时存在 V1/V2 GPU ModelRunner 路径，先从 <code>gpu_worker.py</code> 看本配置实际选择哪一个。</li></ul></div>
 
-            <div class="concept-note"><p><strong>建议两遍读。</strong>第一遍只追“SchedulerOutput → block table / slot mapping → Attention 读写 KV”这条地址链；第二遍再看 V1/V2 ModelRunner、InputBatch 与不同 Attention backend 的当前实现差异。分页式 KV 的稳定思想比某个文件名更重要。</p></div>
+            <div class="concept-note"><p><strong>建议两遍读。</strong>第一遍只追“调度计划 → 历史块地址 / 当前写入位置 → Attention 读写 KV”这条地址链；第二遍再看 V1/V2 ModelRunner、批次整理对象与不同 Attention backend 的当前实现差异。分页式 KV 的稳定思想比某个文件名更重要。</p></div>
 
 <section class="article-section" id="contract">
         <div class="section-no">01 · 执行契约</div>
