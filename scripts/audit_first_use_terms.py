@@ -116,6 +116,7 @@ SOURCE_ALIASES = {
     "dispatcher": ("dispatcher", "dispatchers"),
     "assignment": ("assignment", "assignments"),
     "request": ("request", "requests"),
+    "prefix cache": ("prefix cache", "prefix caching"),
     "scheduler": ("scheduler", "Scheduler"),
     "iteration": ("iteration", "iterations"),
     "batch": ("batch", "batches"),
