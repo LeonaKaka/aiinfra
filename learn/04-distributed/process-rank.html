@@ -46,7 +46,7 @@
         <div class="section-no">02 · rank 是全局身份</div>
         <h2>global rank 是这个 distributed world（分布式参与者集合：一次分布式作业中共同协作的全部 processes）里 process 的唯一编号。</h2>
         <div class="rank-legend"><div><b>global rank</b><span>某个 process 在整个 distributed world 里的唯一编号，通常从 0 到 world_size-1。</span></div><div><b><code>world_size</code></b><span>这个 distributed world 里一共有多少个 processes。</span></div><div><b>local rank</b><span>当前 process 在本机上的编号，常用于把 process 映射到本机 GPU。</span></div></div>
-        <p>单机 4 GPU 时全局 rank 和本地 rank 恰好都可能是 0、1、2、3，所以新手很容易把两者当成同一件事。多机以后这个错觉立刻消失。创建 subgroup 以后，还可能出现 group rank（组内编号：某个 process 在这个子进程组内部的编号）；它不应和 global rank 混为一谈。后面描述“TP group 包含哪些进程”时，课程会优先用 global ranks 表示成员集合；读 API 时则要确认返回的是 global rank 还是组内 rank。</p>
+        <p>单机 4 GPU 时全局 rank 和本地 rank 恰好都可能是 0、1、2、3，所以新手很容易把两者当成同一件事。多机以后这个错觉立刻消失。创建 subgroup 以后，还可能出现 group rank（组内编号：某个 process 在这个子进程组内部的编号）；它不应和 global rank 混为一谈。后面描述“TP group 包含哪些进程”时，课程会优先用 global ranks 表示成员集合；读具体接口时则要确认返回的是 global rank 还是组内 rank。</p>
       </section>
 
       <section class="article-section" id="multinode">
