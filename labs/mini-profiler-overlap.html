@@ -86,7 +86,7 @@ PASS</pre></div>
       <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认后端=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与反向传播计算是否重叠。</div><div>③ 再把 A6 的 TP×DP 进程组加进 profiler，区分 TP collective 与 DP reduce-scatter。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对重叠 window 的影响。</div></div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-tp-dp-2d.html">← Lab A6 · TP × DP Topology</a><a href="../source-map/index.html#megatron">进入 Megatron Source Map →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-tp-dp-2d.html">← Lab A6 · TP × DP Topology</a><a href="./mini-sequence-parallel.html">Lab A8 · Sequence Parallel →</a></nav>
   </main>
   <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#markers">先标“语义边界”，再去看底层 kernel。</a><a href="#run">同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</a><a href="#gpu">GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</a><a href="#source">Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</a><a href="#close">到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</a></aside>
 </div>
