@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="AI Infra from Zero 05.5：从 Data Parallel 的 optimizer-state 重复出发，理解 Megatron 分布式优化器 的 reduce-scatterr、sharded update、parameter all-gather 与通信 overlap。" />
+  <meta name="description" content="AI Infra from Zero 05.5：从 Data Parallel 的 optimizer-state 重复出发，理解 Megatron 分布式优化器 的 reduce-scatter、sharded update、parameter all-gather 与通信 overlap。" />
   <meta name="theme-color" content="#f7f7f3" />
   <title>05.5 Distributed Optimizer · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
@@ -34,99 +34,99 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>Distributed Optimizer</span></div>
       <div class="lesson-kicker"><span>LESSON 05.5 · MEGATRON</span><span>约 65 min</span></div>
       <h1>Distributed Optimizer：Data Parallel 为什么还要把 optimizer state 再 shard 一遍？</h1>
-      <p class="dek">数据并行的基本逻辑是“每个 replica 处理不同 data，但最终保持同一套model parameters”。最直接的实现会让每个 DP rank 都保存一整份 gradients、Adam states 和 FP32 master params 等 training states。问题是：这些状态很大，而且不同 DP rank 上大量重复。Megatron 分布式优化器就从这里下手——让不同 DP ranks 分工保存和更新 optimizer states。</p>
+      <p class="dek">DP 的基本逻辑是“每个 replica 处理不同数据，但最终保持同一套 model parameters”。最直接的实现会让每个 DP rank 都保存一整份 gradients、Adam states 和 FP32 master params（FP32 主参数：优化器用于高精度更新、再同步回模型参数的参数副本）等训练状态。问题是：这些状态很大，而且不同 DP ranks 上大量重复。Megatron Distributed Optimizer 就从这里下手——让不同 DP ranks 分工保存和更新 optimizer states。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释普通 Data Parallel 为什么会replicate optimizer states。</li><li>理解分布式优化器与张量并行的差别：前者沿 DP replicas shard training states，后者沿TP group分摊模型计算。</li><li>看懂梯度 reduce-scatterr → local optimizer update → 参数 all-gather 这条主数据流。</li><li>理解为什么 Megatron 会使用contiguous param/grad buffers 和 buckets。</li><li>知道 <code>--overlap-grad-reduce</code> 与 <code>--overlap-param-gather</code> 分别在隐藏哪段通信。</li><li>理解“省多少显存”取决于数据类型和 DP 并行度，不能简单记成一个固定倍数。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释普通 DP 为什么会重复保存 optimizer states。</li><li>理解 Distributed Optimizer 与 TP 的差别：前者沿 DP replicas shard 训练状态，后者沿 TP group 分摊模型计算。</li><li>看懂 gradient reduce-scatter → local optimizer update → parameter all-gather 这条主数据流。</li><li>理解为什么 Megatron 会使用连续参数/梯度缓冲区和通信桶。</li><li>知道 <code>--overlap-grad-reduce</code> 与 <code>--overlap-param-gather</code> 分别在隐藏哪段通信。</li><li>理解“省多少显存”取决于数据类型和 DP 并行度，不能简单记成一个固定倍数。</li></ul></div>
 
       <section class="article-section" id="replication">
         <div class="section-no">01 · DP 的冗余</div>
         <h2>四个 DP ranks，如果每张卡都保存同样的 Adam 状态，就有四份重复。</h2>
         <p>先把 TP/PP暂时忘掉。假设现在只是 DP=4，而且每个 rank 都有相同模型副本：</p>
-        <div class="dp-replica-grid"><div class="dp-replica"><small>DP RANK 0</small><b>full training state</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 1</small><b>same copies</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 2</small><b>same copies</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 3</small><b>same copies</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div></div>
+        <div class="dp-replica-grid"><div class="dp-replica"><small>DP RANK 0</small><b>完整训练状态</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 1</small><b>same copies</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 2</small><b>same copies</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div><div class="dp-replica"><small>DP RANK 3</small><b>same copies</b><div class="state-list"><span>model params</span><span>gradients</span><span class="heavy">Adam m</span><span class="heavy">Adam v</span><span class="heavy">FP32 main params</span></div></div></div>
         <p>这些副本必须在数学上更新到相同模型，但这不意味着每个 rank 都必须永久保存每个 parameter 对应的全部 optimizer state。只要训练过程能在需要时把结果同步回来，就可以把“更新所有参数”的工作按 DP ranks 分掉。</p>
-        <div class="concept-note"><p><strong>Distributed Optimizer 的问题域是 DP。</strong>它不是替代 TP/PP，而是在已经存在的 data-parallel 副本维度上减少训练状态重复。</p></div>
+        <div class="concept-note"><p><strong>Distributed Optimizer 的问题域是 DP。</strong>它不是替代 TP/PP，而是在已经存在的 DP replica 维度上减少训练状态重复。</p></div>
       </section>
 
       <section class="article-section" id="shard">
-        <div class="section-no">02 · Shard Optimizer State</div>
-        <h2>DP=4：每个 rank 只负责大约四分之一参数范围的optimizer state 与 update。</h2>
+        <div class="section-no">02 · 分片 Optimizer State</div>
+        <h2>DP=4：每个 rank 只负责大约四分之一参数范围的 optimizer state 与 update。</h2>
         <div class="state-sharding"><div class="state-shard"><small>DP RANK 0</small><b>分片 0</b><code>optimizer state for params 0…¼</code></div><div class="state-shard"><small>DP RANK 1</small><b>分片 1</b><code>optimizer state for params ¼…½</code></div><div class="state-shard"><small>DP RANK 2</small><b>分片 2</b><code>optimizer state for params ½…¾</code></div><div class="state-shard"><small>DP RANK 3</small><b>分片 3</b><code>optimizer state for params ¾…1</code></div></div>
-        <p>每个 rank 在 backward 时仍会产生自己数据对应的 local 梯度。但对于parameter shard 0，最终只需要 rank 0 持有“所有 DP ranks 聚合后的shard-0 gradients”，然后 rank 0 用自己的 Adam state 更新这一段参数。</p>
-        <p>于是我们马上需要一个你已经学过的集合通信：<strong>reduce-scatterr</strong>。</p>
+        <p>每个 rank 在 backward 时仍会产生自己数据对应的 local gradient。但对于 parameter shard 0，最终只需要 rank 0 持有“所有 DP ranks 聚合后的 shard-0 gradients”，然后 rank 0 用自己的 Adam state 更新这一段参数。</p>
+        <p>于是我们马上需要一个你已经学过的集合通信：<strong>reduce-scatter</strong>。</p>
       </section>
 
       <section class="article-section" id="flow">
         <div class="section-no">03 · 完整更新流程</div>
-        <h2>关键不是“少存几份 Adam”，而是一次完整的ownership transition：full local gradients → reduced shard → local update → synchronized model params。</h2>
-        <p>下面沿用 NVIDIA 当前文档里的 16-element / DP=4 教学尺度。每个 rank 从自己的数据得到full local gradient buffer；reduce-scatterr 后，每个 rank 只拥有四个已经跨 DP 聚合的gradient elements；它只更新自己的 FP32 main-param / Adam shard，最后再 all-gather 回下一轮 forward 使用的model parameter buffer。</p>
-        <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>DISTRIBUTED OPTIMIZER · DP=4</span><span>gradient ownership → parameter synchronization</span></div><img class="megatron-core-svg" src="./distributed-optimizer-flow.svg" alt="Distributed Optimizer 数据流：四个 DP ranks 的完整 local gradient buffers 经过 reduce-scatterr 后分别得到 reduced gradient shard，各 rank 仅用本地 FP32 main parameter 和 Adam state 更新自己的 shard，随后 parameter all-gather 恢复各 replica 下一轮 forward 所需的一致model parameters。" /></div>
-        <div class="megatron-core-takeaway"><strong>最重要的不变量：</strong>optimizer/master state 可以长期按 DP rank sharded，但 data-parallel forward 仍需要数学上一致的model parameters。于是 reduce-scatterr 把“谁负责更新哪一段”分出去，参数 all-gather 再把更新结果同步回model parameter buffer。</div>
-        <p>这条链把之前几个模块真正串起来了：autograd 产生梯度；DP 集合通信改变梯度归属关系；optimizer 在本地分片上更新；参数同步后下一轮 forward 才能继续。Megatron 再用 contiguous buffers、buckets 和 overlap尽量把这两次通信隐藏进计算。</p>
-        <div class="source-note">NVIDIA 当前 Distributed Optimizer 文档的 Key Steps 明确采用同一条路径：16-element 梯度缓冲区 → DP reduce-scatterr → 每 rank 4 个 reduced elements → local optimizer update → 把 FP32 main-param 分片写回计算-param 缓冲区 → all-gather 完整 updated parameter buffer。</div>
+        <h2>关键不是“少存几份 Adam”，而是一次完整的归属变化：本地 gradients → 已归约分片 → 本地 update → 同步后的 model params。</h2>
+        <p>下面沿用 NVIDIA 当前文档里的 16-element / DP=4 教学尺度。每个 rank 从自己的数据得到完整 local gradient buffer；reduce-scatter 后，每个 rank 只拥有四个已经跨 DP 聚合的 gradient elements；它只更新自己的 FP32 main-param / Adam shard，最后再 all-gather 回下一轮 forward 使用的 model parameter buffer。</p>
+        <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>DISTRIBUTED OPTIMIZER · DP=4</span><span>gradient ownership → parameter synchronization</span></div><img class="megatron-core-svg" src="./distributed-optimizer-flow.svg" alt="Distributed Optimizer 数据流：四个 DP ranks 的完整 local gradient buffers 经过 reduce-scatter 后分别得到 reduced gradient shard，各 rank 仅用本地 FP32 main parameter 和 Adam state 更新自己的 shard，随后 parameter all-gather 恢复各 replica 下一轮 forward 所需的一致model parameters。" /></div>
+        <div class="megatron-core-takeaway"><strong>最重要的不变量：</strong>optimizer/master state 可以长期按 DP rank sharded，但 DP forward 仍需要数学上一致的 model parameters。于是 reduce-scatter 把“谁负责更新哪一段”分出去，parameter all-gather 再把更新结果同步回 model parameter buffer。</div>
+        <p>这条链把之前几个模块真正串起来了：autograd 产生 gradients；DP collective 改变 gradient 的归属关系；optimizer 在本地分片上更新；参数同步后下一轮 forward 才能继续。Megatron 再用连续缓冲区、通信桶和 overlap 尽量把这两次通信隐藏进计算。</p>
+        <div class="source-note">NVIDIA 当前 Distributed Optimizer 文档的 Key Steps 明确采用同一条路径：16-element gradient buffer → DP reduce-scatter → 每 rank 4 个 reduced elements → local optimizer update → 把 FP32 main-param 分片写回计算参数缓冲区 → all-gather 完整 updated parameter buffer。</div>
       </section>
 
       <section class="article-section" id="allreduce">
         <div class="section-no">04 · 为什么用 Reduce-Scatter 而不是 All-Reduce</div>
         <h2>普通 DP 想让每张卡拿完整梯度；Distributed Optimizer 只需要每张卡拿自己负责的梯度分片。</h2>
-        <div class="dist-vs-tp"><div><small>ORDINARY DP SYNC</small><b>all-reduce gradients</b><span>每个 rank 最后都得到完整 reduced 梯度，因此每个 rank 都可以 independently update 全部参数。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>reduce-scatterr gradients</b><span>每个 rank 只得到自己负责的 reduced 梯度分片，正好对应自己保存的优化器状态 / main-param 分片。</span></div></div>
-        <p>Megatron Core 当前 <code>DistributedDataParallelConfig</code> 的 <code>use_distributed_optimizer</code> 源码说明仍然明确：启用时用 reduce-scatterr 聚合梯度；否则走 all-reduce。当前同一个配置里也仍保留 <code>overlap_grad_reduce</code> 与 <code>overlap_param_gather</code>。</p>
-        <div class="source-note">官方API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.distributed_data_parallel_config.html">core.distributed.distributed_data_parallel_config</a>。其中 <code>use_distributed_optimizer</code>、<code>overlap_grad_reduce</code>、<code>overlap_param_gather</code> 都是当前配置项。</div>
+        <div class="dist-vs-tp"><div><small>ORDINARY DP SYNC</small><b>all-reduce gradients</b><span>每个 rank 最后都得到完整 reduced gradient，因此每个 rank 都可以独立更新全部参数。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>reduce-scatter gradients</b><span>每个 rank 只得到自己负责的 reduced gradient shard，正好对应自己保存的 optimizer state / main-param shard。</span></div></div>
+        <p>Megatron Core 当前 <code>DistributedDataParallelConfig</code> 的 <code>use_distributed_optimizer</code> 源码说明仍然明确：启用时用 reduce-scatter 聚合梯度；否则走 all-reduce。当前同一个配置里也仍保留 <code>overlap_grad_reduce</code> 与 <code>overlap_param_gather</code>。</p>
+        <div class="source-note">官方 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.distributed_data_parallel_config.html">core.distributed.distributed_data_parallel_config</a>。其中 <code>use_distributed_optimizer</code>、<code>overlap_grad_reduce</code>、<code>overlap_param_gather</code> 都是当前配置项。</div>
       </section>
 
       <section class="article-section" id="memory">
         <div class="section-no">05 · 能省多少显存？</div>
         <h2>不要背“除以 DP”这么一句，因为并不是所有数据量都能同样分片。</h2>
-        <p>官方当前 Distributed Optimizer 文档给了按参数数据类型 / 梯度数据类型区分的理论账本。设 data-parallel size 为 <code>d</code>：</p>
-        <div class="memory-table"><div class="memory-table-row head"><b>配置</b><span>普通 optimizer</span><span>Distributed Optimizer</span></div><div class="memory-table-row"><b>16 位浮点（FP16） params + FP16 grads</b><span>20 数据量 / param</span><code>4 + 16/d</code></div><div class="memory-table-row"><b>BF16 16 位浮点（BF16） params + FP32 grads</b><span>18 数据量 / param</span><code>6 + 12/d</code></div><div class="memory-table-row"><b>FP32 params + FP32 grads</b><span>16 数据量 / param</span><code>8 + 8/d</code></div></div>
-        <p>例如 BF16 + FP32 grads、DP=4 时，理论主模型状态从 18 B/param 降到 <code>6 + 12/4 = 9 B/param</code>。DP 越大，shardable optimizer 部分越薄；但那几个不随 d 消失的常驻部分仍然存在。</p>
+        <p>官方当前 Distributed Optimizer 文档给了按参数数据类型 / gradient 数据类型区分的理论账本。设 DP size 为 <code>d</code>。下面的 B/param（每参数字节数：平均每个模型参数对应多少字节训练状态）用于衡量模型状态显存：</p>
+        <div class="memory-table"><div class="memory-table-row head"><b>配置</b><span>普通 optimizer</span><span>Distributed Optimizer</span></div><div class="memory-table-row"><b>FP16 params + FP16 grads</b><span>20 B/param</span><code>4 + 16/d</code></div><div class="memory-table-row"><b>BF16 params + FP32 grads</b><span>18 B/param</span><code>6 + 12/d</code></div><div class="memory-table-row"><b>FP32 params + FP32 grads</b><span>16 B/param</span><code>8 + 8/d</code></div></div>
+        <p>例如 BF16 + FP32 grads、DP=4 时，理论主模型状态从 18 B/param 降到 <code>6 + 12/4 = 9 B/param</code>。DP 越大，可分片的 optimizer 部分越薄；但那些不随 d 消失的常驻部分仍然存在。</p>
         <div class="memory-formula"><small>OFFICIAL CURRENT MODEL · BF16 PARAMS / FP32 GRADS</small><b>distributed 数据量 / param = <span>6 + 12/d</span></b></div>
-        <p>这些是官方实现模型下的理论数字，不等于 <code>nvidia-smi</code> 最终峰值。激活值、temporary 缓冲区、fragmentation、通信 workspace、模型特殊参数等都还在账本里。</p>
+        <p>这些是官方实现模型下的理论数字，不等于 <code>nvidia-smi</code> 最终峰值。activation、临时缓冲区、内存碎片、通信 workspace、模型特殊参数等都还在账本里。</p>
         <div class="source-note">官方说明：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/dist_optimizer.html">Megatron Core · Distributed Optimizer</a>。当前文档仍给出 20 / 18 / 16 B/param 的 non-distributed 基线，以及 <code>4+16/d</code>、<code>6+12/d</code>、<code>8+8/d</code> 三条 distributed 理论公式。</div>
       </section>
 
       <section class="article-section" id="buffers">
-        <div class="section-no">06 · 为什么需要连续缓冲区与bucket？</div>
-        <h2>几十亿个参数不适合一个张量发一次集合通信：Megatron 把它们整理进连续缓冲区，再按bucket通信。</h2>
-        <p>真实模型有成千上万个参数张量。如果每个小张量梯度一就绪就单独发一个 NVIDIA 集体通信库（NCCL）集合通信，延迟 / launch overhead 会非常糟糕。Megatron 使用contiguous param/grad buffers，并把其中区间组织成bucket。</p>
+        <div class="section-no">06 · 为什么需要连续缓冲区与通信桶？</div>
+        <h2>几十亿个参数不适合一个张量发一次 collective：Megatron 把它们整理进连续缓冲区，再按通信桶分组。</h2>
+        <p>真实模型有成千上万个参数 tensors。如果每个小 tensor 的 gradient 一就绪就单独发一个 NCCL collective，latency / launch overhead 会非常糟糕。Megatron 使用 contiguous buffer（连续缓冲区：把许多参数或 gradients 放进一块连续内存，便于批量通信和管理），并把其中区间组织成 bucket（通信桶：把多块小数据合并成较大通信单元的分组）。</p>
         <div class="buffer-map"><small>CONTIGUOUS PARAM / GRAD BUFFER</small><div class="buffer-strip"><span class="r0">bucket 0a</span><span class="r0">bucket 0b</span><span class="r1">bucket 1a</span><span class="r1">bucket 1b</span><span class="r2">bucket 2a</span><span class="r2">bucket 2b</span><span class="r3">bucket 3a</span><span class="r3">bucket 3b</span></div></div>
-        <p>这样做有两个系统收益：第一，大块连续通信通常比大量 tiny collectives 更容易获得带宽；第二，某个bucket的梯度一旦全部就绪，就可以提前启动 reduce-scatterr，不必等整个 backward 完成。</p>
-        <div class="source-note">当前 <a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.param_and_grad_buffer.html">core.distributed.param_and_grad_buffer</a> API 提供bucket-level <code>start_grad_sync()</code>、<code>start_param_sync()</code>、<code>finish_param_sync()</code> 等接口。</div>
+        <p>这样做有两个系统收益：第一，大块连续通信通常比大量很小的 collectives 更容易获得带宽；第二，某个 bucket 的 gradients 一旦全部就绪，就可以提前启动 reduce-scatter，不必等整个 backward 完成。</p>
+        <div class="source-note">当前 <a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.param_and_grad_buffer.html">core.distributed.param_and_grad_buffer</a> API 提供 bucket-level <code>start_grad_sync()</code>、<code>start_param_sync()</code>、<code>finish_param_sync()</code> 等接口。</div>
       </section>
 
       <section class="article-section" id="overlap-grad">
-        <div class="section-no">07 · gradient reduce-scatterr 如何与 backward overlap</div>
-        <h2>后面的层还在 backward 时，前面已经就绪的gradient bucket可以开始通信。</h2>
+        <div class="section-no">07 · gradient reduce-scatter 如何与 backward overlap</div>
+        <h2>后面的层还在 backward 时，已经就绪的 gradient bucket 可以开始通信。</h2>
         <div class="overlap-timeline"><div class="overlap-row"><small>BACKWARD</small><span class="compute">Layer 6</span><span class="compute">Layer 5</span><span class="compute">Layer 4</span><span class="compute">Layer 3</span><span class="compute">Layer 2</span><span class="compute">Layer 1</span></div><div class="overlap-row"><small>GRAD REDUCE-SCATTER (RS)</small><span class="empty">—</span><span class="comm">bucket 6</span><span class="comm">bucket 5</span><span class="comm">bucket 4</span><span class="comm">bucket 3</span><span class="comm">bucket 2</span></div></div>
-        <p>图不是精确 Megatron 时间线，只表达目标：通信和独立的 backward GEMM同时占用不同资源，让 wall-clock 中“纯等待通信”的部分变少。对应当前参数就是 <code>--overlap-grad-reduce</code>。</p>
-        <div class="concept-note"><p><strong>Overlap ≠ 通信免费。</strong>如果计算与通信争抢相同瓶颈、bucket划分不合适、网络太慢，overlap可能隐藏不了全部通信，甚至带来额外干扰。</p></div>
+        <p>图不是精确 Megatron timeline，只表达目标：通信和独立的 backward GEMM 同时占用不同资源，让总耗时中“纯等待通信”的部分变少。对应当前参数就是 <code>--overlap-grad-reduce</code>。</p>
+        <div class="concept-note"><p><strong>Overlap ≠ 通信免费。</strong>如果计算与通信争抢相同瓶颈、bucket 划分不合适、网络太慢，overlap 可能隐藏不了全部通信，甚至带来额外干扰。</p></div>
       </section>
 
       <section class="article-section" id="overlap-param">
         <div class="section-no">08 · parameter all-gather 如何与 forward overlap</div>
-        <h2>optimizer step 更新完parameter shard后，下一轮 forward 不必先停下来等“全模型 gather 完”。</h2>
-        <p>Distributed Optimizer 的另一个通信方向是 updated 参数 all-gather。Megatron 可以把parameter buffer分bucket，并在 forward 即将需要某一层参数之前预取/启动对应 all-gather。</p>
+        <h2>optimizer step 更新完 parameter shard 后，下一轮 forward 不必先停下来等“全模型 all-gather 完”。</h2>
+        <p>Distributed Optimizer 的另一个通信方向是 updated parameter all-gather。Megatron 可以把 parameter buffer 分 bucket，并在 forward 即将需要某一层参数之前预取或启动对应 all-gather。</p>
         <div class="overlap-timeline"><div class="overlap-row"><small>PARAM ALL-GATHER (AG)</small><span class="comm">bucket L1</span><span class="comm">bucket L2</span><span class="comm">bucket L3</span><span class="comm">bucket L4</span><span class="comm">bucket L5</span><span class="empty">—</span></div><div class="overlap-row"><small>FORWARD</small><span class="empty">等待 first</span><span class="compute">Layer 1</span><span class="compute">Layer 2</span><span class="compute">Layer 3</span><span class="compute">Layer 4</span><span class="compute">Layer 5</span></div></div>
-        <p>当前配置项 <code>--overlap-param-gather</code> 的语义就是把参数 all-gather 与 forward 计算overlap。当前 optimizer config 里也仍存在 <code>overlap_param_gather_with_optimizer_step</code>，用于进一步把参数-gather 工作与 optimizer step 重叠。</p>
+        <p>当前配置项 <code>--overlap-param-gather</code> 的语义就是把 parameter all-gather 与 forward 计算 overlap。当前 optimizer config 里也仍存在 <code>overlap_param_gather_with_optimizer_step</code>，用于进一步把 parameter gather 与 optimizer step overlap。</p>
         <div class="source-note">当前 API：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.optimizer.optimizer_config.html">core.optimizer.optimizer_config</a>；其中包含 <code>use_distributed_optimizer</code> 与 <code>overlap_param_gather_with_optimizer_step</code>。</div>
       </section>
 
       <section class="article-section" id="tp-vs-do">
         <div class="section-no">09 · 不要和张量并行混淆</div>
         <h2>TP 和 Distributed Optimizer 都在“分片”，但分片的对象和执行时机完全不同。</h2>
-        <div class="dist-vs-tp"><div><small>TENSOR PARALLEL</small><b>sharded model computation</b><span>同一个层的 weights / activations 被 TP ranks 分着算；forward 本身依赖 TP collectives。没有这些 peers，这个层就算不完整。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>sharded DP training state</b><span>不同 DP replicas 数学上仍是同一个 model replica；optimizer update 归属关系 / optimizer state 被 sharded，之后再同步 updated params。</span></div></div>
-        <p>因此它们可以组合：一个 rank 先属于某个 TP 分片，再在“相同 TP/PP 位置的不同 data replicas”之间形成 DP group；Distributed Optimizer 正是在这个 DP group上工作。</p>
+        <div class="dist-vs-tp"><div><small>TENSOR PARALLEL</small><b>sharded model computation</b><span>同一个层的 weights / activations 被 TP ranks 分着算；forward 本身依赖 TP collectives。没有这些 ranks，这个层就算不完整。</span></div><div><small>DISTRIBUTED OPTIMIZER</small><b>sharded DP training state</b><span>不同 DP replicas 数学上仍是同一个 model replica；optimizer update 归属关系 / optimizer state 被 sharded，之后再同步 updated params。</span></div></div>
+        <p>因此它们可以组合：一个 rank 先属于某个 TP 分片，再在“相同 TP/PP 位置的不同 data replicas”之间形成 DP group；Distributed Optimizer 正是在这个 DP group 上工作。</p>
       </section>
 
       <section class="article-section" id="source">
         <div class="section-no">10 · 源码地图</div>
         <h2>读源码时，沿“buffer → DDP sync → optimizer”三层走。</h2>
-        <div class="source-map"><div class="source-map-card"><small>分布式数据并行（DDP） CONFIG</small><b>DistributedDataParallelConfig</b><code>core/distributed/...</code><span><code>use_distributed_optimizer</code>、grad/param overlap开关。</span></div><div class="source-map-card"><small>BUFFER</small><b>param_and_grad_buffer</b><code>core/distributed/param_and_grad_buffer.py</code><span>contiguous 缓冲区、bucket、grad reduce 与 param gather 生命周期。</span></div><div class="source-map-card"><small>OPTIMIZER</small><b>core.optimizer</b><code>megatron/core/optimizer/</code><span>distributed optimizer wrappers、main params、optimizer state 与 update。</span></div><div class="source-map-card"><small>CONFIG</small><b>OptimizerConfig</b><code>optimizer_config.py</code><span>precision、optimizer、distributed optimizer、offload/overlap等配置。</span></div></div>
-        <p>现在你再看到 <code>start_grad_sync()</code>，脑子里应该不是“一个函数”，而是“某个 buffer bucket的梯度已就绪，可以启动 DP all-reduce/reduce-scatterr”；看到 <code>start_param_sync()</code>，则应该想到下一段 forward 所需参数正在 all-gather。</p>
+        <div class="source-map"><div class="source-map-card"><small>DDP CONFIG</small><b>DistributedDataParallelConfig</b><code>core/distributed/...</code><span><code>use_distributed_optimizer</code>、grad/param overlap 开关。</span></div><div class="source-map-card"><small>BUFFER</small><b>param_and_grad_buffer</b><code>core/distributed/param_and_grad_buffer.py</code><span>contiguous buffer、bucket、grad reduce 与 param gather 生命周期。</span></div><div class="source-map-card"><small>OPTIMIZER</small><b>core.optimizer</b><code>megatron/core/optimizer/</code><span>distributed optimizer wrappers、main params、optimizer state 与 update。</span></div><div class="source-map-card"><small>CONFIG</small><b>OptimizerConfig</b><code>optimizer_config.py</code><span>精度、optimizer、distributed optimizer、offload/overlap 等配置。</span></div></div>
+        <p>现在你再看到 <code>start_grad_sync()</code>，脑子里应该不是“一个函数”，而是“某个 buffer bucket 的 gradients 已就绪，可以启动 DP all-reduce/reduce-scatter”；看到 <code>start_param_sync()</code>，则应该想到下一段 forward 所需 parameters 正在 all-gather。</p>
       </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.5</span></div><h2>确认你能从 DP 冗余自己推导这套设计。</h2><div class="quiz-item"><div class="quiz-q">1. Distributed Optimizer 为什么更自然地用 reduce-scatterr gradients，而不是 all-reduce？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每个 DP rank 只负责一个 optimizer/parameter shard。它只需要拿到自己那段“已经跨 DP ranks 归约”的梯度；reduce-scatterr 正好同时完成 reduction 和分片 distribution。</div></div><div class="quiz-item"><div class="quiz-q">2. optimizer step 完以后为什么还需要参数 all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同ranks 分别更新了不同parameter shard，但下一轮 data-parallel forward 需要各副本使用一致的model parameters。因此必须把 updated 分片同步/gather 到需要它们的ranks。</div></div><div class="quiz-item"><div class="quiz-q">3. <code>--overlap-grad-reduce</code> 真正想隐藏什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当某些gradient bucket已经就绪时，提前启动它们的 DP all-reduce/reduce-scatterr，同时GPU继续计算其它层的 backward，尽量把通信时间藏在 backward 计算后面。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>05.5</span></div><h2>确认你能从 DP 冗余自己推导这套设计。</h2><div class="quiz-item"><div class="quiz-q">1. Distributed Optimizer 为什么更自然地用 reduce-scatter gradients，而不是 all-reduce？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为每个 DP rank 只负责一个 optimizer/parameter shard。它只需要拿到自己那段“已经跨 DP ranks 归约”的 gradient；reduce-scatter 正好同时完成归约和分片分发。</div></div><div class="quiz-item"><div class="quiz-q">2. optimizer step 完以后为什么还需要参数 all-gather？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">不同 ranks 分别更新了不同 parameter shards，但下一轮 DP forward 需要各 replicas 使用一致的 model parameters。因此必须把 updated shards all-gather 到需要它们的 ranks。</div></div><div class="quiz-item"><div class="quiz-q">3. <code>--overlap-grad-reduce</code> 真正想隐藏什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">当某些 gradient buckets 已经就绪时，提前启动它们的 DP all-reduce/reduce-scatter，同时 GPU 继续计算其它层的 backward，尽量把通信时间藏在 backward 计算后面。</div></div></section>
 
-      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模 reference 验证 correctness 与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A4 · Mini Distributed Optimizer</strong><br />验证 reduce-scatterr → 本地优化器分片 update → 参数 all-gather 的ownership transition。 <a href="../../labs/mini-distributed-optimizer.html">打开实验 →</a></p></div></section>
+      <section class="article-section lesson-lab-bridge" id="hands-on"><div class="section-no">动手实验 · 对应练习</div><h2>现在把这节课的数据流亲手跑一遍。</h2><p>先用小规模参考实现验证正确性与依赖关系；真实性能结论仍以对应硬件与通信栈实测为准。</p><div class="concept-note"><p><strong>Lab A4 · Mini Distributed Optimizer</strong><br />验证 reduce-scatter → 本地 optimizer shard update → parameter all-gather 的完整归属变化。 <a href="../../labs/mini-distributed-optimizer.html">打开实验 →</a></p></div></section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">术语表 · 本课词汇</div>
