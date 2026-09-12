@@ -80,6 +80,6 @@
 
 <rect class="dark" x="34" y="838" width="692" height="70" rx="10"/>
 <text class="mono sec" x="52" y="860" fill="#b8c2bb">通用分析方法</text>
-<text class="sans small" x="52" y="880" style="fill:#eef2ed">Ask: what becomes 就绪, what launches ASYNC, what independent work exists, and where is the first unavoidable WAIT?</text>
+<text class="sans small" x="52" y="880" style="fill:#eef2ed">先问四件事：什么时刻就绪、什么通信异步发起、期间还能做什么独立计算、第一次不可避免的等待在哪里？</text>
 <text class="sans tiny" x="52" y="898" style="fill:#b8c2bb">时间线上看起来重叠并不等于一定加速；并发内核可能争资源，必须用真实 GPU/网络时间线验证。</text>
 </svg>
