@@ -65,7 +65,7 @@ Megatron 主线：
 
 vLLM / NIXL 主线：
 
-`Engine/Scheduler → KV block state → GPU model runner → KVConnector contract → NIXL scheduler lifecycle → metadata → memory registration → pull transfer/completion`
+`Engine/Scheduler → KV block state → GPU ModelRunner → KVConnector contract → NIXL scheduler lifecycle → metadata → memory registration → pull / push transfer + completion/failure`
 
 这样读源码时先知道“这一层正在解决什么问题”，再进入 class、buffer、process group 和 transfer handle。
 
@@ -73,12 +73,12 @@ vLLM / NIXL 主线：
 
 课程中的版本敏感表述会优先按当前上游源码复查，而不是把旧教程中的类名、默认值或实现细节当成永久定义。
 
-最近一次系统复查（2026-09-02）对照：
+最近一次系统复查（2026-09-13）对照：
 
-- vLLM `main`: `f4e61361462882f82d91f60dfc4133807ef00822`
-- NVIDIA/Megatron-LM `main`: `37a7554c7d536519722d551b3c6afb13e807e1fa`
+- vLLM `main`: `7ee8a6dd013819838da8012ca549d724bee7c6c6`
+- NVIDIA/Megatron-LM `main`: `4fe0daffe4fc45efc231efc7b5bfc3018d81d516`
 
-本轮按课程真正依赖的版本敏感边界做了定点核验，而不是机械追逐每个上游提交。vLLM 侧重新检查了 V1 `Scheduler` 的 token-budget / running-request 约束、`gpu_worker.py` 的 V1/V2 ModelRunner selector、chunked prefill 当前默认策略、KV load failure policy，以及 NixlConnector 的 UCX 默认 backend 与非 MLA 场景的 LBHNC 默认 KV layout；这些检查支持课程当前关于 request lifecycle、continuous batching、KV ownership 与 Connector 数据面的表述。Megatron 侧重新核对了 `DistributedDataParallelConfig` 的 bucket 默认逻辑与 overlap / distributed-optimizer 开关，以及 MoE router / dispatcher 的当前类型、默认值和 flex backend；课程继续把这些具体默认值标记为“当前实现”，把 TP / PP / SP / CP / EP 与 overlap 的数据依赖和 ownership 作为更稳定的主心智模型。网页中的源码链接仍指向上游 `main`；上述 SHA 只表示这轮语义复查使用的具体快照，上游继续演化后应重新核验版本敏感内容。
+本轮按课程真正依赖的版本敏感边界做了定点核验，而不是机械追逐每个上游提交。vLLM 侧重新检查了 Scheduler 的 token budget 与 Prefill/Decode 调度语义、`gpu_worker.py` 的 V1/V2 ModelRunner selector、KVCacheManager / Prefix Cache、KV load failure policy、`KVConnectorBase_V1.get_transfer_results()` 的完成/失败闭环，以及 NixlConnector 的 UCX 默认 backend、KV layout、pull/push 路径、handshake、registration geometry、lease/heartbeat 与 heterogeneous P/D 支持边界。Megatron 侧重新核对了训练执行主干、TP mappings/layers、PP schedules/P2P、Distributed Optimizer、`param_and_grad_buffer.py` 的 reduce-scatter/all-reduce 与 overlap 生命周期、CP attention 路径，以及 MoE router / dispatcher 的当前配置与实验性 flex backend。课程继续把这些具体默认值和支持矩阵标记为“当前实现”，把 TP / PP / SP / CP / EP、request lifecycle、KV ownership 与 communication dependency 作为更稳定的主心智模型。网页中的源码链接仍指向上游 `main`；上述 SHA 只表示这轮语义复查使用的具体快照，上游继续演化后应重新核验版本敏感内容。
 
 ## Reading tools
 
@@ -90,7 +90,7 @@ vLLM / NIXL 主线：
 
 每次 push 会运行站点检查，验证：HTML 阅读元数据、重复 ID、本地页面/fragment/asset 链接、CSS imports/`url(...)`、`app.js` 动态 lesson/Lab routes、已发布课程的旧 `locked` / `muted-next` 导航能否解析到真实目标、已知语义回归字符串、过期 placeholder，以及所有 Lab Python 源码的语法编译。
 
-术语另有三层保护：`scripts/lesson_terms.py` 维护 canonical term registry，并验证每课首次展开与课尾术语表没有 drift；`scripts/audit_lesson_acronyms.py` 反向扫描 learner-facing `<p>/<li>` 正文，新的高置信未注册缩写会直接让 CI 失败；`scripts/check_glossary_terms.py` 则只约束总站精选核心词，确保对应卡片仍存在并包含 canonical English name，而不会把总站 Glossary 膨胀成全部课内术语的复制品。
+术语与文风现在有多层保护：`scripts/lesson_terms.py` 维护 canonical term registry 与课尾术语表；`scripts/audit_lesson_acronyms.py` 扫描新的高置信未注册缩写；`scripts/audit_first_use_terms.py` 按 01.1→08.5→Labs 的教学顺序检查技术英文首次出现是否带“中文术语 + 简短解释”，并清理后续重复解释；`scripts/audit_term_density.py` 与 `scripts/audit_language_mix.py` 继续检查术语密度、中文优先和异常中英混写；`scripts/check_glossary_terms.py` 只约束总站精选核心词，避免把 Glossary 膨胀成全部课内术语的复制品。
 
 已人工验收为 lesson-native 的核心 SVG 另外由 `scripts/check_diagrams.py` 做宽度回归保护，防止重新退回“超宽小字号画布再整体缩小”的旧模式。
 
