@@ -123,7 +123,7 @@ PASS</pre></div>
       </div>
     </section>
 
-    <nav class="lab-footer-nav"><a href="./mini-megatron.html">← Lab A · Mini Megatron TP</a><a href="../learn/08-kv-connector/production-pd.html">回到 08.5 Production P/D →</a></nav>
+    <nav class="lab-footer-nav"><a href="./index.html">← Labs 首页</a><a href="./mini-block-kv-handoff.html">Lab B2 · Block KV 交接 →</a></nav>
   </main>
   <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#flow">两个 rank，分别扮演 Prefill 与 Decode。</a><a href="#run">同样先从 CPU / Gloo 开始。</a><a href="#correctness">最重要的一行不是 send，而是交接与重新计算的比较。</a><a href="#not-vllm">它证明了 KV 交接的核心，但还不是 vLLM KV Connector。</a><a href="#source">把这个简单 send/recv 拆成 vLLM 的两层职责。</a><a href="#upgrade">下一步不是立刻写 RDMA，而是逐层增加真实约束。</a></aside>
 </div>
