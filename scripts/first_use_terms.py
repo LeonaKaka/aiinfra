@@ -73,6 +73,7 @@ SOURCE_TERMS = {
     "RMSNorm": ("均方根归一化", "用均方根尺度归一化表示的常见方法"),
     "residual connection": ("残差连接", "把子层输入直接加回输出以稳定深层网络"),
     "Transformer block": ("Transformer 块", "由 Attention、MLP、Norm 和 residual 等子模块组成的一层计算单元"),
+    "embedding": ("嵌入层", "把 token ID 映射为模型可处理的连续向量表示"),
     "pre-norm": ("前置归一化", "先做 Norm 再进入 Attention 或 MLP 分支的结构"),
     "post-norm": ("后置归一化", "先完成子层和 residual 相加，再做 Norm 的结构"),
     "intermediate size": ("中间维度", "MLP 扩展后的隐藏表示宽度"),
