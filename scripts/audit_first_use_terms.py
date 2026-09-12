@@ -94,6 +94,7 @@ SOURCE_ALIASES = {
     "projection": ("projection", "projections"),
     "attention score": ("attention score", "attention scores"),
     "attention head": ("attention head", "attention heads"),
+    "Transformer block": ("Transformer block", "Transformer Block"),
     "Tensor Core": ("Tensor Core", "Tensor Cores"),
     "kernel": ("kernel", "kernels"),
     "stream": ("stream", "streams"),
