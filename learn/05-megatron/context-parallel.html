@@ -36,7 +36,7 @@
       <h1>Context Parallel：当 sequence 长到一张 GPU 连 Attention activations 都放不下。</h1>
       <p class="dek">SP 已经在 LayerNorm、dropout、残差连接等区域把 token 分片存放，但 Attention 仍然需要跨 token 的全局上下文。CP 再往前一步：让不同 ranks 负责不同 sequence shards，连 Attention 本身也跨 shards 并行；至于远端上下文怎样交换，并不只有 Ring 一种实现。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 CP 和 SP 都切序列，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一部分 query tokens。</li><li>解释为什么 local Q 仍然需要整个可见上下文的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时 Ring KV 交换的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成“环形通信”。</li><li>知道当前 MCore 对因果 Attention 常用交错分片来平衡负载，不能把“CP rank = 单个连续 token range”当成实现不变量。</li><li>知道 GQA / MQA 为什么能直接降低以 K/V 为主的数据交换量。</li><li>正确计算稠密 Transformer 并行网格中的 TP / PP / CP / DP rank 关系，并把 EP 当成另一套专家并行网格来理解。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 CP 和 SP 都切序列，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一部分 query tokens。</li><li>解释为什么 local Q 仍然需要整个可见上下文的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时 Ring KV 交换的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成“环形通信”。</li><li>知道当前 MCore 对因果 Attention 常用交错分片来平衡负载，不能把“CP rank = 单个连续 token range”当成实现不变量。</li><li>知道 GQA / MQA 为什么能直接降低以 K/V 为主的数据交换量。</li><li>在本课的稠密 Transformer 设定下正确计算 TP / PP / CP / DP rank 关系，并知道 MoE 的专家进程组会在下一课单独处理。</li></ul></div>
 
       <section class="article-section" id="problem">
         <div class="section-no">01 · 长上下文如何改变显存规模</div>
@@ -119,18 +119,19 @@
 
       <section class="article-section" id="config">
         <div class="section-no">11 · 把配置读成物理布局</div>
-        <h2>先算 dense rank grid，再单独理解 MoE 专家 grid；不要把所有缩写机械相乘。</h2>
+        <h2>先只算 CP 所在的稠密并行网格；专家并行留到下一课。</h2>
         <div class="code-block"><div class="code-head"><span>shell</span><span>conceptual Megatron setup</span></div><pre><code>--seq-length 32768
 --tensor-model-parallel-size 4
+--pipeline-model-parallel-size 1
 --context-parallel-size 4
 --cp-comm-type p2p
 
-<span class="comment"># dense-grid intuition:</span>
+<span class="comment"># 本课设定：没有其它额外模型分片轴</span>
 <span class="comment"># local context capacity ≈ 32768 / 4 = 8192 tokens</span>
-<span class="comment"># current rank construction: model_size = TP × PP × CP × gtp_remat</span>
-<span class="comment"># DP = world_size / model_size</span></code></pre></div>
-        <p><strong>这里有一个值得主动防错的地方：</strong>当前 Parallelism Strategies Guide 的 overview 仍给出过一条简化的 <code>Total GPUs = TP × PP × CP × EP × DP</code> 口诀；但当前 <code>parallel_state.py</code> 的真实 rank construction 先用 dense <code>TP × PP × CP</code>，再考虑 GTP（广义张量并行：Megatron 当前的新型张量并行路径） remat（重计算：不长期保存部分中间状态，需要时重新计算以节省内存），确定 model size 与 DP，然后另外构造专家 tensor/model/data process groups。对于读源码和排 rank，这门课以实际 process-group construction 为准。</p>
-        <div class="concept-note"><p><strong>读多维并行最安全的方法不是背乘法口诀。</strong>打开 <code>parallel_state.py</code>，分别找 dense rank 生成器和专家 rank 生成器，然后问“这个 rank 在哪套 grid 里、每个轴的 size 是多少”。</p></div>
+<span class="comment"># model-parallel footprint = TP × PP × CP = 16 GPUs</span>
+<span class="comment"># 若 world_size = 64，则 DP = 64 / 16 = 4</span></code></pre></div>
+        <p>在这个教学设定里，一份稠密 Transformer 跨 <code>TP × PP × CP</code> 张 GPU；剩余的 world size 才形成 DP replicas。这样先把 CP 放进已经熟悉的 TP / PP / DP 坐标系就够了。<strong>不要在这里提前把 EP 机械乘进去：</strong>MoE 的 expert process groups 有单独的 rank construction，05.7 会专门解释。</p>
+        <div class="concept-note"><p><strong>本课只保留一个检查法：</strong>看到 <code>context_parallel_size</code>，先问“同一 TP coordinate 的哪些 ranks 构成 CP group”，再算每个 rank 负责多少上下文；涉及专家层时再切换到下一课的 expert grid。</p></div>
         <div class="source-note">源码阅读顺序：先在 <a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/attention.py"><code>transformer/attention.py</code></a> 看 <code>cp_comm_type</code> 与 CP process group 怎样传给 core attention；再到 <a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/extensions/transformer_engine.py"><code>extensions/transformer_engine.py</code></a> 找 <code>TEDotProductAttention</code>，核对 CP group 与通信模式怎样交给后端；rank 关系则回到 <a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py"><code>parallel_state.py</code></a>。</div>
       </section>
 
