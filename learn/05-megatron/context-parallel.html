@@ -36,7 +36,7 @@
       <h1>Context Parallel：当 sequence 长到一张 GPU 连 Attention activations 都放不下。</h1>
       <p class="dek">SP 已经在 LayerNorm、dropout、残差连接等区域把 token 分片存放，但 Attention 仍然需要跨 token 的全局上下文。CP 再往前一步：让不同 ranks 负责不同 sequence shards，连 Attention 本身也跨 shards 并行；至于远端上下文怎样交换，并不只有 Ring 一种实现。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 CP 和 SP 都切序列，但为什么不是同一个东西。</li><li>理解 CP 下每个 rank 只保存/计算自己的一部分 query tokens。</li><li>解释为什么 local Q 仍然需要整个可见上下文的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时 Ring KV 交换的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成“环形通信”。</li><li>知道当前 MCore 对因果 Attention 常用交错分片来平衡负载，不能把“CP rank = 单个连续 token range”当成实现不变量。</li><li>知道 GQA / MQA 为什么能直接降低以 K/V 为主的数据交换量。</li><li>在本课的稠密 Transformer 设定下正确计算 TP / PP / CP / DP rank 关系，并知道 MoE 的专家进程组会在下一课单独处理。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 CP 和 SP 都切序列，但为什么不是同一个东西。</li><li>先用“每个 rank 负责一部分 query tokens”建立序列分片视角，并知道 A2A 模式会进一步重排 head / sequence 布局。</li><li>解释为什么在 P2P / all-gather 心智模型里，local Q 仍然需要整个可见上下文的 K/V 信息。</li><li>理解 <code>cp_comm_type='p2p'</code> 时 Ring KV 交换的基本思路。</li><li>知道当前 Megatron 还支持 <code>all_gather</code>、<code>a2a</code>、<code>a2a+p2p</code>，不能把 CP 定义成“环形通信”。</li><li>知道当前 MCore 对因果 Attention 常用交错分片来平衡负载，不能把“CP rank = 单个连续 token range”当成实现不变量。</li><li>知道 GQA / MQA 为什么能直接降低以 K/V 为主的数据交换量。</li><li>在本课的稠密 Transformer 设定下正确计算 TP / PP / CP / DP rank 关系，并知道 MoE 的专家进程组会在下一课单独处理。</li></ul></div>
 
       <section class="article-section" id="problem">
         <div class="section-no">01 · 长上下文如何改变显存规模</div>
@@ -58,9 +58,9 @@
 
       <section class="article-section" id="qkv">
         <div class="section-no">03 · local Q，跨分片 KV</div>
-        <h2>每张 GPU 保留自己的 Q shard，但要通过 CP 通信获得其它 context shards 的 K/V 信息。</h2>
+        <h2>先用 local Q + 远端 K/V 建立直觉；不要把这种布局误当成所有 CP 算法都必须遵守。</h2>
         <div class="attention-local"><div><small>LOCAL QUERY</small><b>Qlocal</b><code>~ [S/CP, heads, d]</code></div><span>attends to →<br/>visible 上下文 KV</span><div><small>KV CONTEXT</small><b>local + remote shards</b><code>stream / gather / redistribute</code></div></div>
-        <p>最容易理解的教学版是先 all-gather K/V，再算 Attention。它很直观，但会让每个 rank 临时拿到更大的 K/V view。另一类做法是流式交换 K/V；还有 Ulysses（Ulysses 上下文并行：用 all-to-all 在序列维与 attention-head 维之间重排数据）风格的 A2A重排。<strong>这些是不同通信算法，但都服务同一个 CP 数学目标。</strong></p>
+        <p>最容易理解的教学版是先 all-gather K/V，再算 Attention。它很直观，但会让每个 rank 临时拿到更大的 K/V view。另一类做法是流式交换 K/V；还有 Ulysses（Ulysses 上下文并行：用 all-to-all 在序列维与 attention-head 维之间重排数据）风格的 A2A 重排。<strong>因此“Q 留在本地、KV 在 ranks 间流动”只是 P2P Ring 最直观的实现心智模型，不是 CP 的定义。</strong>不同通信算法改变数据布局，但都要满足同一个数学目标：每个 query 必须获得它应该可见的上下文信息。</p>
       </section>
 
       <section class="article-section" id="ring">
