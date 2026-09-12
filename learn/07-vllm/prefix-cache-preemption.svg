@@ -69,6 +69,6 @@
 <path class="pline" d="M472 789 H524" marker-end="url(#ap)"/>
 
 <rect class="box" x="52" y="878" width="656" height="24" rx="7"/>
-<text class="sans tiny" x="70" y="894">If 可淘汰 cache blocks satisfy allocation, cache eviction may be enough; request-level preemption is not automatically required.</text>
-<text class="sans tiny" x="34" y="944">Bridge to KV Connector: remote cache reuse adds transfer readiness and remote lifetime on top of this local 缓存标识.</text>
+<text class="sans tiny" x="70" y="894">如果淘汰可回收的缓存块后已经能满足分配，只做缓存淘汰就可能足够，不一定需要请求级抢占。</text>
+<text class="sans tiny" x="34" y="944">连接到下一模块：远端缓存复用还要额外处理传输就绪状态和远端生命周期。</text>
 </svg>
