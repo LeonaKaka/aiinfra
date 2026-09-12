@@ -21,12 +21,12 @@
       <div>
         <div class="reference-kicker">源码阅读地图</div>
         <h1>不要从仓库第一行<br />一路读到最后一行。</h1>
-        <p>工业级 AI Infra 仓库的目录结构是为维护代码设计的，不是为初学者教学设计的。这里把源码重新按“一个问题 → 一组关键文件 → 读时要盯什么”排列。每一站都配课程或实验入口：先有心智模型，再去源码里找真实约束。</p>
+        <p>工业级 AI Infra 仓库的目录结构是为维护代码设计的，不是为初学者教学设计的。这里把源码重新按“一个问题 → 一组关键文件 → 读时要盯什么”排列。<strong>如果对应课程还没学到，先不要从这里裸啃源码：</strong>训练线至少先完成 05.1–05.2，推理线至少先完成 06 与 07.1。每一站都配课程或实验入口，先有心智模型，再去源码里找真实约束。</p>
       </div>
       <aside class="rule-card">
         <small>一条阅读规则</small>
         <b>每次只回答 4 个问题。</b>
-        <span>① 数据现在在哪？ ② 这一层切了什么？ ③ 哪个集合通信 / 传输发生？ ④ 为什么不这么做就会更慢或塞不下？</span>
+        <span>① 数据 / 状态现在在哪、谁拥有？ ② 这一层切了或移动了什么？ ③ 哪个集合通信 / 传输发生？ ④ 哪里必须等待，状态何时才可以安全复用或释放，代价是什么？</span>
       </aside>
     </section>
 
@@ -123,8 +123,8 @@
       <div class="source-list infer-source">
         <div class="source-row">
           <span class="order">00</span>
-          <div><em class="phase-label">MEASURE · 指标</em><b>在线服务基准测试</b><code>vllm/benchmarks/serve.py</code></div>
-          <p>先把 06.4 的 TTFT、TPOT、ITL 和 throughput 落到真实测量代码：看客户端在哪里记录首个流式输出、相邻流式输出与请求结束时间，再看聚合公式。这样后面评价 scheduler、KV 或 Connector 优化时，不会只说“更快”。</p>
+          <div><em class="phase-label">MEASURE · 可选入口</em><b>在线服务基准测试</b><code>vllm/benchmarks/serve.py</code></div>
+          <p>如果你现在的目标是追“一个 request 怎样穿过 vLLM”，可以先跳到 01 · EngineCore；00 是测量支线。学完 06.4 后再回来，看客户端在哪里记录首个流式输出、相邻流式输出与请求结束时间，以及怎样聚合 TTFT、TPOT、ITL 和 throughput。这样评价 scheduler、KV 或 Connector 优化时，不会只说“更快”。</p>
           <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/benchmarks/serve.py">源码 ↗</a><a href="../learn/06-llm-inference/inference-performance.html">06.4 →</a></div>
         </div>
         <div class="source-row">
