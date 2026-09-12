@@ -20,6 +20,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import difflib
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -595,6 +596,28 @@ def main() -> int:
         )
         for path in changed:
             print(f"  - {path.relative_to(ROOT)}")
+        print("\nFirst few normalization diffs:")
+        preview_seen: set[str] = set()
+        shown = 0
+        for path in teaching_pages():
+            old = path.read_text(encoding="utf-8")
+            new = normalize_page(old, preview_seen)
+            if new == old:
+                continue
+            print(f"\n--- {path.relative_to(ROOT)}")
+            diff = difflib.unified_diff(
+                old.splitlines(),
+                new.splitlines(),
+                fromfile=str(path.relative_to(ROOT)),
+                tofile=str(path.relative_to(ROOT)) + " (normalized)",
+                lineterm="",
+                n=1,
+            )
+            for line in list(diff)[:60]:
+                print(line)
+            shown += 1
+            if shown >= 5:
+                break
         print("Run: python scripts/audit_first_use_terms.py --write")
         return 1
 
