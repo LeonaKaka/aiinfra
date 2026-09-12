@@ -305,6 +305,9 @@ SOURCE_TERMS = {
 
     # 08 · KV Connector / NIXL
     "producer": ("生产端", "产生并提供 KV state 的一侧"),
+    "request routing": ("请求路由", "决定同一个 request 先后被送到哪些服务实例"),
+    "disaggregated prefill": ("分离式 Prefill", "把 Prefill 与 Decode 放到不同实例或资源池运行"),
+    "UCX": ("统一通信 X", "为 HPC/AI 提供多种传输后端抽象的通信框架"),
     "consumer": ("消费端", "接收 KV 并继续使用它的一侧"),
     "control plane": ("控制面", "负责 scheduler、状态和传输计划等控制信息"),
     "execution plane": ("执行面", "把调度计划转换成设备上的 tensors、kernels 和模型执行"),
