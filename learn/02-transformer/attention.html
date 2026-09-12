@@ -31,7 +31,7 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Attention</span></div>
       <div class="lesson-kicker"><span>LESSON 02.1 · TRANSFORMER</span><span>约45 min</span></div>
       <h1>Attention 数据流：Q、K、V 到底从哪里来？</h1>
-      <p class="dek">Attention 最容易被一条公式吓住。我们换个顺序：先把它看成一条普通的数据流水线。输入 <code>X</code> 先经过三个 projection（投影：用线性变换把表示映射到新的特征空间）得到 Q（Query / 查询：表示当前 token 想匹配什么）、K（Key / 键：表示每个 token 提供给别人匹配的特征）和 V（Value / 值：匹配完成后真正被加权读取的信息）。Q 和 K 决定“该看谁”，这些权重再去混合 V。只要每一步的 <code>shape</code> 能追下来，后面的多头 Attention、KV Cache（KV 缓存：保存历史 token 的 Key/Value，使生成时不必重复计算整段历史）和张量并行也会自然得多。</p>
+      <p class="dek">Attention 最容易被一条公式吓住。我们换个顺序：先把它看成一条普通的数据流水线。输入 <code>X</code> 先经过三个 projection（投影：用线性变换把表示映射到新的特征空间）得到 Q（Query / 查询：表示当前 token 想匹配什么）、K（Key / 键：表示每个 token 提供给别人匹配的特征）和 V（Value / 值：匹配完成后真正被加权读取的信息）。后面把 K 和 V 合称为 KV（键-值：Attention 中 Key 与 Value 的合称）。Q 和 K 决定“该看谁”，这些权重再去混合 V。只要每一步的 <code>shape</code> 能追下来，后面的多头 Attention、KV Cache（KV 缓存：保存历史 token 的 Key/Value，使生成时不必重复计算整段历史）和张量并行也会自然得多。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 Q、K、V 都是从输入 X 经过不同 projection 得到的。</li><li>推导 <code>Q @ Kᵀ → [S,S]</code> 为什么得到 token 之间的分数矩阵。</li><li>理解 causal mask（因果掩码：阻止当前位置读取未来 token）为什么必须在自回归生成模型里阻止“偷看未来”。</li><li>推导 <code>softmax(scores) @ V</code> 为什么又回到每个 token 一条向量。</li><li>说出 Attention 与 Megatron 张量并行、vLLM KV Cache 的第一条连接线。</li></ul></div>
 
