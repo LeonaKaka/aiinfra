@@ -33,9 +33,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Megatron</a><span>/</span><span>专家并行</span></div>
       <div class="lesson-kicker"><span>LESSON 05.7 · MEGATRON</span><span>约 70 min</span></div>
       <h1>Expert Parallel：路由器一旦把 token 指向远端专家，通信为什么会变成多对多？</h1>
-      <p class="dek">稠密 MLP 是“所有 token 都经过同一组权重”。MoE 则由 router（路由器：根据规则决定 token 应被送往哪个 expert）给每个 token 选择少数 expert（专家：MoE 中可被 router 独立选择的一套 FFN/MLP 参数与计算），只执行被选中的 expert MLP。Expert Parallel 再把 expert set 分到不同 ranks。于是系统问题不再是“把同一个 tensor 求和”，而是“每个 token 应该发给哪个 expert，以及那个 expert 位于哪个 rank”。All-to-All 会自然出现，但它只是分发器的一种实现，不是 Expert Parallel 的定义。</p>
+      <p class="dek">稠密 MLP 是“所有 token 都经过同一组权重”。MoE 则由 router（路由器：根据规则决定 token 应被送往哪个专家）给每个 token 选择少数 expert（专家：MoE 中可被 router 独立选择的一套 FFN/MLP 参数与计算），只执行被选中的 expert MLP。Expert Parallel 再把 expert set 分到不同 ranks。于是系统问题不再是“把同一个 tensor 求和”，而是“每个 token 应该发给哪个 expert，以及那个 expert 位于哪个 rank”。All-to-All 会自然出现，但它只是分发器的一种实现，不是 Expert Parallel 的定义。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE 层 = router + expert + 稀疏的 token→expert 分配关系。</li><li>区分三种不同语义：逻辑 token 归属、expert parameters 归属、临时计算归属。</li><li>从路由推导多对多数据移动为什么适合 All-to-All。</li><li>看懂 dispatch → local expert GEMM → combine → 恢复 token 顺序的完整生命周期。</li><li>知道当前 Megatron 训练分发器支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，且 <code>flex</code> 有多种通信后端。</li><li>理解 dense grid 与 expert grid 是两套 rank 生成视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道负载均衡解决路由分布不均，Grouped GEMM 则优化 local expert compute；两者不是同一个问题。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>理解 MoE 层 = router + expert + 稀疏的 token→expert 分配关系。</li><li>区分三种不同语义：逻辑 token 归属、expert parameters 归属、临时计算归属。</li><li>从路由推导多对多数据移动为什么适合 All-to-All。</li><li>看懂 dispatch → local expert GEMM → combine → 恢复 token 顺序的完整生命周期。</li><li>知道当前 Megatron 训练分发器支持 <code>allgather</code> / <code>alltoall</code> / <code>flex</code>，且 <code>flex</code> 有多种通信后端。</li><li>理解 dense grid 与 expert grid 是两套 rank 生成视角，EP 不是无条件在 <code>TP×PP×CP×DP</code> 外再乘一次。</li><li>知道负载均衡解决路由分布不均，分组矩阵乘则优化 local expert compute；两者不是同一个问题。</li></ul></div>
 
       <section class="article-section" id="moe">
         <div class="section-no">01 · 从稠密 MLP 到 MoE</div>
