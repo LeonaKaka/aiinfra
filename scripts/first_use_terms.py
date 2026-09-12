@@ -200,6 +200,7 @@ SOURCE_TERMS = {
     "FP32 master params": ("FP32 主参数", "优化器用于高精度更新、再同步回模型参数的参数副本"),
     "B/param": ("每参数字节数", "平均每个模型参数对应多少字节训练状态"),
     "contiguous buffer": ("连续缓冲区", "把许多参数或 gradients 放进一块连续内存，便于批量通信和管理"),
+    "gradient buffer": ("梯度缓冲区", "连续保存一组 gradients 以便统一通信和更新"),
     "zigzag partitioning": ("交错分片", "把前后位置的 chunks 搭配分给不同 ranks，以平衡因果 Attention 的计算量"),
     "packed sequence": ("打包序列", "把多条不同长度样本拼入同一训练序列以减少补齐 token"),
     "hybrid CP": ("混合上下文并行", "把不同 CP 通信方式组合到不同拓扑层级"),
