@@ -143,9 +143,7 @@
         <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
-        <tr><td><code>RS</code></td><td>Reduce-Scatter</td><td>归约分散</td><td>先做 reduction，再让每个 rank 只保留一个 reduced shard。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
-        <tr><td><code>AG</code></td><td>All-Gather</td><td>全收集</td><td>把各 rank 的 shard 收集成完整结果并让参与者获得。</td></tr>
         <tr><td><code>DDP</code></td><td>Distributed Data Parallel</td><td>分布式数据并行</td><td>PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步梯度。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
           </tbody>
