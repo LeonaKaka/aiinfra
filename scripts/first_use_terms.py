@@ -275,6 +275,9 @@ SOURCE_TERMS = {
     "throughput": ("吞吐量", "单位时间内系统完成的 request 或 token 数量"),
     "latency": ("延迟", "一次 request 或一步操作从开始到完成所花的时间"),
     "benchmark": ("基准测试", "在固定条件下测量和比较系统性能"),
+    "token budget": ("token 预算", "一个 scheduler iteration 最多允许安排多少 token 计算"),
+    "chunked Prefill": ("分块预填充", "把一个长 prompt 的 Prefill 工作拆到多个 scheduler iterations 执行"),
+    "GPU pool": ("GPU 资源池", "由一组 GPU 实例组成、承担同类推理工作负载的资源集合"),
 
     # 07 · vLLM
     "worker": ("工作进程", "实际持有设备并执行模型或数据操作的 process"),
