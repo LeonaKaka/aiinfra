@@ -128,7 +128,7 @@
 
 <span class="comment"># 本课设定：没有其它额外模型分片轴</span>
 <span class="comment"># local context capacity ≈ 32768 / 4 = 8192 tokens</span>
-<span class="comment"># model-parallel footprint = TP × PP × CP = 16 GPUs</span>
+<span class="comment"># 单份模型跨 TP × PP × CP = 16 GPUs</span>
 <span class="comment"># 若 world_size = 64，则 DP = 64 / 16 = 4</span></code></pre></div>
         <p>在这个教学设定里，一份稠密 Transformer 跨 <code>TP × PP × CP</code> 张 GPU；剩余的 world size 才形成 DP replicas。这样先把 CP 放进已经熟悉的 TP / PP / DP 坐标系就够了。<strong>不要在这里提前把 EP 机械乘进去：</strong>MoE 的 expert process groups 有单独的 rank construction，05.7 会专门解释。</p>
         <div class="concept-note"><p><strong>本课只保留一个检查法：</strong>看到 <code>context_parallel_size</code>，先问“同一 TP coordinate 的哪些 ranks 构成 CP group”，再算每个 rank 负责多少上下文；涉及专家层时再切换到下一课的 expert grid。</p></div>
