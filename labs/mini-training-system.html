@@ -49,7 +49,7 @@
     <p class="dek">4 个 ranks 组成 TP=2 × DP=2。每个 rank 同时属于一个 TP 进程组和一个 DP 进程组：前向计算用 TP 分片合成模型输出；反向传播在 W2 梯度就绪后立刻启动 DP 异步 reduce-scatter，同时继续算 W1；优化器只更新自己负责的参数分片，再 all-gather 恢复下一次前向计算需要的 TP 参数分片。</p>
 
     <section class="lab-section" id="step"><div class="lab-kicker">01 · 一次训练步骤，四层系统状态</div><h2>不要再把 TP、DP、优化器 sharding 和重叠当四个独立功能。</h2>
-      <div class="stage-flow"><div class="stage-card train"><small>MODEL 计算 · TP</small><b>W1/W2 are TP-sharded</b><span>同一个 DP 副本内两个 TP ranks 共同完成 MLP 前向计算；局部输出通过 TP all-reduce 合成。</span></div><div class="stage-card train"><small>DATA · DP</small><b>different samples per 副本</b><span>两个 DP 副本处理不同数据，但相同 TP coordinate 必须对齐同一份模型分片。</span></div><div class="stage-card comm"><small>梯度 / 优化器</small><b>reduce-scatter → local update → all-gather</b><span>global 梯度直接落成 DP-owned 分片；每个 rank 更新自己那段，再 materialize 完整 TP 分片。</span></div></div>
+      <div class="stage-flow"><div class="stage-card train"><small>MODEL 计算 · TP</small><b>W1/W2 are TP-sharded</b><span>同一个 DP 副本内两个 TP ranks 共同完成 MLP 前向计算；局部输出通过 TP all-reduce 合成。</span></div><div class="stage-card train"><small>DATA · DP</small><b>different samples per 副本</b><span>两个 DP 副本处理不同数据，但相同 TP coordinate 必须对齐同一份模型分片。</span></div><div class="stage-card comm"><small>梯度 / 优化器</small><b>reduce-scatter → local update → all-gather</b><span>global 梯度直接落成 DP-owned 分片；每个 rank 更新自己那段，再 materialize 完整 TP 分片。A12 用 plain SGD，因此这里只验证 parameter/update ownership；momentum 等 optimizer state 分片已在 A4 单独演示。</span></div></div>
     </section>
 
     <section class="lab-section" id="overlap"><div class="lab-kicker">02 · 就绪时机决定通信重叠窗口</div><h2>通信能否隐藏，首先取决于你有没有在正确时机启动它。</h2>
