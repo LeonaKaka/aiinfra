@@ -160,7 +160,6 @@ NIC0    ...   ...   ...   ...    X
         <tr><td><code>RDMA</code></td><td>Remote Direct Memory Access</td><td>远程直接内存访问</td><td>允许远端内存传输减少 CPU 数据搬运参与的网络访问机制。</td></tr>
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
         <tr><td><code>CUDA</code></td><td>CUDA</td><td>NVIDIA GPU 并行计算平台</td><td>官方产品名，没有应当强行展开的现代英文全称；本课按 CUDA 平台/编程栈理解。</td></tr>
-        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
         <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>
