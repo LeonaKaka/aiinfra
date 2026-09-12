@@ -36,7 +36,7 @@
       <h1>NCCL 与拓扑：同一个 all-reduce，为什么换台机器就可能差很多？</h1>
       <p class="dek">上一课只讲 collective 的语义。但真实系统还要回答：这些字节到底走哪条链路？四张 GPU 是通过 NVLink 连着，还是绕 PCIe？跨节点时 GPU 数据是不是要先经过 host memory 中转？NCCL 的价值，就是把 collective 语义映射到真实 GPU 拓扑和通信链路上，并选择合适的通信算法与 transport（传输后端：负责底层设备或网络数据移动的实现层）。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 NCCL 是什么，也解释它不是什么。</li><li>区分 NVLink/NVSwitch、PCIe、InfiniBand/RoCE 这些链路大致处在什么层级。</li><li>把“collective semantics”和“NCCL 实际怎样走硬件”分成两层思考。</li><li>用 ring 的直觉理解 all-reduce 为什么能拆成 reduce-scatter + all-gather。</li><li>知道 NCCL 并不永远固定用 ring；现代版本会根据集合通信、拓扑、消息大小和平台选择 Ring、Tree、NVLS（NVLink Sharp：NCCL 在支持的平台上可选择的 NVLink/NVSwitch 集合通信加速算法族）等算法。</li><li>理解 GPUDirect RDMA（GPU 直连远程内存访问：让网络设备更直接地读写 GPU memory，以减少 host memory 中转）为什么能降低跨节点 GPU 通信的数据搬运开销。</li><li>知道如何用 <code>nvidia-smi topo -m</code>、<code>NCCL_DEBUG=INFO</code>、<code>nccl-tests</code> 开始定位通信问题。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释 NCCL 是什么，也解释它不是什么。</li><li>区分 NVLink/NVSwitch、PCIe、InfiniBand/RoCE 这些链路大致处在什么层级。</li><li>把“collective semantics”和“NCCL 实际怎样走硬件”分成两层思考。</li><li>用环形算法的直觉理解 all-reduce 为什么能拆成 reduce-scatter + all-gather。</li><li>知道 NCCL 并不永远固定用 ring；现代版本会根据集合通信、拓扑、消息大小和平台选择环形、树形、NVLS（NVLink Sharp：NCCL 在支持的平台上可选择的 NVLink/NVSwitch 集合通信加速算法族）等算法。</li><li>理解 GPUDirect RDMA（GPU 直连远程内存访问：让网络设备更直接地读写 GPU memory，以减少 host memory 中转）为什么能降低跨节点 GPU 通信的数据搬运开销。</li><li>知道如何用 <code>nvidia-smi topo -m</code>、<code>NCCL_DEBUG=INFO</code> 和 NCCL 通信基准工具开始定位通信问题。</li></ul></div>
 
       <section class="article-section" id="what">
         <div class="section-no">01 · NCCL 到底是什么</div>
@@ -52,7 +52,7 @@
         <h2>先分清“我要什么结果”，再追“这些字节数据实际跨过哪些链路”。</h2>
         <p>同一个 <code>all_reduce(tensor, TP group)</code>，在程序语义上始终要求参与各个 rank 得到归约后的 tensor；但 NCCL 会结合 collective、message size（消息大小：一次 collective 中每个 rank 需要参与传输的数据量）、rank 数量、拓扑和平台能力选择实际执行方案。下面把逻辑通信语义与物理数据路径放在同一张图里：</p>
         <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>NCCL · LOGICAL CONTRACT → PHYSICAL PATH</span><span>same collective · different cost</span></div><img class="distributed-core-svg" src="./nccl-topology-path.svg" alt="NCCL 逻辑到物理数据路径：PyTorch all-reduce 的逻辑 contract 进入 NCCL communicator，NCCL 根据消息大小、rank 数、拓扑和平台选择 Ring、Tree 等算法与 P2P、SHM、NET 等 transport；单机数据可能留在 NVLink、NVSwitch 或 PCIe P2P GPU fabric，跨节点则还需经过 GPU 到 NIC 路径以及 InfiniBand、RoCE 或 Ethernet network fabric。" /></div>
-        <div class="distributed-core-takeaway"><strong>稳定心智模型：</strong>集合通信名字描述“通信结束后每个 rank 应该拿到什么”；NCCL/topology 描述“为了实现这套语义，哪些 chunk（数据块：把一个大 tensor 切出的较小传输单元）沿哪些链路移动”。后面判断 TP / DP / PP 是否划算时，必须同时看这两层。</div>
+        <div class="distributed-core-takeaway"><strong>稳定心智模型：</strong>集合通信名字描述“通信结束后每个 rank 应该拿到什么”；NCCL/topology 描述“为了实现这套语义，哪些 chunk（数据块：把一个大 tensor 切出的较小传输单元）沿哪些链路移动”。后面判断 TP / DP / Pipeline Parallel 是否划算时，必须同时看这两层。</div>
         <div class="topology-stack"><div class="topology-level"><small>GPU LOCAL</small><div><b>GPU device memory / VRAM</b><span>数据首先住在某张 GPU 自己的显存；具体硬件可能使用 HBM 或 GDDR。</span></div></div><div class="topology-level"><small>INTRA-NODE</small><div><b>NVLink / NVSwitch / PCIe</b><span>同一台机器里 GPU↔GPU 的路径可能非常不同。</span></div></div><div class="topology-level"><small>GPU ↔ NIC（网络接口卡：负责主机与外部网络之间收发数据的硬件设备）</small><div><b>PCIe / 平台互连</b><span>跨节点之前，GPU 数据还要到达网络接口；GPU/NIC affinity（亲和性：描述 GPU 与 NIC 在硬件拓扑上的距离和访问关系）与直接访问能力很关键。</span></div></div><div class="topology-level"><small>INTER-NODE</small><div><b>InfiniBand / RoCE / Ethernet</b><span>跨服务器的数据最终进入网络；带宽、延迟、交换结构、路由和拥塞都会影响集合通信。</span></div></div></div>
         <p>因此“8×GPU”远远不够描述一台训练机器。8 张卡之间是全连接 NVSwitch、部分 NVLink，还是只靠 PCIe，会直接改变高频 Tensor Parallel 集合通信的代价。</p>
       </section>
@@ -90,7 +90,7 @@
         <p>GPUDirect RDMA 的核心目标，是让第三方 PCIe 设备（典型是 NIC）能通过 DMA（直接内存访问：设备在较少 CPU 搬运参与下直接读写内存的数据移动机制）更直接地访问 GPU device memory，减少不必要的 host memory 中转和 CPU copy：</p>
         <div class="gdr-flow direct"><div><small>GPU device memory</small><b>GPU A 设备显存</b></div><span>DMA ↔</span><div><small>NIC</small><b>支持 RDMA</b></div><span>network →</span><div><small>remote GPU</small><b>GPU B 内存</b></div></div>
         <p>现实路径仍受 PCIe 拓扑、GPU/NIC affinity、IOMMU（输入输出内存管理单元：为设备 DMA 提供地址转换和访问隔离的硬件单元）、驱动、NIC 能力与平台配置影响。“支持 GPUDirect RDMA”不等于任何 GPU 到任何 NIC 都能自动跑满，也不意味着网络与拓扑代价消失。</p>
-        <div class="concept-note"><p>这也是以后读 vLLM 键-值（KV） Connector / NVIDIA 推理传输库（NIXL） 时会再次遇到的基础：GPU 上已经算好的 KV，跨节点怎么直接送到另一张 GPU，而不是不必要地绕 host buffer。</p></div>
+        <div class="concept-note"><p>这也是以后读 vLLM KV Connector / NIXL 时会再次遇到的基础：GPU 上已经算好的 KV，跨节点怎么直接送到另一张 GPU，而不是不必要地绕 host memory 中的临时缓冲区。</p></div>
       </section>
 
       <section class="article-section" id="topo-command">
