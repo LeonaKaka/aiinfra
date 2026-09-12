@@ -30,6 +30,8 @@
       </aside>
     </section>
 
+    <div class="truth-note"><b>第一次做 Labs，按编号顺序走，不要因为课程页“概念对应”就跳号。</b><p>训练线推荐 A1 → A12，推理线推荐 B1 → B8。课程某一节可能提前链接后面的实验，只是在告诉你“这个机制最后会落到哪里”；真正执行时仍让前一个实验提供下一个实验需要的状态、通信和生命周期心智模型。</p></div>
+
     <section class="level-strip" aria-label="实验升级路线">
       <div class="level"><small>阶段 0</small><b>机制</b><span>先把 分片、梯度、KV block、P2P 的最小数据流看清。</span></div>
       <div class="level"><small>阶段 1</small><b>正确性</b><span>关键结果与 dense autograd / recompute 参考实现 对齐。</span></div>
@@ -50,7 +52,7 @@
       <a class="lab-card train" href="./mini-pipeline-parallel.html"><small>LAB A9 · PIPELINE PARALLEL</small><h2>Mini Pipeline Parallel</h2><p>两个 阶段 分别拥有模型的一半；微批次 前向 传 activation，反向 把 activation 梯度 送回来。</p><footer><span>核心问题</span><strong>PP 的 阶段 boundary 到底传什么？</strong></footer></a>
       <a class="lab-card train" href="./mini-context-parallel.html"><small>LAB A10 · CONTEXT PARALLEL</small><h2>Mini Context Parallel</h2><p>Q 分片 保持本地，KV chunks 轮转；用 global positions 保持 causal semantics，并对齐 dense attention。</p><footer><span>核心问题</span><strong>sequence 切开后，Attention 怎样仍看到全局 context？</strong></footer></a>
       <a class="lab-card train" href="./mini-expert-parallel.html"><small>LAB A11 · EXPERT PARALLEL</small><h2>Mini Expert Parallel</h2><p>路由器 → all-to-all dispatch → local experts → reverse combine；同时验证数值和 token identity。</p><footer><span>核心问题</span><strong>token 为什么必须去 expert owner，再回到原顺序？</strong></footer></a>
-      <a class="lab-card train" href="./mini-training-system.html"><small>LAB A12 · TRAINING CAPSTONE</small><h2>Mini Training System</h2><p>把 TP×DP、梯度 readiness、async reduce-scatter、sharded 优化器 update 与 parameter all-gather 串成一次完整 训练步骤。</p><footer><span>核心问题</span><strong>这些并行机制在一次 step 里如何真正接起来？</strong></footer></a>
+      <a class="lab-card train" href="./mini-training-system.html"><small>LAB A12 · TRAINING CAPSTONE</small><h2>Mini Training System</h2><p>把 TP×DP、梯度 readiness、async reduce-scatter、DP-owned parameter update 与 parameter all-gather 串成一次完整训练步骤；momentum / Adam state 分片仍由 A4 单独演示。</p><footer><span>核心问题</span><strong>这些并行机制在一次 step 里如何真正接起来？</strong></footer></a>
     </section>
 
     <div class="lab-kicker" style="margin-top:42px">路线 B · 推理基础设施</div>
