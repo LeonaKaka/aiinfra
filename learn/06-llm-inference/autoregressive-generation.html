@@ -35,7 +35,9 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释最基本的 decoder-only（仅解码器架构：只使用 Transformer 的解码器堆叠做自回归语言建模）生成为什么存在严格的条件依赖。</li><li>知道目标模型先输出 logits，再由常见 decoding policy 选择 token。</li><li>理解为什么普通目标模型的 Decode 步骤之间存在串行依赖。</li><li>知道 speculative decoding（推测解码：先用较便宜的草稿模型提出多个候选，再由目标模型批量验证）等 multi-token 技术能减少昂贵的 target-model iteration（执行轮次：scheduler 规划并执行一次模型工作的循环），但没有删除目标模型定义的自回归分布。</li><li>从“重复计算历史 K/V”自然推导出 KV Cache 的必要性。</li><li>区分TTFT（首 Token 延迟：从请求进入系统到第一个输出 token 可见的端到端时间）、ITL（Token 间延迟：流式生成时相邻可见输出 token 之间的时间间隔）、TPOT（每输出 Token 时间：生成阶段按输出 token 聚合后的平均耗时指标）和吞吐量，并知道比较指标前必须先看清基准测试口径。</li></ul></div>
 
-      <section class="article-section" id="tokens">
+            <div class="concept-note"><p><strong>从训练切到推理，先把心智模型重置一下。</strong>Transformer forward 还在，GPU / TP / PP 等执行基础也还在；但一次在线请求通常不再做 backward、gradient accumulation 和 optimizer step。取而代之的是长期活着的 request state、不断增长的 KV Cache、逐步生成的 token，以及决定“下一轮谁能推进”的 scheduler。06–08 的主角因此从“训练状态怎样同步”变成“请求状态和 KV 怎样安全、高效地活下去”。</p></div>
+
+<section class="article-section" id="tokens">
         <div class="section-no">01 · 文本如何变成 Token</div>
         <h2>推理系统真正调度的不是“句子”，而是一串 token IDs 和它们对应的运行时状态。</h2>
         <p>inference engine（推理引擎：把 request 管理、scheduler 和模型执行组织成服务循环）先接收文本请求。Tokenizer（分词器：把文本编码成模型词表中的 token IDs）再把例如“AI infra 很重要”转换为离散 token IDs。具体 tokenizer 怎么切不是这节重点；系统层先抓住对象：</p>
