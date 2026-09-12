@@ -161,7 +161,7 @@
           <span class="order">06</span>
           <div><em class="phase-label">CONTRACT · CONNECTOR</em><b>KVConnector Base 协议</b><code>vllm/distributed/kv_transfer/kv_connector/v1/base.py</code></div>
           <p>先把两半接口钉死：调度器侧沿 <code>get_num_new_matched_tokens()</code> → <code>update_state_after_alloc()</code> → <code>build_connector_meta()</code> 追“命中多少、分配什么、把什么元数据交给 worker”；工作进程侧再看 load / save hooks 与 <code>get_transfer_results()</code>，一次拿到 send 完成、receive 完成和 receive 失败。后面所有 NIXL 细节都必须服从这份接口契约。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/base.py">源码 ↗</a><a href="../learn/08-kv-connector/connector-architecture.html">08.2 →</a><a href="../learn/08-kv-connector/transfer-lifecycle.html">08.3 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/base.py">源码 ↗</a><a href="../learn/08-kv-connector/connector-architecture.html">08.2 →</a><a href="../learn/08-kv-connector/transfer-lifecycle.html">08.3 →</a><a href="../labs/mini-layerwise-kv-stream.html">B4 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">07</span>
