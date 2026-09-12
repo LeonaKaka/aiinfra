@@ -97,7 +97,7 @@
         <h2>固定块会显著减少“大段预留”和外部碎片，但最后一块仍可能没填满。</h2>
         <p>如果 block size=16，一个最终长度 33-token 的请求要占 3 块，最后一块只用 1 个 token slot。这是典型的 internal fragmentation（内部碎片：已分配 block 内部因为没有填满而浪费的空间）。</p>
         <div class="shape-rule"><code>33 tokens</code><span>→</span><code>3 × 16 slots = 48 slots</code><span>→</span><code>15 unused slots in tail</code></div>
-        <p>Block 越小，尾部浪费通常越低，但 metadata / table 长度和管理开销会增加；块越大，管理更简单，但尾部浪费可能增大。实际系统还要适配 Attention backend 的 block-size 约束。</p>
+        <p>Block 越小，尾部浪费通常越低，但 metadata / table 长度和管理开销会增加；块越大，管理更简单，但尾部浪费可能增大。实际系统还要适配 Attention backend（Attention 后端：为特定硬件、模型和 KV 布局选择并执行具体 Attention kernel 的实现层）的 block-size 约束。</p>
       </section>
 
       <section class="article-section" id="hybrid">
