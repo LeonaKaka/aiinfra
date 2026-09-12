@@ -100,7 +100,7 @@
         <p>用 8 GPU 的 rank-group 直觉图：GPU0–3 处在一个 CP coordinate，GPU4–7 处在另一个；对应 CP peers 是相同 TP coordinate 的 ranks。这里的分片 A/B 只是 rank-grid 标签，不表示真实 token 一定连续：</p>
         <div class="cp-group-map"><div class="cp-group-row"><small>TP GROUP · PARTITION A</small><span class="on">G0</span><span class="on">G1</span><span class="on">G2</span><span class="on">G3</span><span>G4</span><span>G5</span><span>G6</span><span>G7</span></div><div class="cp-group-row"><small>TP GROUP · PARTITION B</small><span>G0</span><span>G1</span><span>G2</span><span>G3</span><span class="alt">G4</span><span class="alt">G5</span><span class="alt">G6</span><span class="alt">G7</span></div><div class="cp-group-row"><small>CP PAIRS</small><span class="on">0↔4</span><span class="on">1↔5</span><span class="on">2↔6</span><span class="on">3↔7</span><span class="alt">4↔0</span><span class="alt">5↔1</span><span class="alt">6↔2</span><span class="alt">7↔3</span></div></div>
         <p>坐标感很重要：dense TP 分 hidden/features；CP 分上下文。一个 rank 会同时有 TP coordinate、CP coordinate、PP stage 和 DP replica identity。</p>
-        <div class="source-note">当前 <code>parallel_state.py</code> 的实际 dense rank construction 仍先计算 <code>model_size = TP × PP × CP × gtp_remat</code>，再令 <code>DP = world_size / model_size</code>。</div>
+        <div class="source-note">按本课配置，额外模型分片轴都取 1，因此 <a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py"><code>parallel_state.py</code></a> 中 dense rank generator 的有效模型规模就是 <code>TP × PP × CP</code>，再由 <code>DP = world_size / model_size</code> 得到数据并行度。</div>
       </section>
 
       <section class="article-section" id="comm-type">
