@@ -37,7 +37,9 @@
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用“就绪 → 异步启动 → 独立计算 → 等待”四个事件解释 overlap。</li><li>区分 collective 的总时长与关键路径上真正暴露的通信尾部。</li><li>看懂当前 MCore 的 <code>start_grad_sync()/finish_grad_sync()</code> 与 <code>start_param_sync()/finish_param_sync()</code> 生命周期。</li><li>理解 bucket size 为什么同时控制“多久才能就绪”和“单次 collective 的数据量是否足够大”。</li><li>把同一个方法迁移到 TP 的 AG/RS、PP P2P 与 EP A2A。</li><li>知道打开 overlap flag 不等于吞吐量一定提高，最终必须用 timeline 与单步时间验证。</li></ul></div>
 
-      <section class="article-section" id="mental-model">
+            <div class="concept-note"><p><strong>建议两遍读。</strong>第一遍只反复使用一条依赖链：ready → start → independent work → finish；能找到“最早必须等待”的位置就够了。第二遍再分别看 DP bucket、parameter all-gather、TP、PP、EP 怎样把这条方法落到不同通信上，并用 profiler 验证关键路径。</p></div>
+
+<section class="article-section" id="mental-model">
         <div class="section-no">01 · 一个通用心智模型</div>
         <h2>所有 overlap 优化先回答四个问题：什么时候就绪？哪里异步启动？中间还能算什么？最早在哪里必须等待？</h2>
         <p>先建立统一词汇：critical path（关键路径：决定一个 training step 完成时间的依赖链）由真正不能绕开的依赖组成；ready（就绪：发起下一步所需的数据依赖已经满足）、async launch（异步启动：发起通信后不立即等待其完成）、independent compute（独立计算：不依赖该通信结果、可以同时推进的计算）和 wait（等待点：第一次必须消费通信结果而不得不阻塞的位置）是后面反复使用的四个事件。下面把最典型的两条 DP 路径放到同一个画布里：上半是 backward 时 gradient bucket 的异步 reduce；下半是下一轮 forward 前 parameter bucket 的 all-gather prefetch（预取：在数据真正被消费前提前发起加载或通信）。</p>
