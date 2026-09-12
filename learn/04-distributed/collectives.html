@@ -124,8 +124,8 @@ print(f<span class="comment">"rank={rank}, mean={x.item()}"</span>)
 
 dist.destroy_process_group()</code></pre></div>
         <div class="code-block"><div class="code-head"><span>shell</span><span>launch</span></div><pre><code>torchrun --standalone --nproc-per-node=4 05_all_reduce.py</code></pre></div>
-        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以 world size。DDP 的 gradient 同步中怎样做平均由 DDP 的实现语义处理，不应该把“all-reduce API 本身”记成“自动求平均”。</p>
-        <div class="source-note">官方参考：<a href="https://docs.pytorch.org/docs/stable/distributed.html">PyTorch torch.distributed 集合通信 APIs</a>。</div>
+        <p>注意：<code>all_reduce(SUM)</code> 是求和，不会自动除以 world size。DDP 的 gradient 同步中怎样做平均由 DDP 的实现语义处理，不应该把“all-reduce 接口本身”记成“自动求平均”。</p>
+        <div class="source-note">官方参考：<a href="https://docs.pytorch.org/docs/stable/distributed.html">PyTorch torch.distributed 集合通信接口</a>。</div>
       </section>
 
       <section class="article-section" id="map">
@@ -145,7 +145,7 @@ dist.destroy_process_group()</code></pre></div>
       <section class="article-section" id="contract">
         <div class="section-no">12 · 集合通信本质上是一份契约</div>
         <h2>参与者必须对“现在要做什么通信”有一致理解。</h2>
-        <div class="hang-warning"><strong>典型错误：</strong><p>rank 0 进入 all-reduce，rank 1 却进入 all-gather；某些 ranks 根本没进入 collective；process group 不一致；tensor shape / count 不满足 API 要求。结果可能是运行时错误，也可能表现成一直等待。</p></div>
+        <div class="hang-warning"><strong>典型错误：</strong><p>rank 0 进入 all-reduce，rank 1 却进入 all-gather；某些 ranks 根本没进入 collective；process group 不一致；tensor shape / count 不满足接口要求。结果可能是运行时错误，也可能表现成一直等待。</p></div>
         <p>所以调试分布式代码时，一个有效方法是为每个 rank 打印<strong>collective sequence（集合通信序列：一个 rank 按时间依次执行 collective 的顺序记录）、process group、shape、dtype</strong>，先确认所有对端进程对通信协议的理解一致。</p>
       </section>
 
