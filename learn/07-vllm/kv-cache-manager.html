@@ -89,21 +89,21 @@
         <div class="section-no">06 · 为新 Token 分配槽位</div>
         <h2>调度器想推进 tokens，KV manager 要先把“逻辑增长”翻译成“需要几个新块”。</h2>
         <div class="iteration-flow"><div class="iteration-card"><small>1</small><b>known progress</b><span>request 已 computed N tokens。</span></div><div class="iteration-card"><small>2</small><b>schedule M more</b><span>本轮打算再推进 M tokens。</span></div><div class="iteration-card"><small>3</small><b>reuse tail</b><span>最后一个块有空 slot 就先继续写。</span></div><div class="iteration-card"><small>4</small><b>allocate</b><span>不够时从 pool 取新的 physical block。</span></div><div class="iteration-card"><small>5</small><b>输出 block IDs</b><span>SchedulerOutput 把相关 block state 交给 worker。</span></div></div>
-        <p>这一步是调度器和 GPU 执行之间的重要契约：ModelRunner 不应该自己猜“这个 request 的 KV 放哪”。它拿到已经决定好的 block IDs，再把它们写入设备侧 block table / slot mapping。</p>
+        <p>这一步是调度器和 GPU 执行之间的重要契约：ModelRunner 不应该自己猜“这个 request 的 KV 放哪”。它拿到已经决定好的 block IDs，再把它们写入设备侧 block table / slot mapping（槽位映射：把本轮 token 映射到具体 KV 写入位置）。</p>
       </section>
 
       <section class="article-section" id="waste">
         <div class="section-no">07 · 分页不等于零浪费</div>
         <h2>固定块会显著减少“大段预留”和外部碎片，但最后一块仍可能没填满。</h2>
         <p>如果 block size=16，一个最终长度 33-token 的请求要占 3 块，最后一块只用 1 个 token slot。这是典型的 internal fragmentation（内部碎片：已分配 block 内部因为没有填满而浪费的空间）。</p>
-        <div class="shape-rule"><code>33 tokens</code><span>→</span><code>3 × 16 slots = 48 slots</code><span>→</span><code>15 slots un已用 in tail</code></div>
+        <div class="shape-rule"><code>33 tokens</code><span>→</span><code>3 × 16 slots = 48 slots</code><span>→</span><code>15 unused slots in tail</code></div>
         <p>Block 越小，尾部浪费通常越低，但 metadata / table 长度和管理开销会增加；块越大，管理更简单，但尾部浪费可能增大。实际系统还要适配 Attention backend 的 block-size 约束。</p>
       </section>
 
       <section class="article-section" id="hybrid">
         <div class="section-no">08 · 当前 V1 比教学模型更一般</div>
         <h2>现代 vLLM 不只处理“所有层统一一种标准 Attention KV”。</h2>
-        <p>当前 V1 代码里有 <code>KVCacheConfig</code>、多个 KV 缓存组、<code>HybridKVCacheCoordinator</code> 等抽象，也要处理 sliding-window attention、Mamba state、cross attention 等不同 cache specs。因此源码中你会看到“group”“coordinator”“spec”比早期 PagedAttention 教程复杂很多。</p>
+        <p>当前 V1 代码里有 <code>KVCacheConfig</code>、多个 KV 缓存组、<code>HybridKVCacheCoordinator</code> 等抽象，也要处理 sliding-window attention、Mamba state、cross attention 等不同 cache specs。因此源码中你会看到“group”“coordinator”“spec”比早期分页式 Attention 教程复杂很多。</p>
         <div class="warning-note"><b>学习顺序不要被复杂度反过来劫持。</b><p>先用“固定 blocks → BlockPool → request 的 block 顺序 → block table”理解标准 decoder Attention；等这条线稳定，再理解不同缓存组为什么需要 coordinator。</p></div>
       </section>
 
