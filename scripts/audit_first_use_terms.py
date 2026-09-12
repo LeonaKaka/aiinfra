@@ -72,10 +72,10 @@ COURSE_ORDER = [
 
 # Tags whose contents are not prose introductions. Inline <code> is deliberately
 # NOT here; exact one-word/one-term inline code can be introduced and explained.
-BLOCK_TAGS = {"pre", "script", "style", "svg", "table", "h1", "h2", "h3", "nav", "aside"}
+BLOCK_TAGS = {"pre", "script", "style", "svg", "table", "nav", "aside"}
 SKIP_CLASSES = {
     "lesson-kicker", "section-no", "breadcrumb", "mobile-course-bar",
-    "lesson-terms", "toc", "next-lesson",
+    "lesson-terms", "toc", "next-lesson", "checkpoint-head",
 }
 TAG_RE = re.compile(r"(<[^>]+>)")
 OPEN_TAG_RE = re.compile(r"<\s*([A-Za-z0-9]+)\b([^>]*)>")
@@ -231,17 +231,21 @@ def terminology_paren(text: str, end: int, spec: dict) -> tuple[str, int] | None
     inside = text[end + 1:close - 1].strip()
     chinese = spec["chinese"]
 
-    for sep in ("：", "，"):
-        prefix = chinese + sep
-        if inside.startswith(prefix) and len(inside[len(prefix):].strip()) >= 4:
+    # Human-authored explanations may use a clearer Chinese label than the
+    # registry's canonical short name. The course contract is structural:
+    # English term（中文术语：一句解释）. Do not rewrite valid prose merely
+    # because the Chinese synonym differs from the registry wording.
+    if "：" in inside:
+        label, explanation = inside.split("：", 1)
+        has_cjk = re.search(r"[\u4e00-\u9fff]", label) is not None
+        if has_cjk and len(explanation.strip()) >= 4 and "（" not in inside and "）" not in inside:
             return "valid", close
 
     if inside == chinese:
         return "simple", close
 
-    # Migration guard for nested/legacy term annotations, e.g.
-    # BF16（BF16（16 位浮点：...） 16 位浮点：...）
-    if chinese in inside and len(inside) <= 220:
+    # Migration guard for nested/legacy term annotations.
+    if ("（" in inside or "）" in inside or chinese in inside) and len(inside) <= 220:
         return "malformed", close
 
     return None
@@ -270,10 +274,33 @@ def legacy_acronym_matches(text: str, spec: dict, cursor: int):
     return matches
 
 
+def nested_in_longer_registered_alias(text: str, start: int, end: int, spec: dict) -> bool:
+    """Do not introduce a generic term inside a more specific registered phrase.
+
+    Examples: KV inside "KV Cache", buffer inside "contiguous buffer".
+    The compound term is the pedagogical unit at that position; the generic
+    component can still be introduced later when it appears independently.
+    """
+    width = end - start
+    for other in SPECS:
+        if other["key"] == spec["key"]:
+            continue
+        for alias in other["aliases"]:
+            if len(alias) <= width:
+                continue
+            flags = 0 if other["case_sensitive"] else re.I
+            for m in boundary_pattern(alias, case_sensitive=other["case_sensitive"]).finditer(text):
+                if m.start() <= start and end <= m.end():
+                    return True
+    return False
+
+
 def raw_matches(text: str, spec: dict, cursor: int):
     matches = []
     for alias in spec["aliases"]:
         m = boundary_pattern(alias, case_sensitive=spec["case_sensitive"]).search(text, cursor)
+        while m and nested_in_longer_registered_alias(text, m.start(), m.end(), spec):
+            m = boundary_pattern(alias, case_sensitive=spec["case_sensitive"]).search(text, m.end())
         if m:
             matches.append(m)
     return matches
