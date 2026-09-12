@@ -43,7 +43,7 @@
         <h2>NCCL 不是“网络”，而是一套针对 NVIDIA GPU 的通信库。</h2>
         <p>NVIDIA 官方把 NCCL 定义为面向 GPU 间通信、具备拓扑感知能力的通信库。它提供 AllReduce、Broadcast、AllGather、ReduceScatter、AllToAll，以及 point-to-point send/recv 等通信原语。</p>
         <div class="distributed-truths"><div><b>NCCL 做什么</b><span>把 collective / P2P 的通信语义映射成在真实 GPU 拓扑上执行的 CUDA kernels、通信算法与 transport。</span></div><div><b>NCCL 不是什么</b><span>它不是完整分布式训练框架，也不是 InfiniBand、RoCE、NVLink 这些物理/网络链路本身。</span></div></div>
-        <p>PyTorch <code>torch.distributed</code> 使用 NCCL 后端时，你调用的是 PyTorch collective API；底层 CUDA GPU 通信由 NCCL communicator 承担。最重要的是：<strong>API 的数学结果不因为物理路径改变，执行代价却会改变。</strong></p>
+        <p>PyTorch <code>torch.distributed</code> 使用 NCCL 后端时，你调用的是 PyTorch collective 接口；底层 CUDA GPU 通信由 NCCL communicator 承担。最重要的是：<strong>接口的数学结果不因为物理路径改变，执行代价却会改变。</strong></p>
         <div class="source-note">官方参考：<a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/overview.html">NCCL Overview</a>。NCCL 专注 inter-GPU 集合通信与 P2P primitives，不是完整 parallel programming framework。</div>
       </section>
 
