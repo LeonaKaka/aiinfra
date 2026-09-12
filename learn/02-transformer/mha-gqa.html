@@ -30,8 +30,8 @@
       <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>MHA &amp; GQA</span></div>
       <div class="lesson-kicker"><span>LESSON 02.2 · TRANSFORMER</span><span>约45 min</span></div>
-      <h1>MHA（多头注意力：让多个 attention head 在不同子空间并行计算）与 GQA（分组查询注意力：多个 Query heads 共享较少的 KV heads，以减少 KV 成本）：为什么 Q 有很多个注意力头，K/V 却可以更少？</h1>
-      <p class="dek">上一课故意只画了一个注意力头。真实的 LLM（大语言模型：本课程训练与推理系统的主要模型对象）通常会把 hidden dimension 拆成多个 attention head（注意力头：在一个子空间中独立计算 Attention 的一路表示）。最常见的基本形式是 MHA；为了降低 KV Cache 成本，又出现了 GQA。</p>
+      <h1>多头注意力与分组查询注意力：为什么 Q 有很多个头，K/V 却可以更少？</h1>
+      <p class="dek">上一课故意只画了一个注意力头。真实的 LLM（大语言模型：本课程训练与推理系统的主要模型对象）通常会把 hidden dimension 拆成多个 attention head（注意力头：在一个子空间中独立计算 Attention 的一路表示）。最常见的基本形式是 MHA（多头注意力：让多个 attention head 在不同子空间并行计算）；为了降低 KV Cache 成本，又出现了 GQA（分组查询注意力：多个 Query heads 共享较少的 KV heads，以减少 KV 成本）。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 <code>[B,S,H]</code> 正确拆成 <code>[B,N,S,D]</code>，并知道 <code>H=N×D</code>。</li><li>从形状推导多头注意力的分数矩阵为 <code>[B,N,S,S]</code>。</li><li>解释 MHA、GQA、MQA（多查询注意力：让所有 Query heads 共享单组 K/V）的区别不在“有没有 Attention”，而在 Q 头与 KV 头的数量关系。</li><li>用一个比例说明为什么 GQA 会显著减少 KV Cache。</li><li>理解注意力头为什么同时影响 Megatron 张量并行与 vLLM 在线推理。</li></ul></div>
 
