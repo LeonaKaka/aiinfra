@@ -177,6 +177,9 @@ SOURCE_TERMS = {
 
     # 05 · Megatron
     "Megatron": ("大模型训练框架", "用于学习多维并行和分布式训练的源码实现"),
+    "model parallelism": ("模型并行", "把单个模型的状态或计算显式拆到多张 GPU 上"),
+    "parallel order": ("并行轴顺序", "决定不同并行维度如何映射到 ranks"),
+    "Expert Parallel": ("专家并行", "把不同 MoE 专家分布到不同 ranks，简称 EP"),
     "shard": ("分片", "把一份 tensor 或 state 拆成多份分到不同 ranks"),
     "replica": ("副本", "在不同 ranks 上保存的同一逻辑模型或 state"),
     "pipeline stage": ("流水线阶段", "负责模型连续一部分 layers 的执行阶段"),
