@@ -67,7 +67,7 @@ KV chunks circulate so every local query can see the required global context</pr
     <section class="lab-section" id="run"><div class="lab-kicker">03 · 运行并验证</div><h2>正确性标准只有一个：每个 local Q 分片的输出都等于 dense causal attention 的对应切片。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_context_parallel.py</pre></div>
-      <p>CPU/Gloo 只验证 ring dependency、P2P 和数学结果。真实 CP 性能取决于 sequence partition、KV exchange algorithm、FlashAttention integration、topology 与重叠；这个 Lab 不做这些性能声明。</p>
+      <p>CPU/Gloo 只验证 ring dependency、P2P 和数学结果。这个实现会先收集各轮 score/value chunks，最后再拼接并统一 softmax；它不是在线 softmax，也不声称复现生产级 Ring Attention 的显存占用。真实 CP 性能取决于 sequence partition、KV exchange algorithm、FlashAttention integration、topology 与重叠；这个 Lab 不做这些性能声明。</p>
       <a class="code-link" href="./code/mini_context_parallel.py"><div><small>FULL SOURCE</small><b>打开 mini_context_parallel.py</b></div><span>→</span></a>
     </section>
 
