@@ -29,10 +29,10 @@
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>autograd &amp; 优化器</span></div>
       <div class="lesson-kicker"><span>LESSON 01.4 · FOUNDATION</span><span>约40 min</span></div>
-      <h1>autograd 与 Optimizer：gradient 从哪里来，显存又花在哪里？</h1>
+      <h1>autograd（自动求导：PyTorch 自动记录计算图并计算 gradient 的机制）与 Optimizer：gradient 从哪里来，显存又花在哪里？</h1>
       <p class="dek">上一课你已经会写 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。现在把这两个黑盒拆开一点：gradient 到底表达什么？PyTorch 怎么沿计算关系把它算回来？Adam（Adam 优化器：利用一阶和二阶动量统计更新 parameter 的常用 optimizer）为什么会比“只存 parameter”多吃很多显存？这些问题会直接通向后面的 Data Parallel、ZeRO（零冗余优化器：通过数据并行进程分片优化器状态、gradient 或 parameter 来减少训练状态冗余）和 Megatron Distributed Optimizer（分布式优化器：把训练状态按数据并行进程分片以减少每卡冗余）。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用直觉解释“梯度”而不是只背“导数”。</li><li>看懂一个最小 autograd（自动求导：PyTorch 自动记录计算图并计算 gradient 的机制） 计算图，以及 <code>.grad</code> 是什么时候出现的。</li><li>区分 autograd 负责计算 gradient，而 optimizer 负责用 gradient 更新 parameter。</li><li>理解 Adam 为什么需要额外 optimizer state（优化器状态：optimizer 为更新 parameter 额外保存的历史量），以及为什么它们值得被分片。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用直觉解释“梯度”而不是只背“导数”。</li><li>看懂一个最小 autograd 计算图，以及 <code>.grad</code> 是什么时候出现的。</li><li>区分 autograd 负责计算 gradient，而 optimizer 负责用 gradient 更新 parameter。</li><li>理解 Adam 为什么需要额外 optimizer state（优化器状态：optimizer 为更新 parameter 额外保存的历史量），以及为什么它们值得被分片。</li></ul></div>
 
       <section class="article-section" id="gradient"><div class="section-no">01 · 梯度到底告诉你什么</div><h2>梯度先理解成：“参数轻轻动一下，损失会往哪边变？”</h2><p>假设只有一个参数 <code>w</code>。当前损失是由 <code>w</code> 决定的。梯度 <code>dL/dw</code> 告诉你：如果w增加一点，损失大约会增加还是减少，以及变化有多敏感。</p><div class="equation-card"><code>w = current parameter</code><span>→</span><code>gradient = dL/dw</code><b>梯度 &gt; 0：把w往小方向推一点，通常能让损失降低</b></div><p>所以最朴素的 SGD 更新可以写成：</p><div class="shape-rule"><code>w_new</code><span>=</span><code>w_old</code><span>−</span><code>lr × gradient</code></div><p><code>lr</code> 是学习率。它控制每次沿“降低损失的方向”走多大一步。</p><div class="concept-note"><p><strong>现在不需要微积分证明。</strong>你只需要建立方向感：梯度是优化器的导航信息；没有梯度，优化器就不知道参数该怎么改。</p></div></section>
 
