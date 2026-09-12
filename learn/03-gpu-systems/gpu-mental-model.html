@@ -41,7 +41,7 @@
         <div class="machine-map">
           <div class="host-box"><small>HOST</small><b>CPU</b><span>Python · 调度 · dataloader</span><div class="memory-box"><small>HOST MEMORY</small><strong>RAM（随机存取存储器：这里通常指主机侧系统内存）</strong></div></div>
           <div class="link-box"><span>PCIe / platform interconnect</span><i></i></div>
-          <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · 通用矩阵乘法（GEMM） · attention</span><div class="memory-box"><small>DEVICE MEMORY</small><strong>HBM or GDDR</strong></div></div>
+          <div class="gpu-box"><small>DEVICE</small><b>GPU</b><span>CUDA kernels · GEMM · Attention</span><div class="memory-box"><small>DEVICE MEMORY</small><strong>HBM or GDDR</strong></div></div>
         </div>
         <p>最常见的离散 GPU 机器里，CPU 和 GPU 有各自的内存。一个 CPU tensor 不能因为你“想让 GPU 算”就自动变成 GPU tensor，通常需要把数据传到 GPU device memory：</p>
         <div class="code-block"><div class="code-head"><span>python</span><span>device move</span></div><pre><code>x = torch.randn(<span class="num">1024</span>, <span class="num">1024</span>)   <span class="comment"># CPU memory</span>
@@ -75,15 +75,15 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
         <div class="section-no">04 · 为什么 Tensor Core 重要</div>
         <h2>大模型里的 GEMM，正好是 Tensor Cores 擅长的工作。</h2>
         <p>Tensor Cores 针对特定 dtype 和矩阵乘加模式提供很高吞吐。于是模型训练/推理会大量使用 FP16、BF16、FP8（8 位浮点：更低精度的浮点表示，需要硬件与数值策略共同支持）等较低精度格式，并把 Linear、Attention、MLP 尽量变成高效的大矩阵运算。</p>
-        <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>查询-键-值（QKV） PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
+        <div class="cost-panel"><div><small>LINEAR</small><b>X @ W → GEMM-heavy</b></div><div><small>QKV PROJECTION</small><b>often a fused QKV GEMM</b></div><div><small>MLP</small><b>large up / down projections</b></div><p>概念上 Q/K/V 是三组投影，但高性能实现常把它们融合成一次 QKV projection GEMM 或等价的融合路径。前面学 shape 不是纯数学：矩阵的 M/N/K 尺寸会影响底层 kernel 能不能把 Tensor Core 和内存带宽吃满。</p></div>
       </section>
 
       <section class="article-section" id="hbm">
         <div class="section-no">05 · 计算之前先要把数据送到位</div>
         <h2>算力再高，如果数据没及时到计算单元，GPU 也只能等。</h2>
         <p>weight、activation、KV Cache 等大部分数据常驻在 GPU device memory；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在 memory hierarchy（内存层级：从寄存器/缓存到设备显存等不同速度和容量的存储层级）之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
-        <div class="compare-limits"><div><small>计算</small><b>算得不够快</b><span>Tensor Core / 算术逻辑单元（ALU） 是瓶颈</span></div><div><small>内存</small><b>喂数据不够快</b><span>内存带宽 / data movement 是瓶颈</span></div></div>
-        <p>下一节会正式学习显存账单，03.3 再把<code>compute-bound</code> / <code>memory-bound</code> / <code>communication-bound</code> 分开。</p>
+        <div class="compare-limits"><div><small>计算</small><b>算得不够快</b><span>Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元）是瓶颈</span></div><div><small>内存</small><b>喂数据不够快</b><span>内存带宽 / data movement 是瓶颈</span></div></div>
+        <p>下一节会正式学习显存账单，03.3 再正式区分计算受限、内存带宽受限和通信受限。</p>
       </section>
 
       <section class="article-section" id="async">
