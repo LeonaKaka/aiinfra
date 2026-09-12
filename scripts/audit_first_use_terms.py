@@ -515,9 +515,9 @@ def normalize_body(body: str, seen: set[str]) -> str:
                 emitted, remainder, has_note = consume_annotation_prefix(following, spec)
 
                 if spec["key"] not in seen:
-                    if has_note and spec["chinese"] in emitted:
-                        # Preserve the canonical Chinese-name parenthesis;
-                        # replace legacy/malformed forms with it.
+                    if has_note:
+                        # Preserve any structurally valid authored Chinese term
+                        # plus explanation after </code>; synonyms are allowed.
                         note = terminology_paren(emitted, len(re.match(r"(\s*)", emitted).group(1)), spec)
                         if note and note[0] == "valid":
                             out.append(emitted)
