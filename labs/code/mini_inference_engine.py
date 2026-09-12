@@ -42,8 +42,20 @@ def make_kv(prompt: torch.Tensor, wk: torch.Tensor, wv: torch.Tensor):
     return prompt @ wk, prompt @ wv
 
 
-def decode_one(x_new: torch.Tensor, k: torch.Tensor, v: torch.Tensor, wq: torch.Tensor):
+def decode_one(
+    x_new: torch.Tensor,
+    history_k: torch.Tensor,
+    history_v: torch.Tensor,
+    wq: torch.Tensor,
+    wk: torch.Tensor,
+    wv: torch.Tensor,
+):
+    """Decode one token against history plus the current token's own KV."""
     q = x_new @ wq
+    k_step = x_new @ wk
+    v_step = x_new @ wv
+    k = torch.cat([history_k, k_step], dim=0)
+    v = torch.cat([history_v, v_step], dim=0)
     scores = (q @ k.transpose(0, 1)) / math.sqrt(q.shape[-1])
     return torch.softmax(scores, dim=-1) @ v
 
@@ -170,7 +182,7 @@ def consumer(args: argparse.Namespace, device: torch.device) -> None:
 
     # Request 201: local prefix hit. Decode one token immediately.
     local_k, local_v = make_kv(local_prompt, wk, wv)
-    _local_out = decode_one(local_new, local_k, local_v, wq)
+    _local_out = decode_one(local_new, local_k, local_v, wq, wk, wv)
     budget -= 1
     states[201] = "DECODED"
 
@@ -201,14 +213,14 @@ def consumer(args: argparse.Namespace, device: torch.device) -> None:
 
     if budget < 1:
         raise RuntimeError("no token budget left for remote decode")
-    remote_out = decode_one(remote_new, remote_k, remote_v, wq)
+    remote_out = decode_one(remote_new, remote_k, remote_v, wq, wk, wv)
     budget -= 1
     states[202] = "DECODED"
 
     # Correctness-only reference: a production decode worker would not recompute
     # this prompt; we do it here solely to verify handoff semantics.
     ref_k, ref_v = make_kv(remote_prompt, wk, wv)
-    ref_out = decode_one(remote_new, ref_k, ref_v, wq)
+    ref_out = decode_one(remote_new, ref_k, ref_v, wq, wk, wv)
     err = (remote_out - ref_out).abs().max()
 
     completion = torch.tensor(
