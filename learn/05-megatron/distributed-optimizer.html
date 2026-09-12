@@ -58,7 +58,7 @@
       <section class="article-section" id="flow">
         <div class="section-no">03 · 完整更新流程</div>
         <h2>关键不是“少存几份 Adam”，而是一次完整的归属变化：本地 gradients → 已归约分片 → 本地 update → 同步后的 model params。</h2>
-        <p>下面沿用 NVIDIA 当前文档里的 16-element / DP=4 教学尺度。每个 rank 从自己的数据得到完整 local gradient buffer（梯度缓冲区：连续保存一组 gradients 以便统一通信和更新）；reduce-scatter 后，每个 rank 只拥有四个已经跨 DP 聚合的 gradient elements；它只更新自己的 FP32 main-param / Adam shard，最后再 all-gather 回下一轮 forward 使用的 model parameter buffer。</p>
+        <p>下面沿用 NVIDIA 当前文档里的 16-element / DP=4 教学尺度。每个 rank 从自己的数据得到完整 local gradient buffer（梯度缓冲区：连续保存一组 gradients 以便统一通信和更新）；reduce-scatter 后，每个 rank 只拥有四个已经跨 DP 聚合的 gradient elements；它只更新自己的 FP32 main-param / Adam shard，最后再 all-gather 回下一轮 forward 使用的 model parameter buffer（缓冲区：临时或持久保存待处理数据的一块内存）。</p>
         <div class="megatron-core-wrap"><div class="megatron-core-meta"><span>DISTRIBUTED OPTIMIZER · DP=4</span><span>gradient ownership → parameter synchronization</span></div><img class="megatron-core-svg" src="./distributed-optimizer-flow.svg" alt="Distributed Optimizer 数据流：四个 DP ranks 的完整 local gradient buffers 经过 reduce-scatter 后分别得到 reduced gradient shard，各 rank 仅用本地 FP32 main parameter 和 Adam state 更新自己的 shard，随后 parameter all-gather 恢复各 replica 下一轮 forward 所需的一致model parameters。" /></div>
         <div class="megatron-core-takeaway"><strong>最重要的不变量：</strong>optimizer/master state 可以长期按 DP rank sharded，但 DP forward 仍需要数学上一致的 model parameters。于是 reduce-scatter 把“谁负责更新哪一段”分出去，parameter all-gather 再把更新结果同步回 model parameter buffer。</div>
         <p>这条链把之前几个模块真正串起来了：autograd 产生 gradients；DP collective 改变 gradient 的归属关系；optimizer 在本地分片上更新；参数同步后下一轮 forward 才能继续。Megatron 再用连续缓冲区、通信桶和 overlap 尽量把这两次通信隐藏进计算。</p>
@@ -87,7 +87,7 @@
       <section class="article-section" id="buffers">
         <div class="section-no">06 · 为什么需要连续缓冲区与通信桶？</div>
         <h2>几十亿个参数不适合一个张量发一次 collective：Megatron 把它们整理进连续缓冲区，再按通信桶分组。</h2>
-        <p>真实模型有成千上万个参数 tensors。如果每个小 tensor 的 gradient 一就绪就单独发一个 NCCL collective，latency / launch overhead 会非常糟糕。Megatron 使用 contiguous buffer（连续缓冲区：把许多参数或 gradients 放进一块连续内存，便于批量通信和管理），并把其中区间组织成 bucket（通信桶：把多块小数据合并成较大通信单元的分组）。</p>
+        <p>真实模型有成千上万个参数 tensors。如果每个小 tensor 的 gradient 一就绪就单独发一个 NCCL collective，latency / launch overhead 会非常糟糕。Megatron 使用 contiguous buffer，并把其中区间组织成 bucket（通信桶：把多块小数据合并成较大通信单元的分组）。</p>
         <div class="buffer-map"><small>CONTIGUOUS PARAM / GRAD BUFFER</small><div class="buffer-strip"><span class="r0">bucket 0a</span><span class="r0">bucket 0b</span><span class="r1">bucket 1a</span><span class="r1">bucket 1b</span><span class="r2">bucket 2a</span><span class="r2">bucket 2b</span><span class="r3">bucket 3a</span><span class="r3">bucket 3b</span></div></div>
         <p>这样做有两个系统收益：第一，大块连续通信通常比大量很小的 collectives 更容易获得带宽；第二，某个 bucket 的 gradients 一旦全部就绪，就可以提前启动 reduce-scatter，不必等整个 backward 完成。</p>
         <div class="source-note">当前 <a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.distributed.param_and_grad_buffer.html">core.distributed.param_and_grad_buffer</a> API 提供 bucket-level <code>start_grad_sync()</code>、<code>start_param_sync()</code>、<code>finish_param_sync()</code> 等接口。</div>
