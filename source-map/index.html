@@ -155,19 +155,19 @@
           <span class="order">06</span>
           <div><em class="phase-label">CONTRACT · CONNECTOR</em><b>KVConnector base</b><code>vllm/distributed/kv_transfer/kv_connector/v1/base.py</code></div>
           <p>先只分清 调度器侧 与 工作进程侧 两半：matched tokens / 分配 / 元数据 对应 加载 / 保存 / 完成确认。后面所有 NIXL 细节都必须服从这份接口契约。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/base.py">源码 ↗</a><a href="../learn/08-kv-connector/connector-architecture.html">08.2 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/base.py">源码 ↗</a><a href="../learn/08-kv-connector/connector-architecture.html">08.2 →</a><a href="../learn/08-kv-connector/transfer-lifecycle.html">08.3 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">07</span>
           <div><em class="phase-label">CONTRACT · NIXL</em><b>NIXL 门面层</b><code>.../kv_connector/v1/nixl/connector.py</code></div>
           <p>先看 门面层 怎样把 base 接口拆给 NIXL 调度器 与 工作进程。这里代码反而不该最难；它的价值是告诉你“哪部分属于控制面，哪部分属于传输实现”。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py">源码 ↗</a><a href="../labs/mini-kv-handshake-lifetime.html">B5 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py">源码 ↗</a><a href="../learn/08-kv-connector/nixl-rdma.html">08.4 →</a><a href="../labs/mini-kv-handshake-lifetime.html">B5 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">08</span>
           <div><em class="phase-label">CONTROL · LIFETIME</em><b>NIXL 调度器侧 生命周期</b><code>.../nixl/base_scheduler.py</code></div>
           <p>重点看 请求跟踪、<code>build_connector_meta()</code>、心跳 打包与 调度器 clock。这里解释“远端 KV 为什么不能算完就立刻 释放”，也解释 截止时间 为什么要带时钟参考。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py">源码 ↗</a><a href="../labs/mini-kv-lease-expiry.html">B7 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py">源码 ↗</a><a href="../learn/08-kv-connector/production-pd.html">08.5 →</a><a href="../labs/mini-kv-lease-expiry.html">B7 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">09</span>
@@ -179,7 +179,7 @@
           <span class="order">10</span>
           <div><em class="phase-label">DATA · 内存</em><b>NIXL base 工作进程</b><code>.../nixl/base_worker.py</code></div>
           <p>再进重实现：KV 存储区注册、区域基址 / 块长度 / 步长、远端 agent handshake、兼容性检查、TP mapping 与 prepared 传输 handles。此时你已经知道这些状态为什么存在。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py">源码 ↗</a><a href="../labs/mini-registered-region-descriptor.html">B6 →</a></div>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py">源码 ↗</a><a href="../learn/08-kv-connector/nixl-rdma.html">08.4 →</a><a href="../labs/mini-registered-region-descriptor.html">B6 →</a></div>
         </div>
         <div class="source-row">
           <span class="order">11</span>
