@@ -273,6 +273,8 @@ SOURCE_TERMS = {
     "engine": ("推理引擎", "把 request 管理、scheduler 和模型执行组织成服务循环"),
     "workload": ("工作负载", "系统实际接收的一组 request 规模与分布特征"),
     "prefix cache": ("前缀缓存", "复用相同输入前缀已经计算好的 KV state"),
+    "APC": ("自动前缀缓存", "vLLM 通过前缀哈希标识复用已计算 KV 的机制"),
+    "WAITING_FOR_REMOTE_KVS": ("等待远端 KV", "request 必须等外部 KV 就绪后才能继续进入可运行状态"),
     "preemption": ("抢占", "资源不足时暂时移出正在运行的 request 并稍后恢复"),
     "throughput": ("吞吐量", "单位时间内系统完成的 request 或 token 数量"),
     "latency": ("延迟", "一次 request 或一步操作从开始到完成所花的时间"),
