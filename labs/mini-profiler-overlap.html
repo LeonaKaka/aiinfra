@@ -82,13 +82,14 @@ PASS</pre></div>
       <p>当前 Megatron 源码会在通信桶进程组的参数梯度全部 ready 后发起梯度 reduction；启用 distributed 优化器时是 reduce-scatter，否则是 all-reduce。<code>overlap_grad_reduce</code> 决定通信是否异步分发。读这里时应把 A7 的时间线放在脑子里，而不是只看函数调用。</p>
     </section>
 
-    <section class="lab-section" id="close"><div class="lab-kicker">05 · 训练软件阶段收尾</div><h2>到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</h2>
-      <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认后端=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与反向传播计算是否重叠。</div><div>③ 再把 A6 的 TP×DP 进程组加进 profiler，区分 TP collective 与 DP reduce-scatter。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对重叠 window 的影响。</div></div>
+    <section class="lab-section" id="close"><div class="lab-kicker">05 · Overlap 证据层收尾</div><h2>到这里，梯度通信重叠的“正确性 → 异步依赖 → profiler 证据”已经闭合；Training 线还没结束。</h2>
+      <p>接下来 A8–A11 会补齐 Sequence Parallel、Pipeline Parallel、Context Parallel 与 Expert Parallel；A12 再把 TP×DP、梯度就绪、reduce-scatter、parameter ownership 与 all-gather 装成一次完整训练步骤。真实 GPU/NCCL overlap 则继续保留为硬件验证任务。</p>
+      <div class="check-list"><div>① 有 2–4 张 GPU：跑同一脚本，确认后端=NCCL。</div><div>② 用 Perfetto / Chrome trace 看 NCCL kernel 与反向传播计算是否重叠。</div><div>③ 学完 A8–A11 后回到 A12，把 overlap 放回完整训练步骤理解。</div><div>④ 有 NVLink / 多节点网络时，再比较 topology 对重叠 window 的影响。</div></div>
     </section>
 
     <nav class="lab-footer-nav"><a href="./mini-tp-dp-2d.html">← Lab A6 · TP × DP Topology</a><a href="./mini-sequence-parallel.html">Lab A8 · Sequence Parallel →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#markers">先标“语义边界”，再去看底层 kernel。</a><a href="#run">同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</a><a href="#gpu">GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</a><a href="#source">Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</a><a href="#close">到这里，Training 线的软件机制已经闭合；剩下的是硬件验证，不再是补概念。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#markers">先标“语义边界”，再去看底层 kernel。</a><a href="#run">同一份脚本 CPU 能验证 correctness；有两张 GPU 时自动切 NCCL。</a><a href="#gpu">GPU 上至少要同时满足三件事，才值得写“communication 重叠”。</a><a href="#source">Megatron 的通信桶进程组正是在追踪“什么时候 ready、什么时候分发、什么时候等待”。</a><a href="#close">梯度通信重叠的证据链闭合后，继续补齐 A8–A12。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
