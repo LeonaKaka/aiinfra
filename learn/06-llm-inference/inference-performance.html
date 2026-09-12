@@ -43,15 +43,15 @@
   <div class="lesson-kicker"><span>LESSON 06.4 · PERFORMANCE</span><span>约 55 min</span></div>
 
   <h1>推理性能：先估算，再测；先问“快在哪里”，再看一个吞吐数字。</h1>
-  <p class="dek">到这里你已经知道自回归生成、Prefill / Decode 和键-值（KV）缓存。现在补上进入 vLLM 前最重要的一层工程能力：先用容量、计算量和图形处理器（GPU）显存带宽做数量级估算，再用一致的workload（工作负载：系统实际接收的一组 request 规模与分布特征）测TTFT、ITL、TPOT、throughput和tail latency。没有这一步，“优化了 30%”通常只是一个缺少上下文的数字。</p>
+  <p class="dek">到这里你已经知道自回归生成、Prefill / Decode 和 KV Cache。现在补上进入 vLLM 前最重要的一层工程能力：先用容量、计算量和 GPU 显存带宽做数量级估算，再用一致的 workload（工作负载：系统实际接收的一组 request 规模与分布特征）测 TTFT、ITL、TPOT、throughput 和 tail latency（尾延迟：用 p95、p99 等高分位描述少数最慢请求的延迟）。没有这一步，“优化了 30%”通常只是一个缺少上下文的数字。</p>
 
   <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul>
     <li>区分“放得下”“算得动”“服务得快”三个不同问题。</li>
-    <li>估算模型weights 与 per-request KV Cache 的数量级。</li>
+    <li>估算 model weights 与 per-request KV Cache 的数量级。</li>
     <li>用“数据量 ÷ 有效带宽”理解显存带宽给出的理想下界。</li>
-    <li>知道为什么提高concurrency 和 batch size可能增加throughput，却同时恶化user latency。</li>
-    <li>设计一个可比较的推理benchmark，而不是只记录一个孤立的吞吐数字。</li>
-    <li>读到performance claim时，主动检查workload、分位数、cache state和SLO（服务级目标：系统希望达到的延迟、可用性或吞吐目标）。</li>
+    <li>知道为什么提高 concurrency 和 batch size 可能增加 throughput，却同时恶化用户延迟。</li>
+    <li>设计一个可比较的推理 benchmark（基准测试：在固定条件下测量和比较系统性能），而不是只记录一个孤立的吞吐数字。</li>
+    <li>读到性能声明时，主动检查 workload、分位数、缓存状态和 SLO（服务级目标：系统希望达到的延迟、可用性或吞吐目标）。</li>
   </ul></div>
 
   <section class="article-section" id="faster">
@@ -59,11 +59,11 @@
     <h2>同一个优化，可以让系统吞吐更高，也可以让某些用户等得更久。</h2>
     <div class="metric-grid">
       <div><small>TTFT</small><b>首 Token 延迟</b><span>从客户端发出请求，到收到第一个非空输出。长输入、排队和 Prefill 都会影响它。</span></div>
-      <div><small>ITL</small><b>Token 间延迟</b><span>streaming之间的时间间隔。它更接近用户看到文字连续出现时的“顺不顺”。</span></div>
+      <div><small>ITL</small><b>Token 间延迟</b><span>streaming（流式输出：token 生成后持续增量返回给用户）相邻返回之间的时间间隔。它更接近用户看到文字连续出现时的“顺不顺”。</span></div>
       <div><small>TPOT</small><b>每输出 Token 时间</b><span>按请求把第一个 token 之后的生成时间摊到剩余输出 token 上。</span></div>
     </div>
-    <p>当前 vLLM 的 <code>vllm bench serve</code> 会同时报告请求throughput、输出 token throughput、总 token throughput，以及 TTFT、TPOT、ITL 的均值、中位数和高分位数。更重要的是，vLLM 文档明确提醒：不同工具对这些指标的命名和测量点并不完全统一，跨工具比较时要看公式和采样位置，不能只看缩写。</p>
-    <div class="concept-note"><p><strong>第一条规则：</strong>以后看到“性能提高 40%”，先问：提高的是throughput、TTFT、ITL，还是单位成本？其它指标有没有变差？</p></div>
+    <p>当前 vLLM 的 <code>vllm bench serve</code> 会同时报告 request throughput、输出 token throughput、总 token throughput，以及 TTFT、TPOT、ITL 的均值、中位数和高分位数。更重要的是，vLLM 文档明确提醒：不同工具对这些指标的命名和测量点并不完全统一，跨工具比较时要看公式和采样位置，不能只看缩写。</p>
+    <div class="concept-note"><p><strong>第一条规则：</strong>以后看到“性能提高 40%”，先问：提高的是 throughput、TTFT、ITL，还是单位成本？其它指标有没有变差？</p></div>
     <div class="source-note">当前口径：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM · Benchmark <code>CLI</code></a>。本站按 2026-09 的文档复查本节的指标定义。</div>
   </section>
 
@@ -76,7 +76,7 @@
 
     <p>KV Cache 则要从模型结构和上下文长度估：</p>
     <div class="shape-rule"><code>KV bytes ≈ 2 × layers × tokens × KV heads × head_dim × bytes/element</code></div>
-    <p>前面的 2 表示 K 和 V 两份状态。举一个只用于练心算的例子：32 层、8 个 KV heads、<code>head_dim=128</code>、32K tokens、每个元素 2 bytes，那么per-request KV Cache 大约就是 4 GiB。concurrent requests一多，动态 KV 占用很快就会和权重一样成为容量问题。</p>
+    <p>前面的 2 表示 K 和 V 两份状态。举一个只用于练心算的例子：32 层、8 个 KV heads、<code>head_dim=128</code>、32K tokens、每个元素 2 bytes，那么 per-request KV Cache 大约就是 4 GiB。concurrent requests 一多，动态 KV 占用很快就会和权重一样成为容量问题。</p>
 
     <div class="cost-panel">
       <div><small>WEIGHTS</small><b>模型的静态大块占用</b></div>
@@ -92,40 +92,40 @@
     <p>一个非常有用的理想下界是：</p>
     <div class="shape-rule"><code>时间下界 ≳ 需要搬的数据量 ÷ 有效显存带宽</code></div>
     <p>仍然拿上面的 140 GB 权重做极端简化：如果某一步真的需要把这 140 GB 权重完整读一遍，而硬件带宽按 H200 标称 <code>4.8 TB/s</code> 计算，光“搬完这些数据”的理论时间下界就约 29 ms。真实程序还会受到 kernel 效率、KV 访问、调度、通信以及没有跑满标称带宽等因素影响，因此实际值只会更复杂。</p>
-    <div class="precision-note"><strong>不要把 29 ms 当成 70B 模型的真实每-token 延迟。</strong>这是故意粗糙的 roofline 式数量级练习：它的用途是判断“带宽有没有可能成为主要瓶颈”，而不是替代 profiler 或 benchmark。</div>
+    <div class="precision-note"><strong>不要把 29 ms 当成 70B 模型的真实每-token 延迟。</strong>这是故意粗糙的 Roofline 式数量级练习：它的用途是判断“带宽有没有可能成为主要瓶颈”，而不是替代 profiler 或 benchmark。</div>
 
-    <p>这也解释了为什么批次会改变 Decode 的效率。同一批里有更多 token 一起经过模型时，读取一次权重可以服务更多计算工作，单位 token 分摊到的权重读取成本会下降；但批次更大通常也意味着更多请求同时竞争资源，user latency未必一起变好。</p>
+    <p>这也解释了为什么批次会改变 Decode 的效率。同一批里有更多 token 一起经过模型时，读取一次权重可以服务更多计算工作，单位 token 分摊到的权重读取成本会下降；但批次更大通常也意味着更多请求同时竞争资源，用户延迟未必一起变好。</p>
   </section>
 
   <section class="article-section" id="compute">
     <div class="section-no">04 · 计算量只是另一半</div>
     <h2>先判断“更像算力瓶颈还是带宽瓶颈”，再决定该优化哪里。</h2>
-    <p>对普通 dense Transformer，可以把每个 token 的前向计算量先粗略记成和参数量同阶，常见心算会用 <code>≈ 2 × parameters FLOPs/token</code> 来估线性层主导部分。它不是精确公式：长上下文 Attention、混合专家模型、量化、融合 kernel 和并行策略都会改变实际成本。</p>
+    <p>对普通稠密 Transformer，可以把每个 token 的前向计算量先粗略记成和参数量同阶，常见心算会用 <code>≈ 2 × parameters FLOPs/token</code>（每 token 浮点运算量：处理一个 token 大约需要执行多少次浮点运算）来估线性层主导部分。它不是精确公式：长上下文 Attention、混合专家模型、量化、融合 kernel 和并行策略都会改变实际成本。</p>
     <div class="request-grid">
       <div class="request-card"><small>计算</small><b>算力更紧</b><span>大 Prefill、大矩阵乘更容易把计算单元吃满；这时更高的有效浮点计算能力很重要。</span></div>
       <div class="request-card"><small>内存</small><b>带宽更紧</b><span>小批次 Decode 常更容易受权重/KV 读取影响；这时只看峰值浮点计算能力会误判。</span></div>
       <div class="request-card"><small>COMMUNICATION</small><b>多卡通信更紧</b><span>张量并行等方案能分摊容量和计算，却会引入跨卡通信；“卡更多”不保证线性加速。</span></div>
     </div>
-    <p>所以性能分析不是找一个万能公式，而是先建立几条数量级上界/下界，再用 profiler 和真实benchmark确认哪一项真的在主导。</p>
+    <p>所以性能分析不是找一个万能公式，而是先建立几条数量级上界/下界，再用 profiler 和真实 benchmark 确认哪一项真的在主导。</p>
   </section>
 
   <section class="article-section" id="contract">
-    <div class="section-no">05 · 跑benchmark前先写测试合同</div>
-    <h2>两个结果只有在workload可比时，才有资格放进同一张表。</h2>
+    <div class="section-no">05 · 跑 benchmark 前先写测试合同</div>
+    <h2>两个结果只有在 workload 可比时，才有资格放进同一张表。</h2>
     <p>至少固定并记录下面这些条件：</p>
     <div class="cost-panel">
       <div><small>MODEL</small><b>模型、权重精度/量化方式、框架与版本</b></div>
       <div><small>HARDWARE</small><b>GPU 型号、数量、并行配置</b></div>
-      <div><small>INPUT</small><b>input-token length或真实输入分布</b></div>
-      <div><small>OUTPUT</small><b>output-token length或真实输出分布</b></div>
-      <div><small>LOAD</small><b>concurrency、request arrival rate、benchmark duration</b></div>
-      <div><small>FEATURES</small><b>Prefix Cache（前缀缓存：复用相同输入前缀已经计算好的 KV state）、Chunked Prefill、投机解码等开关</b></div>
+      <div><small>INPUT</small><b>input-token length 或真实输入分布</b></div>
+      <div><small>OUTPUT</small><b>output-token length 或真实输出分布</b></div>
+      <div><small>LOAD</small><b>concurrency、request arrival rate（请求到达率：单位时间进入系统的新请求数量）、测试时长</b></div>
+      <div><small>FEATURES</small><b>prefix caching、Chunked Prefill、speculative decoding 等开关</b></div>
     </div>
-    <p>还要说明是否streaming、有没有预热、数据集是什么、采样参数是否一致。否则“系统 A 比系统 B 快 20%”很可能只是输入更短、并发更高或缓存命中了。</p>
+    <p>还要说明是否 streaming、有没有预热、数据集是什么、采样参数是否一致。否则“系统 A 比系统 B 快 20%”很可能只是输入更短、并发更高或缓存命中了。</p>
   </section>
 
   <section class="article-section" id="vllm-bench">
-    <div class="section-no">06 · 用当前 vLLM 的benchmark工具落地</div>
+    <div class="section-no">06 · 用当前 vLLM 的 benchmark 工具落地</div>
     <h2><code>vllm bench serve</code> 测的是在线服务，不是一个孤立 kernel 的速度。</h2>
     <div class="code-block"><div class="code-head"><span>shell</span><span>示意命令 · 参数按你的模型与数据集调整</span></div><pre><code>vllm bench serve \
   --backend vllm \
@@ -134,43 +134,43 @@
   --dataset-path YOUR_DATASET.json \
   --num-prompts 100 \
   --save-result</code></pre></div>
-    <p>当前 vLLM 会从benchmark客户端测量 TTFT，并分别统计 ITL 与 TPOT。标准逐 token 解码时两者通常接近；但投机解码可能在一次流式返回里带回多个 token，这时 ITL 记录“流式返回之间的间隔”，TPOT 则把解码时间按所有输出 token 摊开，因此两者不应该被强行当成同一个量。</p>
-    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个server instance跑同一组 prompt，可能命中前一次留下的 Prefix Cache，从而把throughput测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置/重启server instance，或使用会在 sweep 间重置服务端缓存的工具。</p></div>
+    <p>当前 vLLM 会从 benchmark 客户端测量 TTFT，并分别统计 ITL 与 TPOT。标准逐 token 解码时两者通常接近；但投机解码可能在一次流式返回里带回多个 token，这时 ITL 记录“流式返回之间的间隔”，TPOT 则把解码时间按所有输出 token 摊开，因此两者不应该被强行当成同一个量。</p>
+    <div class="concept-note"><p><strong>一个很容易踩的坑：</strong>反复对同一个服务实例跑同一组 prompt，可能命中前一次留下的 prefix cache，从而把 throughput 测得虚高。当前 vLLM 文档明确建议：如果你不想测缓存收益，就改变 seed、重置或重启服务实例，或使用会在 sweep 间重置服务端缓存的工具。</p></div>
     <div class="source-note">当前实现与命令入口：<a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM Benchmark CLI</a> 与 <a href="https://docs.vllm.ai/en/stable/api/vllm/entrypoints/cli/benchmark/serve/">vLLM bench serve 接口文档</a>。</div>
   </section>
 
   <section class="article-section" id="curve">
     <div class="section-no">07 · 不要只找“最高吞吐”</div>
-    <h2>真正的部署问题通常是：在latency target不被破坏时，最多能服务多少流量？</h2>
+    <h2>真正的部署问题通常是：在延迟目标不被破坏时，最多能服务多少流量？</h2>
     <div class="time-sequence">
       <div class="time-row"><small>LOW LOAD</small><span class="decode">低延迟</span><span class="wait">GPU 可能没吃满</span></div>
       <div class="time-row"><small>USEFUL RANGE</small><span class="prefill">吞吐持续上升</span><span class="decode">延迟仍在目标内</span></div>
       <div class="time-row"><small>SATURATION</small><span class="wait">排队增长</span><span class="wait">p95 / p99 延迟恶化</span></div>
     </div>
-    <p>因此更有意义的比较方式，是扫一组并发或request arrival rate，画出“throughput—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种延迟–throughput trade-off，而不是只汇报单个峰值数字。</p>
+    <p>因此更有意义的比较方式，是扫一组并发或 request arrival rate，画出“throughput—延迟”曲线，再在同一个 SLO 下比较方案。NVIDIA 的推理 benchmark 指南也强调这种延迟–throughput trade-off（权衡：一个指标改善时往往需要牺牲另一个指标），而不是只汇报单个峰值数字。</p>
     <div class="source-note">补充阅读：<a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">NVIDIA · 推理benchmark基础概念</a>。这篇适合核对指标与测试口径，不作为本站当前 vLLM 实现细节的权威来源。</div>
   </section>
 
   <section class="article-section" id="claims">
-    <div class="section-no">08 · 以后看到performance claim，按这张清单拆</div>
+    <div class="section-no">08 · 以后看到性能声明，按这张清单拆</div>
     <h2>“优化了 30%”至少要追问七件事。</h2>
     <div class="check-list">
-      <div>① 提高的是请求throughput、token throughput，还是 TTFT / ITL？</div>
+      <div>① 提高的是 request throughput、token throughput，还是 TTFT / ITL？</div>
       <div>② 输入和输出 token 分布是否相同？</div>
-      <div>③ concurrency或request arrival rate是否相同？</div>
+      <div>③ concurrency 或 request arrival rate 是否相同？</div>
       <div>④ GPU、精度、并行度、框架版本是否相同？</div>
       <div>⑤ 平均值之外，p95 / p99 有没有恶化？</div>
       <div>⑥ Prefix Cache、Chunked Prefill、投机解码等功能是否改变？</div>
       <div>⑦ 在同一个 SLO 下，哪一个方案能承载更多真实流量？</div>
     </div>
-    <p>做到这里，你才真正具备进入 vLLM 的前置视角：07 模块不再只是“这个调度器有哪些功能”，而是去追问这些机制究竟在改容量、计算、带宽、调度还是tail latency。</p>
+    <p>做到这里，你才真正具备进入 vLLM 的前置视角：07 模块不再只是“这个调度器有哪些功能”，而是去追问这些机制究竟在改容量、计算、带宽、调度还是 tail latency。</p>
   </section>
 
   <section class="article-section" id="reading">
     <div class="section-no">09 · 延伸阅读，不作为课程依赖</div>
     <h2>老文章可以读方法，但本站不把旧实现当作当前事实。</h2>
     <div class="source-map-vllm">
-      <div class="source-card"><small>CURRENT</small><b>vLLM Benchmark CLI</b><span>当前指标定义、命令、Prefix Cache benchmark 陷阱以这里为准。</span><a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">打开当前文档 ↗</a></div>
+      <div class="source-card"><small>CURRENT</small><b>vLLM Benchmark CLI</b><span>当前指标定义、命令、prefix cache benchmark 陷阱以这里为准。</span><a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">打开当前文档 ↗</a></div>
       <div class="source-card"><small>METHOD</small><b>Transformer Inference Arithmetic</b><span>适合学习“先估算再实验”的思路；文章发表于 2022 年，具体硬件与模型例子不要当成今天的数据。</span><a href="https://kipply.github.io/blog/transformer-inference-arithmetic/">选读 ↗</a></div>
       <div class="source-card"><small>METRICS</small><b>NVIDIA Benchmarking Concepts</b><span>适合补充 TTFT、ITL、吞吐与测试口径的统一视图。</span><a href="https://developer.nvidia.com/blog/llm-inference-benchmarking-fundamental-concepts/">选读 ↗</a></div>
     </div>
@@ -180,9 +180,9 @@
     <div class="checkpoint-head"><span>CHECKPOINT</span><span>06.4</span></div>
     <h2>能把“估算”和“实测”分开，才进入 vLLM。</h2>
     <div class="quiz-item"><div class="quiz-q">1. 70B <code>BF16</code> 权重约 140 GB，而 GPU 标称显存 141 GB，为什么不能直接说“能单卡部署”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为服务还需要 KV Cache、临时张量、运行时工作区与内存碎片等；权重刚好放得下只通过了容量账的第一关。</div></div>
-    <div class="quiz-item"><div class="quiz-q">2. 为什么“throughput提高”不能自动推出“用户体验更好”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更高并发和更大批次常能提高设备利用率与总吞吐，但也可能增加排队和每个请求等待时间，所以必须同时看 TTFT、ITL 和tail latency。</div></div>
-    <div class="quiz-item"><div class="quiz-q">3. 为什么重复跑同一套 prompt 可能让benchmark失真？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果服务端保留了 Prefix Cache，同样的前缀可能直接复用历史 KV，测到的是“带缓存复用”的性能，而不是原本想比较的冷启动workload。</div></div>
-    <div class="quiz-item"><div class="quiz-q">4. 比较两个推理方案时，最少要把哪些条件固定？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">模型与精度、硬件与并行配置、输入/输出长度分布、并发或请求速率、关键缓存/调度功能、流式与采样设置，以及相同的benchmark duration/预热口径。</div></div>
+    <div class="quiz-item"><div class="quiz-q">2. 为什么“throughput 提高”不能自动推出“用户体验更好”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">更高并发和更大批次常能提高设备利用率与总吞吐，但也可能增加排队和每个请求等待时间，所以必须同时看 TTFT、ITL 和 tail latency。</div></div>
+    <div class="quiz-item"><div class="quiz-q">3. 为什么重复跑同一套 prompt 可能让 benchmark 失真？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">如果服务端保留了 prefix cache，同样的前缀可能直接复用历史 KV，测到的是“带缓存复用”的性能，而不是原本想比较的冷启动 workload。</div></div>
+    <div class="quiz-item"><div class="quiz-q">4. 比较两个推理方案时，最少要把哪些条件固定？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">模型与精度、硬件与并行配置、输入/输出长度分布、并发或请求速率、关键缓存/调度功能、流式与采样设置，以及相同的测试时长和预热口径。</div></div>
   </section>
 
       <section class="lesson-terms" id="lesson-terms">
