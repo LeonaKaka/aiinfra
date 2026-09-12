@@ -130,14 +130,14 @@ print(torch.cuda.memory_summary())</code></pre></div>
       <section class="article-section" id="oom">
         <div class="section-no">09 · 像 Infra 工程师一样排查 OOM</div>
         <h2>看到 OOM，先问“哪一类账爆了”，而不是立刻把批次降到 1。</h2>
-        <div class="oom-flow"><div><small>1</small><b>Weights?</b><span>模型本身就放不下？dtype / quantization（量化：用更低精度表示 weight 或 activation 以降低存储和计算成本）/ 模型并行。</span></div><div><small>2</small><b>Activation?</b><span>batch / sequence / hidden dimension 太大？activation checkpointing 是否能换计算省显存？</span></div><div><small>3</small><b>Optimizer?</b><span>训练 state 太大？是否需要分片 / offload（卸载：把部分 state 移到 CPU 或 host memory 以降低 GPU 占用）/ Distributed Optimizer？</span></div><div><small>4</small><b>KV / runtime?</b><span>推理 context / concurrency（并发量：系统同时保持活跃的 request 数量）太高？allocator、workspace、NCCL 是否也在占？</span></div></div>
+        <div class="oom-flow"><div><small>1</small><b>Weights?</b><span>模型本身就放不下？dtype / quantization（量化：用更低精度表示 weight 或 activation 以降低存储和计算成本）/ 模型并行。</span></div><div><small>2</small><b>Activation?</b><span>batch / sequence / hidden dimension 太大？activation checkpointing 是否能换计算省显存？</span></div><div><small>3</small><b>Optimizer?</b><span>训练 state 太大？是否需要分片 / offload（卸载：把部分 state 移到 CPU 或 host memory 以降低 GPU 占用）/ Distributed Optimizer？</span></div><div><small>4</small><b>KV / runtime?</b><span>推理 context / concurrency（并发量：系统同时保持活跃的请求数量）太高？allocator、workspace、NCCL 是否也在占？</span></div></div>
         <p>一个非常实用的习惯是记录<strong>峰值</strong>而不是只看某个时刻。很多 OOM 发生在 backward、optimizer step 或某个临时 workspace 峰值，而不是 forward 一开始。</p>
       </section>
 
       <section class="article-section" id="bridge">
         <div class="section-no">10 · 接到 Megatron 与 vLLM</div>
         <h2>现在你已经能看懂两条路线为什么会选择完全不同的省显存技术。</h2>
-        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard（分片：把一份 tensor 或 state 拆成多份分到不同 GPU/进程） model states</b><span>TP 切 parameter / GEMM；Sequence Parallel（序列并行：沿 sequence 维减少部分 activation 的重复存储与通信）和 Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer state / gradient / parameter。</span></div><div><small>vLLM · INFERENCE</small><b>把 KV 当作核心资源管理</b><span>分页式 KV 内存块、连续批处理、前缀复用、KV 传输都围绕“有限 HBM 怎样服务更多 token / request”。</span></div></div>
+        <div class="bridge-grid"><div><small>MEGATRON · TRAINING</small><b>shard（分片：把一份 tensor 或 state 拆成多份分到不同 GPU/进程） model states</b><span>TP 切 parameter / GEMM；Sequence Parallel（序列并行：沿 sequence 维减少部分 activation 的重复存储与通信）和 Context Parallel 减少部分 activation 重复；Distributed Optimizer 分片 optimizer state / gradient / parameter。</span></div><div><small>vLLM · INFERENCE</small><b>把 KV 当作核心资源管理</b><span>分页式 KV 内存块、连续批处理、前缀复用、KV 传输都围绕“有限 HBM 怎样服务更多 token / request（请求：一次进入推理服务并持续推进的生成任务）”。</span></div></div>
         <div class="concept-note"><p><strong>后面读源码时始终问：</strong>这个优化到底是在减少参数、梯度、优化器状态、激活值、KV Cache，还是只是在改变它们“放在哪里”？</p></div>
       </section>
 
