@@ -84,7 +84,7 @@ PASS</pre></div>
 
     <section class="lab-section" id="missing"><div class="lab-kicker">05 · 还缺什么</div><h2>离 NIXL/RDMA 还有四个值得单独学的台阶。</h2><div class="check-list"><div>① Prefix lookup：消费端不应该总收完整 prompt，要先告诉调度器“远端到底命中了多少 token”。</div><div>② 异步传输：元数据决策与实际 K/V load 不能把整个推理引擎 step 阻塞住。</div><div>③ Layer-by-layer：每层 KV 的 load/save 可以与模型执行流水，而不是全部搬完再前向计算。</div><div>④ 内存注册 + remote handles：进入 NIXL 后，传的不再只是 Python tensor 引用，而是可远程访问的内存 region 描述。</div></div></section>
 
-    <nav class="lab-footer-nav"><a href="./mini-kv-handoff.html">← Lab B1 · KV 交接</a><a href="../learn/08-kv-connector/connector-architecture.html">回 08.2 Connector Architecture →</a></nav>
+    <nav class="lab-footer-nav"><a href="./mini-kv-handoff.html">← Lab B1 · KV 交接</a><a href="./mini-async-kv-transfer.html">Lab B3 · 异步 KV 传输 →</a></nav>
   </main>
   <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#map">先分控制信息，再分真正的大 tensor。</a><a href="#table">故意把 0,1,2 三个逻辑 block 放到 7,6,5。</a><a href="#run">Decode 必须不关心 KV 的物理排布。</a><a href="#vllm">这次已经可以一一对应三个真实组件。</a><a href="#missing">离 NIXL/RDMA 还有四个值得单独学的台阶。</a></aside>
 </div>
