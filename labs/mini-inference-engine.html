@@ -49,7 +49,7 @@
     <p class="dek">2 个 ranks 分别扮演 远端 KV 生产端与 推理消费端。消费端同时面对本地 KV 命中、远端 KV 请求和冷启动未命中：调度器必须分配模型计算 token 预算，块表必须把逻辑 KV 映射到物理池，远端传输必须在 Decode 真正需要这些 KV 前完成，最后完成确认才允许生产端释放那一代 KV。</p>
 
     <section class="lab-section" id="requests"><div class="lab-kicker">01 · 三类请求路径</div><h2>推理系统不是“一条 prompt 顺序跑到底”，而是在不同状态的请求之间不断做选择。</h2>
-      <div class="stage-flow"><div class="stage-card infer"><small>REQ 201 · LOCAL HIT</small><b>KV already local → decode</b><span>不需要重新 prefill；只消耗 1 个 decode token 的 model-计算 budget。</span></div><div class="stage-card comm"><small>REQ 202 · REMOTE KV</small><b>描述符 → blocks → 异步 load</b><span>先验证远端对象兼容性并预留 physical blocks；KV 到达后才能进入 decode。</span></div><div class="stage-card train"><small>REQ 203 · 冷启动未命中</small><b>no reusable KV → prefill</b><span>远端 KV 仍在传输时，本地可以把计算预算用在另一个 cold 请求的 prefill 上。</span></div></div>
+      <div class="stage-flow"><div class="stage-card infer"><small>REQ 201 · LOCAL HIT</small><b>KV already local → decode</b><span>不需要重新 prefill；当前 token 仍会生成自己的 Q/K/V，并与历史 KV 一起完成这一位置的 causal attention，只消耗 1 个 decode token 的 model-计算 budget。</span></div><div class="stage-card comm"><small>REQ 202 · REMOTE KV</small><b>描述符 → blocks → 异步 load</b><span>先验证远端对象兼容性并预留 physical blocks；KV 到达后才能进入 decode，执行时还会把当前 token 自己的 K/V 接到历史 KV 后面。</span></div><div class="stage-card train"><small>REQ 203 · 冷启动未命中</small><b>no reusable KV → prefill</b><span>远端 KV 仍在传输时，本地可以把计算预算用在另一个 cold 请求的 prefill 上。</span></div></div>
       <p>这里真正要看的不是三个固定请求 id，而是<strong>状态不同 → 下一步资源需求不同</strong>。这正是 continuous batching / 调度器思维和普通“批次一次算完”最大的差别。</p>
     </section>
 
@@ -86,7 +86,7 @@ Producer: safe to release this source generation</pre></div>
     <section class="lab-section" id="run"><div class="lab-kicker">05 · 运行并对照参考实现</div><h2>真正的验收：remote 交接后的 decode，必须等价于本地重新计算同一份 prompt KV。</h2>
       <div class="command"><div class="command-head"><span>TERMINAL</span><span>2 ranks</span></div><pre>torchrun --standalone --nproc-per-node=2 \
   labs/code/mini_inference_engine.py</pre></div>
-      <p>脚本故意在消费端端额外重算 prompt KV 作为 correctness-only reference；生产系统不会为了“验证交接”每次重算。默认条件下还要求 token 预算恰好用完、描述符兼容、完成确认/release 成功，并且 remote decode 最大误差小于 <code>1e-5</code>。</p>
+      <p>脚本故意在消费端额外重算 prompt KV 作为 correctness-only reference；随后 reference 和 remote 路径都会加入同一个当前 token K/V，再比较最终 decode 输出。生产系统不会为了“验证交接”每次重算。默认条件下还要求 token 预算恰好用完、描述符兼容、完成确认/release 成功，并且 remote decode 最大误差小于 <code>1e-5</code>。</p>
       <a class="code-link" href="./code/mini_inference_engine.py"><div><small>FULL SOURCE</small><b>打开 mini_inference_engine.py</b></div><span>→</span></a>
     </section>
 
