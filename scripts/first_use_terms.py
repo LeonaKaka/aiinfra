@@ -183,6 +183,8 @@ SOURCE_TERMS = {
     "Column Parallel": ("列并行", "沿 Linear 的输出维切分权重，让各 rank 计算不同输出特征"),
     "Row Parallel": ("行并行", "沿 Linear 的输入维切分权重，让各 rank 计算同一输出的部分贡献"),
     "RNG": ("随机数生成器", "dropout、初始化和采样等操作依赖的随机状态"),
+    "autograd Function": ("自动求导函数", "把自定义 forward 与对应 backward 规则绑定起来的 PyTorch 抽象"),
+    "dgrad": ("输入梯度", "loss 对某层输入 activation 的梯度"),
     "shard": ("分片", "把一份 tensor 或 state 拆成多份分到不同 ranks"),
     "replica": ("副本", "在不同 ranks 上保存的同一逻辑模型或 state"),
     "pipeline stage": ("流水线阶段", "负责模型连续一部分 layers 的执行阶段"),
