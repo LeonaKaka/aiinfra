@@ -247,7 +247,6 @@ SOURCE_TERMS = {
     "expert": ("专家", "MoE 中可被 router 独立选择的一套 FFN/MLP 参数与计算"),
     "router": ("路由器", "根据规则决定 token 应被送往哪个专家"),
     "dispatcher": ("分发器", "按 routing result 把 token hidden states 送到目标 expert，再把结果送回"),
-    "assignment": ("分配关系", "一次 token 到某个 expert 的 routing 记录"),
 
     # 06 · Inference
     "Prefill": ("预填充阶段", "一次处理 prompt 并建立历史 KV state 的阶段"),
