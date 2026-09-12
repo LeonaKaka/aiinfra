@@ -156,7 +156,7 @@ if FP16: 80 × 2 bytes = 160 bytes</code></pre>
       <section class="article-section" id="storage-layout">
         <div class="section-no">05 · 存储、视图与步长</div>
         <h2>同一个 shape，不一定以同一种内存布局躺在内存里。</h2>
-        <p>到目前为止，我们一直把 tensor 当成“带 shape 的数字块”。读 AI Infra 还差一层：<code>storage</code>（底层存储：真正承载 tensor 数据的内存区域）决定数据实际放在哪里；<code>layout</code>（内存布局：描述逻辑元素怎样映射到底层 storage）描述数据怎样排布；<code>stride</code>（步长：表示某一维索引增加 1 时底层地址跨多少元素）描述怎样从逻辑坐标走到物理位置。两块 tensor 可以拥有相同 <code>shape</code>，却有不同 <code>stride</code>，甚至共享同一块 <code>storage</code>。</p>
+        <p>到目前为止，我们一直把 tensor 当成“带 shape 的数字块”。读系统实现还差一层：<code>storage</code>（底层存储：真正承载 tensor 数据的内存区域）决定数据实际放在哪里；<code>layout</code>（内存布局：描述逻辑元素怎样映射到底层 storage）描述数据怎样排布；<code>stride</code>（步长：表示某一维索引增加 1 时底层地址跨多少元素）描述怎样从逻辑坐标走到物理位置。两块 tensor 可以拥有相同 <code>shape</code>，却有不同 <code>stride</code>，甚至共享同一块 <code>storage</code>。</p>
         <p>下面代码还会遇到 <code>reshape</code>（重塑形状：改变 tensor 的逻辑 shape，必要时可能发生数据重排）、<code>transpose</code>（转置维度：交换 tensor 的维度顺序而通常不立即复制数据）和 <code>contiguous</code>（连续存储：表示数据是否按当前逻辑维度顺序紧密排列）。</p><div class="code-block"><div class="code-head"><span>python</span><span>shape vs layout</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
 y = x.transpose(0, 1)
 
