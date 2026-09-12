@@ -10,7 +10,7 @@
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
   <header class="site-header lesson-header"><a class="brand" href="../../index.html"><span class="brand-mark">AI</span><span class="brand-copy"><strong>Infra from Zero</strong><small>Lesson 08.1</small></span></a><nav class="site-nav" id="siteNav"><a href="../../index.html#roadmap">课程地图</a><a href="../../labs/index.html">Labs</a><a href="../../source-map/index.html">Source Map</a><a href="../../glossary/index.html">Glossary</a><a href="https://github.com/LeonaKaka/aiinfra">GitHub</a></nav></header>
   <div class="lesson-shell">
-    <aside class="course-sidebar"><div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a><div class="module-block"><div class="module-name"><b>07</b> vLLM</div><a class="lesson-link" href="../07-vllm/architecture.html">07.1–07.5 vLLM</a></div><div class="module-block"><div class="module-name"><b>08</b> KV Connector</div><a class="lesson-link current" href="./why-move-kv.html">08.1 为什么要搬 KV</a><a class="lesson-link" href="./connector-architecture.html">08.2 Connector Architecture</a><a class="lesson-link" href="./transfer-lifecycle.html">08.3 传输lifecycle</a><a class="lesson-link" href="./nixl-rdma.html">08.4 NIXL / RDMA</a><a class="lesson-link" href="./production-pd.html">08.5 Production P/D</a></div></aside>
+    <aside class="course-sidebar"><div class="side-label">COURSE MAP</div><a class="side-home" href="../../index.html">← AI Infra from Zero</a><div class="module-block"><div class="module-name"><b>07</b> vLLM</div><a class="lesson-link" href="../07-vllm/architecture.html">07.1–07.5 vLLM</a></div><div class="module-block"><div class="module-name"><b>08</b> KV Connector</div><a class="lesson-link current" href="./why-move-kv.html">08.1 为什么要搬 KV</a><a class="lesson-link" href="./connector-architecture.html">08.2 Connector Architecture</a><a class="lesson-link" href="./transfer-lifecycle.html">08.3 传输生命周期</a><a class="lesson-link" href="./nixl-rdma.html">08.4 NIXL / RDMA</a><a class="lesson-link" href="./production-pd.html">08.5 Production P/D</a></div></aside>
     <main class="article">
       <div class="mobile-course-bar"><span>08 · KV Connector</span><a href="../../index.html#roadmap">课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><span>KV Connector</span><span>/</span><span>Why Move KV</span></div>
@@ -91,7 +91,7 @@
         </table></div>
       </section>
 
-      <div class="next-lesson muted-next"><div><small>NEXT · 08.2</small><br/><strong>Connector Architecture：调度器 Connector 和工作进程 Connector 到底怎么分工？</strong></div><span>→</span></div>
+      <a class="next-lesson" href="./connector-architecture.html"><div><small>NEXT · 08.2</small><br/><strong>Connector Architecture：调度器 Connector 和工作进程 Connector 到底怎么分工？</strong></div><span>→</span></a>
     </main>
     <aside class="toc"><strong>ON THIS PAGE</strong><a href="#dependency">Decode 依赖</a><a href="#why-disagg">为什么拆分</a><a href="#not-throughput">吞吐误区</a><a href="#three-problems">三条链</a><a href="#bytes">传多少</a><a href="#roles">角色</a><a href="#source">源码</a><a href="#checkpoint">Checkpoint</a></aside>
   </div><script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((b)=>b.addEventListener('click',()=>{const i=b.closest('.quiz-item');i.classList.toggle('open');b.textContent=i.classList.contains('open')?'收起答案':'看答案';}));</script>
