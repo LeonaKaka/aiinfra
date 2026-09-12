@@ -115,7 +115,7 @@
           <h3>vLLM · KV Connector</h3>
           <p>从自回归生成和 KV Cache，走到跨 GPU / 跨节点的 Prefill–Decode 分离。</p>
           <div class="chip-row">
-            <span>KV Cache</span><span>调度器</span><span>PagedAttention</span><span>NIXL</span>
+            <span>KV Cache</span><span>调度器</span><span>Paged KV</span><span>NIXL</span>
           </div>
           <div class="mini-diagram kv-diagram" aria-hidden="true">
             <div class="stage"><small>GPU A</small><b>Prefill</b></div>
@@ -193,7 +193,7 @@
               <div class="road-title"><h3>Megatron Core</h3><span>训练主线</span></div>
               <p>不按仓库目录硬啃，而是按“问题 → 并行策略 → 通信 → 源码”逐层进入。</p>
               <div class="road-tags"><span>数据并行 DP</span><span>张量并行 TP</span><span>流水线并行 PP</span><span>分布式优化器</span><span>上下文 / 专家并行</span><span>通信重叠</span></div>
-              <div class="road-outcome"><small>阶段项目</small> 从 TP/DP/SP/PP/CP/EP 单机制实验一路做到 A12 Mini Training System，把一次训练步骤串起来。</div>
+              <div class="road-outcome"><small>阶段项目</small> 对应实验覆盖 TP/DP/SP/PP/CP/EP 与通信重叠，最后用 A12 Mini Training System 把一次训练步骤串起来。</div>
               <a class="road-enter" href="./learn/05-megatron/why-model-parallel.html">进入模块 <span>→</span></a>
             </div>
           </article>
