@@ -80,9 +80,9 @@ PASS</pre></div>
       <div class="truth-note"><b>远端不能拿你的 <code>data_ptr()</code> 当普通地址直接读。</b><p>脚本只交换 offset/shape/stride，并用普通 torch.distributed 搬 tensor。真实 NIXL 需要 transport-aware 内存注册、agent 元数据与 remote descriptors；这里没有 rkey、UCX、RDMA 或 GPUDirect。</p></div>
     </section>
 
-    <section class="lab-section" id="real"><div class="lab-kicker">04 · 映射到当前 vLLM NIXL</div><h2>当前 <code>register_kv_caches()</code> 正好把分配 registration 与 logical region geometry 分开处理。</h2>
-      <div class="result-grid"><div class="result-card"><small>分配</small><b>unique 存储</b><span>源码按存储 address 去重，把 <code>(storage_addr, storage.nbytes(), device_id)</code> 交给 NIXL 描述符/registration 路径。</span></div><div class="result-card"><small>REGION</small><b>base · len · stride</b><span>每个逻辑 region 单独记录 base address、block length 与 block stride，供后续按 block 构造传输 descriptors。</span></div><div class="result-card"><small>HANDSHAKE</small><b>NixlAgentMetadata</b><span>注册完成后，把 KV base addresses、num_blocks、block_lens、block_strides、布局、block_size 等编码进握手元数据。</span></div></div>
-      <p>当前源码甚至明确写出：<strong>内存注册 follows allocations, while 传输 regions follow logical layers</strong>。这句话就是 B6 的全部核心。</p>
+    <section class="lab-section" id="real"><div class="lab-kicker">04 · 映射到当前 vLLM NIXL</div><h2>读当前 <code>register_kv_caches()</code> 时，先把 registration range 与 transfer region geometry 分成两层。</h2>
+      <div class="result-grid"><div class="result-card"><small>REGISTRATION</small><b>底层可注册范围</b><span>当前实现先构造 registration ranges；device KV 通常按底层 storage base / nbytes 注册，host-resident 路径则可能按 tensor 自身 base / nbytes。去重还会区分 memory type。</span></div><div class="result-card"><small>REGION</small><b>base · len · stride</b><span>传输侧再记录每个逻辑 region 的 base address、block length 与 block stride。普通 Attention 常接近“每层一个 region”，Mamba / CSA-linear 等布局会出现子 region 或共享 storage 下的多个逻辑 region。</span></div><div class="result-card"><small>HANDSHAKE</small><b>NixlAgentMetadata</b><span>注册完成后，把 KV base addresses、num_blocks、block_lens、block_strides、布局、block_size，以及当前实现需要的 region/group 信息编码进握手元数据。</span></div></div>
+      <p>更稳妥的阅读原则是：<strong>registration 跟“哪些底层内存范围可被 transport 访问”走，transfer region 跟“后续按什么几何和逻辑单元搬数据”走。</strong>这两层经常相关，但不应机械等同；当前 hybrid / Mamba / CSA-linear 路径正好说明了为什么。</p>
     </section>
 
     <section class="lab-section" id="source"><div class="lab-kicker">05 · 源码阅读顺序</div><h2>现在读 NIXL 工作进程，只追这条路径。</h2>
@@ -93,7 +93,7 @@ PASS</pre></div>
 
     <nav class="lab-footer-nav"><a href="./mini-kv-handshake-lifetime.html">← Lab B5 · Handshake + 生命周期</a><a href="./mini-kv-lease-expiry.html">Lab B7 · 租约 / Expiry →</a></nav>
   </main>
-  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#allocation">共享存储不意味着所有 layer 都是同一个传输 region。</a><a href="#geometry">block_len 回答“传多少”，block_stride 回答“下一个 block 从哪开始”。</a><a href="#run">先交换几何元数据，再搬指定 block；消费端用自己的分配验证，而不是解引用生产端的 Python 指针。</a><a href="#real">当前 register_kv_caches() 正好把分配 registration 与 logical region geometry 分开处理。</a><a href="#source">现在读 NIXL 工作进程，只追这条路径。</a><a href="#next">Inference 软件路径还剩最后一个控制面问题：租约 / expiry。</a></aside>
+  <aside class="toc lab-toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#allocation">共享存储不意味着所有 layer 都是同一个传输 region。</a><a href="#geometry">block_len 回答“传多少”，block_stride 回答“下一个 block 从哪开始”。</a><a href="#run">先交换几何元数据，再搬指定 block；消费端用自己的分配验证，而不是解引用生产端的 Python 指针。</a><a href="#real">读当前 register_kv_caches() 时，先把 registration range 与 transfer region geometry 分成两层。</a><a href="#source">现在读 NIXL 工作进程，只追这条路径。</a><a href="#next">Inference 软件路径还剩最后一个控制面问题：租约 / expiry。</a></aside>
 </div>
   <script src="../app.js"></script>
 </body>
