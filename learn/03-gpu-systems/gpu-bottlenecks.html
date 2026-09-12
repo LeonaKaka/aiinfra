@@ -39,7 +39,7 @@
       <section class="article-section" id="triad">
         <div class="section-no">01 · 三种不同上限</div>
         <h2>先把“慢”拆成三种完全不同的慢。</h2>
-        <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元）能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但 HBM / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective（集合通信：一组 GPU 或进程共同参与的数据通信操作）、P2P 或网络传输。</span></div></div>
+        <div class="bottleneck-triad"><div><small>计算受限</small><b>算不过来</b><span>数据已经喂得上，主要上限是 Tensor Core / ALU 能做多少计算。</span></div><div><small>带宽受限</small><b>数据喂不够快</b><span>计算单元有空，但 HBM / cache 的数据搬运速度先到上限。</span></div><div><small>通信受限</small><b>其它设备的数据没到</b><span>多 GPU / 多节点时，本地计算要等 collective（集合通信：一组 GPU 或进程共同参与的数据通信操作）、P2P 或网络传输。</span></div></div>
         <p>这三种情况看起来都可能表现成“程序很慢”，但解决办法完全不同：<code>compute-bound</code> 更关注更快的 GEMM、精度策略和 kernel；<code>memory-bound</code> 更关注少搬数据、kernel fusion 和复用；<code>communication-bound</code> 更关注通信量、topology（拓扑：描述 GPU、CPU、网络接口卡与网络之间的连接关系）、collective 算法和 overlap。</p>
         <div class="concept-note"><p><strong>第一原则：</strong>先定位瓶颈，再优化。不要拿“更高 FLOPs”去治一个本质上在等 HBM 或网络的问题。</p></div>
       </section>
@@ -59,7 +59,7 @@
         <div class="roofline-mini"><div class="roof-slope"></div><div class="roof-flat"></div><div class="roof-label memory">内存带宽 roof</div><div class="roof-label compute">计算 roof</div><i class="roof-point low"></i><i class="roof-point high"></i></div>
         <div class="roof-caption"><div><b>左边 · memory-bound</b><span>每 byte 做的计算太少，性能上限随带宽和 arithmetic intensity 增长。</span></div><div><b>右边 · compute-bound</b><span>数据复用足够高后，计算单元吞吐成为更硬的上限，曲线进入平台。</span></div></div>
         <p>这张图不是为了让你现在学性能建模数学，而是建立一个非常实用的判断：<strong>同一块 GPU 同时有“算力屋顶”和“带宽屋顶”。</strong>你的 kernel 先撞到谁，谁就是更值得优先处理的限制。</p>
-        <div class="source-note">官方延伸阅读：NVIDIA Nsight Compute 的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
+        <div class="source-note">官方延伸阅读：NVIDIA Nsight Compute（kernel 性能分析器：下钻单个 GPU kernel 的计算、内存和占用率指标）的 <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline-charts">Roofline Charts</a>。正式分析会比这里的教学版更细，会加入不同内存层级的上限。</div>
       </section>
 
       <section class="article-section" id="compute">
@@ -74,7 +74,7 @@
         <div class="section-no">05 · memory-bound</div>
         <h2>带宽受限时，减少“搬”往往比减少“算”更重要。</h2>
         <p>如果一个操作只对每个元素做很少计算，却必须把大量数据从 HBM 读进来再写回去，那么 Tensor Cores 再强也帮不了太多。典型优化思路是：</p>
-        <div class="stall-grid"><div><b>kernel fusion</b><span>多个 op 合并，减少中间 tensor 写回 HBM 再读出的次数。</span></div><div><b>提高局部性</b><span>让数据更多在寄存器、shared memory（共享内存：同一线程块内线程可快速共享的片上存储）和 cache 层级复用。</span></div><div><b>减少 bytes</b><span>更低精度、压缩、只搬真正需要的数据。</span></div><div><b>批处理</b><span>让一次 weight 读取服务更多 token / request，提高复用。</span></div><div><b>改善 layout</b><span>合适的 data layout 能帮助连续合并访存并改善底层 kernel 效率。</span></div><div><b>减少 copy</b><span>不必要的 tensor 实体化或 device copy 会直接消耗带宽。</span></div></div>
+        <div class="stall-grid"><div><b>kernel fusion</b><span>多个算子合并，减少中间 tensor 写回 HBM 再读出的次数。</span></div><div><b>提高局部性</b><span>让数据更多在寄存器、shared memory（共享内存：同一线程块内线程可快速共享的片上存储）和 cache 层级复用。</span></div><div><b>减少 bytes</b><span>更低精度、压缩、只搬真正需要的数据。</span></div><div><b>批处理</b><span>让一次 weight 读取服务更多 token / request，提高复用。</span></div><div><b>改善 layout</b><span>合适的 data layout 能帮助连续合并访存并改善底层 kernel 效率。</span></div><div><b>减少 copy</b><span>不必要的 tensor 实体化或 device copy 会直接消耗带宽。</span></div></div>
         <p>后面读 FlashAttention 时，你会看到一个经典例子：它不是简单把 attention 数学公式改掉，而是重新组织数据流，减少昂贵的 HBM 读写。</p>
       </section>
 
@@ -116,7 +116,7 @@
         <div class="section-no">10 · 怎样分析真实系统</div>
         <h2>不要靠猜，用不同 profiler 回答不同层级的问题。</h2>
         <p>timeline 里你会频繁看到 NCCL 发起的 collective / P2P；它是通信软件层，不是 NVLink、InfiniBand 或以太网链路本身。</p>
-        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems（系统性能分析器：用 timeline 查看 CPU、GPU、CUDA 和通信活动）</b><span>看 CPU、CUDA kernels、NCCL、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight Compute（kernel 性能分析器：下钻单个 GPU kernel 的计算、内存和占用率指标）</b><span>看某个 kernel 的计算 / 内存吞吐、occupancy（占用率：表示 GPU 执行资源上可驻留工作的利用程度）和 Roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler（PyTorch 性能分析器：把框架算子与 CPU/CUDA 活动对应起来）</b><span>把 Python/PyTorch op（算子：框架里一个可独立记录和执行的计算操作）和 CUDA 活动对起来，定位模型级热点。</span></div></div>
+        <div class="profile-grid"><div class="profile-card"><small>TIMELINE</small><b>Nsight Systems（系统性能分析器：用 timeline 查看 CPU、GPU、CUDA 和通信活动）</b><span>看 CPU、CUDA kernels、NCCL、streams、空档和 overlap：系统“什么时候在等”。</span></div><div class="profile-card"><small>KERNEL</small><b>Nsight Compute</b><span>看某个 kernel 的计算 / 内存吞吐、occupancy（占用率：表示 GPU 执行资源上可驻留工作的利用程度）和 Roofline：它“为什么慢”。</span></div><div class="profile-card"><small>FRAMEWORK</small><b>PyTorch Profiler（PyTorch 性能分析器：把框架算子与 CPU/CUDA 活动对应起来）</b><span>把 Python/PyTorch op（算子：框架里一个可独立记录和执行的计算操作）和 CUDA 活动对起来，定位模型级热点。</span></div></div>
         <p>真正的性能工作通常是从宏观 timeline 找热点，再下钻到关键 kernel，而不是打开源码随机找“看起来可以优化”的循环。</p>
       </section>
 
