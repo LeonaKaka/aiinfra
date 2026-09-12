@@ -29,9 +29,9 @@
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>Process &amp; Rank</span></div>
       <div class="lesson-kicker"><span>LESSON 04.1 · DISTRIBUTED</span><span>约 50 min</span></div>
       <h1>多张 GPU 先怎么“认识彼此”：进程、编号与通信小组。</h1>
-      <p class="dek">上一模块已经知道：<code>cuda:0</code> 和 <code>cuda:1</code> 是不同设备，数据不会自动共享。现在第一次真正进入分布式。先认识三个对象：process（进程：独立运行程序并拥有自己状态的执行实例）负责执行；rank（进程编号：分布式作业中标识一个 process 的编号）负责区分身份；process group（进程组：定义一组共同参与通信的 ranks）负责限定“谁和谁一起通信”。先把这套身份系统看懂，再进入 all-reduce 等集合通信。</p>
+      <p class="dek">上一模块已经知道：<code>cuda:0</code> 和 <code>cuda:1</code> 是不同设备，数据不会自动共享。现在第一次真正进入分布式。先认识三个对象：process（进程：独立运行程序并拥有自己状态的执行实例）负责执行；rank（进程编号：分布式作业中标识一个 process 的编号）负责区分身份；process group（进程组：定义一组共同参与通信的 ranks）负责限定“谁和谁一起通信”。先把这套身份系统看懂，下一课再系统进入集合通信。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 process、global rank（全局进程编号：在整个分布式作业中唯一标识一个 process）、<code>world_size</code>（总进程数：当前分布式作业中参与协作的 process 数量）和 local rank（本地进程编号：标识 process 在当前机器上的本地序号）。</li><li>理解 one-process-per-GPU（每 GPU 一进程：每个 process 主要绑定一张 GPU 的常见部署方式）是部署模式，而不是分布式数学定义。</li><li>看懂 <code>torchrun</code>（PyTorch 分布式启动器：启动多个训练进程并为它们设置分布式身份信息）大致做了什么。</li><li>理解 <code>init_process_group()</code> 为什么需要 peer discovery（对端发现：让分布式 processes 找到需要通信的其它参与者）和初始化。</li><li>解释 process group 为什么是 Megatron 创建不同并行通信域的基础。</li><li>知道 collective 调用如果不同 rank 对 process group 或调用顺序理解不一致，为什么容易卡住。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分“整个作业里的唯一身份”“一共有多少参与者”“当前机器上的本地编号”这三类信息。</li><li>理解“每张 GPU 一个进程”是常见部署方式，不是分布式数学定义。</li><li>知道分布式启动器负责创建多个进程并把身份信息交给它们。</li><li>理解进程组初始化前，各进程为什么必须先找到彼此并建立一致的成员关系。</li><li>解释 process group 为什么是 Megatron 创建不同并行通信域的基础。</li><li>知道 collective 调用如果不同 rank 对 process group 或调用顺序理解不一致，为什么容易卡住。</li></ul></div>
 
       <section class="article-section" id="process">
         <div class="section-no">01 · process 就是程序实例</div>
@@ -43,8 +43,9 @@
       </section>
 
       <section class="article-section" id="rank">
-        <div class="section-no">02 · rank 是全局身份</div>
-        <h2>global rank 是这个 distributed world（分布式参与者集合：一次分布式作业中共同协作的全部 processes）里 process 的唯一编号。</h2>
+        <div class="section-no">02 · 全局身份、作业规模与本机编号</div>
+        <h2>同一个 process 同时有“全局是谁”和“本机排第几”两种视角。</h2>
+        <p>这里正式引入三个名字：global rank（全局进程编号：在整个分布式作业中唯一标识一个 process）、<code>world_size</code>（总进程数：当前分布式作业中参与协作的 process 数量）和 local rank（本地进程编号：标识 process 在当前机器上的本地序号）。它们共同描述一个 distributed world（分布式参与者集合：一次分布式作业中共同协作的全部 processes）里的身份。</p>
         <div class="rank-legend"><div><b>global rank</b><span>某个 process 在整个 distributed world 里的唯一编号，通常从 0 到 world_size-1。</span></div><div><b><code>world_size</code></b><span>这个 distributed world 里一共有多少个 processes。</span></div><div><b>local rank</b><span>当前 process 在本机上的编号，常用于把 process 映射到本机 GPU。</span></div></div>
         <p>单机 4 GPU 时全局 rank 和本地 rank 恰好都可能是 0、1、2、3，所以新手很容易把两者当成同一件事。多机以后这个错觉立刻消失。创建 subgroup（子进程组：从更大的 process group 中选出部分 ranks 形成的通信域）以后，还可能有单独的组内 rank；它不应和 global rank 混为一谈。后面描述“TP group 包含哪些进程”时，课程会优先用 global ranks 表示成员集合；读具体接口时则要确认返回的是 global rank 还是组内 rank。</p>
       </section>
@@ -60,8 +61,9 @@
       </section>
 
       <section class="article-section" id="torchrun">
-        <div class="section-no">04 · torchrun 帮你做了什么</div>
-        <h2><code>torchrun</code> 会把同一个脚本启动成多个进程，并给它们分配分布式身份环境。</h2>
+        <div class="section-no">04 · 分布式启动器帮你做了什么</div>
+        <h2>同一个脚本怎样变成多个带身份的进程？</h2>
+        <p><code>torchrun</code>（PyTorch 分布式启动器：启动多个训练进程并为它们设置分布式身份信息）会把同一个脚本启动成多个进程，并给它们分配分布式身份环境。</p>
         <div class="code-block"><div class="code-head"><span>shell</span><span>single node · 4 GPUs</span></div><pre><code>torchrun --standalone --nproc-per-node=4 hello_dist.py</code></pre></div>
         <p>粗略看，它会启动 4 份 <code>hello_dist.py</code>。每个进程能从环境变量看到自己的身份，例如：</p>
         <div class="code-block"><div class="code-head"><span>environment</span><span>one process might see</span></div><pre><code>RANK=2
@@ -98,9 +100,10 @@ dist.destroy_process_group()</code></pre></div>
 
       <section class="article-section" id="device">
         <div class="section-no">06 · process 怎样绑定 device</div>
-        <h2>为什么经常 one-process-per-GPU？因为身份和 device mapping 会变得非常清楚。</h2>
+        <h2>为什么经常每张 GPU 一个 process？因为身份和 device mapping 会变得非常清楚。</h2>
+        <p>one-process-per-GPU（每 GPU 一进程：每个 process 主要绑定一张 GPU 的常见部署方式）不是 CUDA 的硬限制，而是一种让身份、设备和通信关系更清楚的常见部署模式。</p>
         <div class="process-device"><div><small>PROCESS</small><b>全局 rank 5 · 本地 rank 1</b></div><span>bind →</span><div><small>DEVICE ON THIS NODE</small><b>cuda:1</b></div></div>
-        <p>one-process-per-GPU 不是 CUDA 的硬限制。一个 process 可以看到多个 GPU，一个 GPU 也可能被多个 processes 使用。但大规模训练里 one-process-per-GPU 是非常常见、容易组合 NCCL 与 DDP（分布式数据并行：PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步 gradient）以及模型并行的部署方式。</p>
+        <p>一个 process 可以看到多个 GPU，一个 GPU 也可能被多个 processes 使用。但大规模训练里 one-process-per-GPU 是非常常见、容易组合 NCCL 与 DDP（分布式数据并行：PyTorch 常用的数据并行训练方式，每个 rank 通常持有模型副本并同步 gradient）以及模型并行的部署方式。</p>
       </section>
 
       <section class="article-section" id="group">
@@ -116,7 +119,7 @@ dist.destroy_process_group()</code></pre></div>
         <div class="section-no">08 · Rendezvous：进程怎样找到彼此</div>
         <h2>多进程初始化，本质上还需要一个“大家去哪里碰头”的机制。</h2>
         <div class="rendezvous-flow"><div class="rendezvous-step"><small>1</small><b>启动 processes</b><span>launcher 创建多个进程。</span></div><div class="rendezvous-step"><small>2</small><b>分配身份</b><span>rank / world size / local rank。</span></div><div class="rendezvous-step"><small>3</small><b>发现对端</b><span>通过 rendezvous 配置找到彼此。</span></div><div class="rendezvous-step"><small>4</small><b>建立 process group</b><span>初始化 backend 与 communicator（通信器：通信库内部管理参与者与连接状态的对象）状态。</span></div></div>
-        <p>现在不需要背具体 rendezvous 实现细节。先记住：分布式 processes 不是天然知道彼此；初始化系统必须解决 peer discovery 与一致的 membership（成员关系：定义当前哪些 processes 属于同一个分布式通信集合）。</p>
+        <p>现在不需要背具体 rendezvous 实现细节。先记住：分布式 processes 不是天然知道彼此；初始化系统必须解决“怎样发现对端”以及一致的 membership（成员关系：定义当前哪些 processes 属于同一个分布式通信集合）。</p>
       </section>
 
       <section class="article-section" id="hang">
