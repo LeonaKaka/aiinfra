@@ -43,7 +43,7 @@
     <section class="track" id="megatron">
       <div class="track-head">
         <div><small>路线 A · 训练基础设施</small><h2>Megatron Core：从矩阵切分读到并行系统。</h2></div>
-        <p>先用 5 分钟扫一遍 <strong>入口 → 训练循环 → 调度 → 优化器更新</strong> 的执行骨架，知道“谁调用谁”；再下钻 TP 的切分与通信语义 → rank/group 拓扑 → PP/CP/EP → optimizer sharding → 通信桶/overlap。这样读到任何局部 class 时，都知道它在一次训练步骤的什么位置。</p>
+        <p>先用 5 分钟扫一遍 <strong>入口 → 训练循环 → 调度 → 优化器更新</strong> 的执行骨架，知道“谁调用谁”；再下钻 TP 的切分与通信语义 → rank/group 拓扑 → PP/CP/EP → DDP 梯度同步 → optimizer sharding → 通信桶/overlap。这样读到任何局部 class 时，都知道它在一次训练步骤的什么位置。</p>
       </div>
       <div class="source-list train-source">
         <div class="source-row">
