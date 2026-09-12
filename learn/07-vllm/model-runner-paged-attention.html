@@ -88,7 +88,7 @@
 
       <section class="article-section" id="backend">
         <div class="section-no">06 · PagedAttention 不是一个永远不变的内核</div>
-        <h2>现代 vLLM 有 Attention backend（Attention 后端：为特定硬件、模型和 KV 布局选择并执行具体 Attention kernel 的实现层）抽象，实际 kernel 会随硬件、模型和配置变化。</h2>
+        <h2>现代 vLLM 有 Attention backend抽象，实际 kernel 会随硬件、模型和配置变化。</h2>
         <p>早期介绍 vLLM 时，经常把“PagedAttention 内核”当成整个系统的代表。这个历史直觉很有价值，但读当前源码时必须升级：V1 有 <code>attention/backend.py</code>、<code>attention/backends/</code> 和选择逻辑；不同平台可以使用 FlashAttention、FlashInfer 或其它后端路径。</p>
         <div class="warning-note"><b>不要学成“vLLM = 一个 PagedAttention CUDA 内核”。</b><p>更稳定的核心是：KV 是块/page 管理的；执行层提供block table / slot mapping / Attention 元数据；具体 Attention backend 以相应方式消费这些信息。</p></div>
       </section>
