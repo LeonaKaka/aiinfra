@@ -52,7 +52,7 @@
 
       <section class="article-section" id="bytes">
         <div class="section-no">02 · 先记住一个最基本公式</div>
-        <h2>一个 tensor 占多少 memory，第一步就是：元素数 × 每个元素多少 bytes。</h2>
+        <h2>一个 tensor 占多少内存，第一步就是：元素数 × 每个元素多少 bytes。</h2>
         <div class="bytes-card"><small>BASIC MEMORY MATH</small><b>内存 = numel × bytes_per_element</b><p>FP32 通常 4 bytes；FP16 / BF16 通常 2 bytes；FP8 / INT8（8 位整数：常见低精度整数表示，量化推理中用于降低存储与计算成本）常可按 1 byte 粗算。实际模型还可能有量化尺度、元数据、填充和内存对齐等额外开销。</p></div>
         <p>比如一个 <code>[8, 4096, 4096]</code> 的 BF16 张量：</p>
         <div class="code-block"><div class="code-head"><span>mental math</span><span>one activation 张量</span></div><pre><code>numel = 8 × 4096 × 4096
