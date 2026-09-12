@@ -44,9 +44,9 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Sequence Parallel</span></div>
-    <div class="lab-kicker">LAB A8 · 序列并行（SP）</div>
+    <div class="lab-kicker">LAB A8 · SP</div>
     <h1>SP 不是“把句子随便切两半”。<br />关键是：TP 的局部输出可以直接落成 sequence 分片。</h1>
-    <p class="dek">05.3 里讲过 Sequence Parallel (SP) 通常和 Tensor Parallel (TP) 配合。这个最小实验只验证最核心的一次布局 transition：两个 TP ranks 各自产生完整 sequence 的局部输出，不先 all-reduce 成两份完整 activation，而是用 reduce-scatter 一边求和、一边让每个 rank 只留下自己的 sequence chunk。</p>
+    <p class="dek">05.3 里讲过 SP 通常和 TP 配合。这个最小实验只验证最核心的一次布局 transition：两个 TP ranks 各自产生完整 sequence 的局部输出，不先 all-reduce 成两份完整 activation，而是用 reduce-scatter 一边求和、一边让每个 rank 只留下自己的 sequence chunk。</p>
 
     <section class="lab-section" id="flow"><div class="lab-kicker">01 · 从 TP 过渡到 SP</div><h2>同样是把 TP partials 合起来，结果可以 replicated，也可以 sequence-sharded。</h2>
       <div class="command"><div class="command-head"><span>MENTAL MODEL</span><span>TP=2</span></div><pre>Rank 0: y_partial[0] ─┐
