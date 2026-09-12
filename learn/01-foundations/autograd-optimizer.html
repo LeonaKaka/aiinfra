@@ -75,12 +75,12 @@ optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>ZeRO</code></td><td>Zero Redundancy Optimizer</td><td>零冗余优化器</td><td>通过数据并行 ranks 分片优化器状态、梯度或参数来减少训练状态冗余的一类方法。</td></tr>
         <tr><td><code>SGD</code></td><td>Stochastic Gradient Descent</td><td>随机梯度下降</td><td>按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。</td></tr>
         <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>ZeRO</code></td><td>Zero Redundancy Optimizer</td><td>零冗余优化器</td><td>通过数据并行 ranks 分片优化器状态、梯度或参数来减少训练状态冗余的一类方法。</td></tr>
           </tbody>
         </table></div>
       </section>
