@@ -30,10 +30,10 @@
       <div class="mobile-course-bar"><span>02 · Transformer</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Transformer</a><span>/</span><span>Transformer Block</span></div>
       <div class="lesson-kicker"><span>LESSON 02.3 · TRANSFORMER</span><span>约55 min</span></div>
-      <h1>Transformer Block：Attention、MLP、Residual 和 Norm 怎么拼起来？</h1>
-      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做归一化、residual connection（残差连接：把子层输入直接加回输出以稳定深层网络）和 MLP。把这些模块拼起来，就得到 Transformer block（Transformer 块：由 Attention、MLP、Norm 和 residual 等子模块组成的一层计算单元），也终于可以讨论它为什么要被切到多张 GPU。</p>
+      <h1>Transformer Block（Transformer 块：由 Attention、MLP、Norm 和 residual 等子模块组成的一层计算单元）：Attention、MLP、Residual 和 Norm 怎么拼起来？</h1>
+      <p class="dek">到现在我们已经把 Attention 拆开看过了。但真正的大模型不是只有 Attention：每一层还要做归一化、residual connection（残差连接：把子层输入直接加回输出以稳定深层网络）和 MLP。把这些模块拼起来，就得到 Transformer block，也终于可以讨论它为什么要被切到多张 GPU。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的 pre-norm（前置归一化：先做 Norm 再进入 Attention 或 MLP 分支） Transformer block 的完整数据流。</li><li>理解 residual connection 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的 position 信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出 TP、Pipeline Parallel 和 KV Cache 分别会落在 Transformer block 的什么位置。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>从输入到输出讲清一个常见的 pre-norm（前置归一化：先做 Norm 再进入 Attention 或 MLP 分支） Transformer block 的完整数据流。</li><li>理解 residual connection 为什么要求分支输出保持 <code>[B,S,H]</code>。</li><li>知道 MLP 主要也是大型线性层，并能估算标准两层MLP的参数规模。</li><li>区分“一个块的前向计算”和外层训练循环 / 优化器。</li><li>解释 token 的 position 信息如何进入 Attention，并理解可复用的键值状态还依赖一致的位置与模型语义。</li><li>指出 TP、流水线并行和 KV Cache 分别会落在 Transformer block 的什么位置。</li></ul></div>
 
       <section class="article-section" id="big-picture">
         <div class="section-no">01 · 先看完整 Transformer Block</div>
@@ -75,7 +75,7 @@ y = h + MLP(Norm(h))</code></pre></div>
         <p>最经典的两层MLP可以先画成：</p>
         <div class="mlp-diagram"><div><small>INPUT</small><code>H</code></div><span>线性层 ↑</span><div class="wide"><small>INTERMEDIATE</small><code>4H</code></div><span>activation</span><div class="wide"><small>NONLINEAR</small><code>GELU / …</code></div><span>线性层 ↓</span><div><small>OUTPUT</small><code>H</code></div></div>
         <p>忽略 bias，如果 intermediate size（中间维度：MLP 扩展后的隐藏表示宽度）恰好是 <code>4H</code>：</p>
-        <div class="cost-panel"><div><small>UP PROJECTION</small><b>H × 4H = 4H² parameters</b></div><div><small>DOWN PROJECTION</small><b>4H × H = 4H² parameters</b></div><p>合计约 <strong>8H²</strong> 个权重。相比之下，普通MHA的Q/K/V/O四个H×H投影约是4H²。这个粗算让你看到：MLP往往是块里非常大的参数和通用矩阵乘法（GEMM）来源。</p></div>
+        <div class="cost-panel"><div><small>UP PROJECTION</small><b>H × 4H = 4H² parameters</b></div><div><small>DOWN PROJECTION</small><b>4H × H = 4H² parameters</b></div><p>合计约 <strong>8H²</strong> 个权重。相比之下，普通MHA的Q/K/V/O四个H×H投影约是4H²。这个粗算让你看到：MLP 往往是块里非常大的参数和 GEMM 来源。</p></div>
         <div class="concept-note"><p><strong>但别把 4H 当铁律。</strong>现代 LLM 常使用 SwiGLU（门控激活结构：用门控分支和非线性共同调制 MLP 输出）等 gated MLP（门控 MLP：用门控分支调制前馈输出的 MLP 变体），intermediate size 和 projection 数量会不同。以后读具体模型源码，要以配置为准。</p></div>
       </section>
 
@@ -135,8 +135,8 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <section class="article-section" id="stack">
         <div class="section-no">07 · 从一个 Block 堆成模型</div>
         <h2>大模型，就是把这种块重复很多层，再加上入口和出口。</h2>
-        <p>入口先用 embedding（嵌入层：把 token ID 映射为模型可处理的连续向量表示）把离散 token 变成 <code>[B,S,H]</code> hidden states；经过多层 Transformer block 后，LM head 再把最终 hidden state 映射成词表 logits。</p>
-        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM（语言模型：对 token 序列概率或下一 token 分布进行建模的模型） HEAD</small><b>logits（未归一化分数：模型在 softmax 前对候选 token 给出的原始分数）</b></div></div>
+        <p>入口先用 embedding（嵌入层：把 token ID 映射为模型可处理的连续向量表示）把离散 token 变成 <code>[B,S,H]</code> hidden states；经过多层 Transformer block 后，LM（语言模型：对 token 序列概率或下一 token 分布进行建模的模型）head 再把最终 hidden state 映射成词表 logits（未归一化分数：模型在 softmax 前对候选 token 给出的原始分数）。</p>
+        <div class="model-stack"><div><small>INPUT</small><b>token ids</b></div><span>↓</span><div><small>EMBEDDING</small><b>[B,S,H]</b></div><span>↓</span><div class="layers"><b>Transformer Block × L</b><span>Layer 1</span><span>Layer 2</span><span>⋮</span><span>Layer L</span></div><span>↓</span><div><small>FINAL NORM + LM HEAD</small><b>logits</b></div></div>
         <p>所以以后看到“80-layer model”，不是 80 个完全不同的概念，而是同一种 Transformer block 使用不同 parameter 重复 80 次。也因此，单层里一点点显存、通信或 kernel 调度浪费，乘上几十层后都会很明显。</p>
       </section>
 
@@ -150,8 +150,8 @@ print(y.shape)  <span class="comment"># [2,16,64]</span></code></pre></div>
       <section class="article-section" id="infra">
         <div class="section-no">09 · 从系统角度拆一个 Block</div>
         <h2>现在终于可以把AI Infra技术贴到块上。</h2>
-        <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>TP</b><span>切 QKV / output projection weights 与 heads</span></div><div><small>MLP LINEARS</small><b>TP</b><span>切 up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>Context Parallel</b><span>长 sequence 跨 GPU 分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel</b><span>不同 GPU 阶段保存不同 layers</span></div><div><small>TRAINING STATES</small><b>Distributed Optimizer</b><span>分片 optimizer / parameter 相关 state</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史 K/V 跨 token 复用</span></div></div>
-        <p>这里先给两个后续模块的名字：Context Parallel（上下文并行：沿 sequence 或 context 维把长序列分给不同 GPU）；Pipeline Parallel（流水线并行：把不同 model layers 分给不同 GPU 阶段执行）。</p>
+        <div class="infra-map"><div><small>ATTENTION LINEARS</small><b>TP</b><span>切 QKV / output projection weights 与 heads</span></div><div><small>MLP LINEARS</small><b>TP</b><span>切 up/down/gated projections</span></div><div><small>ATTENTION SEQUENCE</small><b>Context Parallel（上下文并行：沿 sequence 或 context 维把长序列分给不同 GPU）</b><span>长 sequence 跨 GPU 分片</span></div><div><small>BLOCKS 1…L</small><b>Pipeline Parallel（流水线并行：把不同 model layers 分给不同 GPU 阶段执行）</b><span>不同 GPU 阶段保存不同 layers</span></div><div><small>TRAINING STATES</small><b>Distributed Optimizer</b><span>分片 optimizer / parameter 相关 state</span></div><div><small>DECODE ATTENTION</small><b>KV Cache</b><span>历史 K/V 跨 token 复用</span></div></div>
+        <p>这里先记住两个后续模块的名字：Context Parallel；Pipeline Parallel。具体数据流会在 Megatron 模块继续展开。</p>
         <p>这张图就是后面几大模块的导航。以后每学一个并行策略，我们都会回来问：它到底切的是块里的哪一块？</p>
       </section>
 
