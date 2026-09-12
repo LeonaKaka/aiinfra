@@ -47,7 +47,7 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Mini Megatron TP</span></div>
-    <div class="lab-kicker">LAB A · 张量并行（TP）</div>
+    <div class="lab-kicker">LAB A · TP</div>
     <h1>先别读几千行 Megatron。<br />亲手把一个 MLP 切成两半。</h1>
     <p class="dek">这一步要验证的只有一个事实：如果第一层按输出维切、第二层按输入维切，那么每个 rank 可以独立完成自己的 GEMM，最后只需要把局部输出相加。Megatron 的 ColumnParallelLinear / RowParallelLinear，核心就是这件事的工业化版本。</p>
 
