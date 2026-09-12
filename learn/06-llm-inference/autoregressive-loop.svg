@@ -71,5 +71,5 @@
   <text class="mono sec" x="52" y="746" fill="#b7c1ba">进阶例外</text>
   <text class="sans small" x="190" y="746" style="fill:#eef2ed">投机方法可能在一次昂贵的目标模型执行中接受多个 token，</text>
   <text class="sans small" x="190" y="764" style="fill:#eef2ed">但被接受的 token 仍必须服从目标模型的自回归分布。</text>
-  <text class="sans tiny" x="34" y="788">下一步：把输入处理（Prefill）与重复生成（Decode）分开看。</text>
+  <text class="sans tiny" x="34" y="788">下一步：把输入处理与重复生成两个阶段分开看。</text>
 </svg>
