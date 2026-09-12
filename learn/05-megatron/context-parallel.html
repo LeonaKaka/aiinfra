@@ -60,7 +60,7 @@
         <div class="section-no">03 · local Q，跨分片 KV</div>
         <h2>每张 GPU 保留自己的 Q shard，但要通过 CP 通信获得其它 context shards 的 K/V 信息。</h2>
         <div class="attention-local"><div><small>LOCAL QUERY</small><b>Qlocal</b><code>~ [S/CP, heads, d]</code></div><span>attends to →<br/>visible 上下文 KV</span><div><small>KV CONTEXT</small><b>local + remote shards</b><code>stream / gather / redistribute</code></div></div>
-        <p>最容易理解的教学版是先 all-gather K/V，再算 Attention。它很直观，但会让每个 rank 临时拿到更大的 K/V view。另一类做法是流式交换 K/V；还有 Ulysses（Ulysses 上下文并行：用 all-to-all 在序列维与 attention-head 维之间重排数据）风格的 A2A（全交换：all-to-all 的常见缩写）重排。<strong>这些是不同通信算法，但都服务同一个 CP 数学目标。</strong></p>
+        <p>最容易理解的教学版是先 all-gather K/V，再算 Attention。它很直观，但会让每个 rank 临时拿到更大的 K/V view。另一类做法是流式交换 K/V；还有 Ulysses（Ulysses 上下文并行：用 all-to-all 在序列维与 attention-head 维之间重排数据）风格的 A2A重排。<strong>这些是不同通信算法，但都服务同一个 CP 数学目标。</strong></p>
       </section>
 
       <section class="article-section" id="ring">
