@@ -81,7 +81,7 @@ Y = torch.nn.functional.gelu(Y)</code></pre></div>
       <section class="article-section" id="hbm">
         <div class="section-no">05 · 计算之前先要把数据送到位</div>
         <h2>算力再高，如果数据没及时到计算单元，GPU 也只能等。</h2>
-        <p>weight、activation、KV Cache 等大部分数据常驻在 GPU device memory；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在 memory hierarchy（内存层级：从寄存器/缓存到设备显存等不同速度和容量的存储层级）之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
+        <p>weight、activation、KV Cache 等大部分数据常驻在 GPU device memory；具体硬件可能使用 HBM，也可能使用 GDDR。计算前后要不断把数据在内存层级（从寄存器、缓存到设备显存等不同速度和容量的存储层级）之间搬运。于是一个 kernel 的速度可能受两类完全不同的上限制约：</p>
         <div class="compare-limits"><div><small>计算</small><b>算得不够快</b><span>Tensor Core / ALU（算术逻辑单元：执行通用算术与逻辑运算的硬件单元）是瓶颈</span></div><div><small>内存</small><b>喂数据不够快</b><span>内存带宽 / data movement 是瓶颈</span></div></div>
         <p>下一节会正式学习显存账单，03.3 再正式区分计算受限、内存带宽受限和通信受限。</p>
       </section>
