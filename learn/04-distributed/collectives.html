@@ -39,7 +39,7 @@
 
       <section class="article-section" id="rule">
         <div class="section-no">01 · 用一条规则理解所有集合通信</div>
-        <h2>不要先背 API 名字。固定 process group，然后看“通信前 → 通信规则 → 通信后”。</h2>
+        <h2>不要先背接口名字。固定 process group，然后看“通信前 → 通信规则 → 通信后”。</h2>
         <div class="pattern-grid"><div><small>WHO</small><b>哪些 ranks 参加？</b><span>default process group 还是某个 TP / DP / Pipeline Parallel subgroup？</span></div><div><small>BEFORE</small><b>每个 rank 手里有什么？</b><span>完整 tensor、一个 shard，还是各自不同的数据？</span></div><div><small>AFTER</small><b>每个 rank 要拿到什么？</b><span>完整聚合结果、拼接后的完整 tensor，还是一个归约后的 shard？</span></div></div>
         <p>下面把四个最常用 collective 放进同一张画布。你会看到：名字看似相近，本质只是不同的 ownership（归属关系：说明某个资源当前由哪个参与者或组件持有）和状态变换。</p>
         <div class="distributed-core-wrap"><div class="distributed-core-meta"><span>COLLECTIVES · BEFORE → CONTRACT → AFTER</span><span>fixed process group · 4 ranks</span></div><img class="distributed-core-svg" src="./collectives-state-map.svg" alt="四个核心 collective 的状态变换：Broadcast 从一个源 rank 把 A 分发给所有 ranks；All-Reduce 把每 rank 的局部贡献做 SUM 并让所有 ranks 都得到完整归约结果；All-Gather 把各 rank 的 A、B、C、D shards 拼成完整 tensor 并复制给所有 ranks；Reduce-Scatter 先对完整向量逐元素求和，再让各 rank 只保留一个归约后的 shard。" /></div>
@@ -80,7 +80,7 @@
         <div class="section-no">06 · All-Reduce 与 Reduce-Scatter + All-Gather</div>
         <h2>把 all-reduce 从数据状态角度拆开，会更容易理解现代分布式训练。</h2>
         <div class="shape-flow"><div><small>START</small><code>各 rank 局部贡献</code></div><span>→</span><div><small>REDUCE-SCATTER</small><code>归约后的 shards</code></div><span>→</span><div><small>ALL-GATHER</small><code>完整归约 tensor</code></div></div>
-        <p>从数学数据状态看，一个 all-reduce 的最终效果可以理解为先得到归约后的 shard，再让所有 ranks 收集成完整归约 tensor。<strong>这不是说 NCCL 内部永远机械地调用两个独立 API</strong>；它只是非常有用的语义分解，能帮助理解 ZeRO / FSDP / Megatron 的分片状态。</p>
+        <p>从数学数据状态看，一个 all-reduce 的最终效果可以理解为先得到归约后的 shard，再让所有 ranks 收集成完整归约 tensor。<strong>这不是说 NCCL 内部永远机械地调用两个独立接口</strong>；它只是非常有用的语义分解，能帮助理解 ZeRO / FSDP / Megatron 的分片状态。</p>
       </section>
 
       <section class="article-section" id="alltoall">
@@ -161,7 +161,6 @@ dist.destroy_process_group()</code></pre></div>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>MoE</code></td><td>Mixture of Experts</td><td>混合专家模型</td><td>由 router 为 token 选择少数 experts 的稀疏模型结构。</td></tr>
-        <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
         <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
         <tr><td><code>ZeRO</code></td><td>Zero Redundancy Optimizer</td><td>零冗余优化器</td><td>通过数据并行 ranks 分片优化器状态、梯度或参数来减少训练状态冗余的一类方法。</td></tr>
