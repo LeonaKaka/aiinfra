@@ -24,7 +24,7 @@
       <div class="module-block"><div class="module-name"><b>02</b> Transformer</div><a class="lesson-link" href="../02-transformer/attention.html">02.1–02.3 Transformer</a></div>
       <div class="module-block"><div class="module-name"><b>03</b> GPU Systems</div><a class="lesson-link" href="../03-gpu-systems/gpu-mental-model.html">03.1–03.3 GPU Systems</a></div>
       <div class="module-block"><div class="module-name"><b>04</b> Distributed</div><a class="lesson-link" href="../04-distributed/process-rank.html">04.1 Process / Rank</a><a class="lesson-link" href="../04-distributed/collectives.html">04.2 Collectives</a><a class="lesson-link" href="../04-distributed/nccl-topology.html">04.3 NCCL 与拓扑</a></div>
-      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link current" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link" href="./tensor-parallel.html">05.2 张量并行</a><a class="lesson-link" href="./sequence-parallel.html">05.3 序列并行</a><a class="lesson-link" href="./pipeline-parallel.html">05.4 流水线并行</a></div>
+      <div class="module-block"><div class="module-name"><b>05</b> Megatron</div><a class="lesson-link current" href="./why-model-parallel.html">05.1 为什么要模型并行</a><a class="lesson-link" href="./tensor-parallel.html">05.2 张量并行</a><a class="lesson-link" href="./sequence-parallel.html">05.3 序列并行</a><a class="lesson-link" href="./pipeline-parallel.html">05.4 流水线并行</a><a class="lesson-link" href="./distributed-optimizer.html">05.5 Distributed Optimizer</a><a class="lesson-link" href="./context-parallel.html">05.6 上下文并行</a><a class="lesson-link" href="./expert-parallel.html">05.7 专家并行</a><a class="lesson-link" href="./communication-overlap.html">05.8 Communication Overlap</a></div>
     </aside>
 
     <main class="article">
@@ -34,7 +34,7 @@
       <h1>为什么要模型并行：8 张 GPU 并不会自动变成一张 640GB 显卡。</h1>
       <p class="dek">到这里我们终于正式进入 Megatron。但第一课先不读源码，先把它要解决的问题钉死：model parameters、activations 和 optimizer states 太大时，一张 GPU 放不下；而多张 GPU 的显存彼此独立。所谓 model parallelism（模型并行：把单个模型的状态或计算显式拆到多张 GPU 上），本质上就是决定“模型的哪一部分放在哪些 rank 上，以及这些部分什么时候通信”。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么复制式数据并行不能解决“每个 rank 都要常驻的单份模型本身就放不下”的问题。</li><li>区分 DP 如何切数据和模型副本，以及 TP、PP如何分别切一层内部的张量和模型深度。</li><li>知道 CP与专家并行又分别切序列/上下文和 MoE 专家。</li><li>理解 Megatron 为什么要维护多种 process groups，而不是所有并行维度共用一个 process group。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道之后读源码时先看 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>解释为什么复制式数据并行不能解决“每个 rank 都要常驻的单份模型本身就放不下”的问题。</li><li>区分 DP 如何切数据和模型副本，以及 TP、PP如何分别切一层内部的张量和模型深度。</li><li>知道 CP与专家并行又分别切序列/上下文和 MoE 专家。</li><li>理解 Megatron 为什么要维护多种 process groups，而不是所有并行维度共用一个 process group。</li><li>看到 <code>tensor_model_parallel_size</code>、<code>pipeline_model_parallel_size</code> 时能把它们映射回具体 GPU 分组。</li><li>知道读源码时先扫 <code>pretrain_gpt.py → training.py → schedules.py</code> 的训练执行主干，再下钻 <code>parallel_state.py</code> 和 <code>tensor_parallel/</code>，而不是从仓库第一页一路往下翻。</li></ul></div>
 
       <section class="article-section" id="fit">
         <div class="section-no">01 · 第一堵墙：模型放不下</div>
@@ -105,10 +105,11 @@
 
       <section class="article-section" id="source-map">
         <div class="section-no">08 · 读源码前先看源码地图</div>
-        <h2>先记四个入口，别从仓库第一页开始“扫代码”。</h2>
+        <h2>先看一条训练执行主干，再选当前概念的局部入口。</h2>
+                <p>第一遍先用 Source Map 追 <code>pretrain_gpt.py → megatron/training/training.py → core/pipeline_parallel/schedules.py</code>，只回答“一次训练步骤是谁调用谁”；有了这条执行主干，再回到当前概念对应的 process groups、TP layers、pipeline schedule 或 Transformer layer。这样看到局部 class 时，你知道它位于整条训练路径的哪一段。</p>
         <div class="source-map"><div class="source-map-card"><small>GROUPS</small><b>parallel_state.py</b><code>megatron/core/parallel_state.py</code><span>TP / PP / DP / CP / EP process groups、rank/world-size helpers 的核心入口。</span></div><div class="source-map-card"><small>TENSOR PARALLEL</small><b>tensor_parallel/</b><code>megatron/core/tensor_parallel/</code><span>ColumnParallelLinear、RowParallelLinear、mappings、交叉熵等实现。</span></div><div class="source-map-card"><small>PIPELINE</small><b>pipeline_parallel/</b><code>megatron/core/pipeline_parallel/</code><span>调度、P2P communication、microbatch pipeline execution。</span></div><div class="source-map-card"><small>MODEL LAYERS</small><b>transformer/</b><code>megatron/core/transformer/</code><span>把 Attention、MLP、TransformerLayer 与各种并行 module 接起来。</span></div></div>
         <p>当前 Megatron Core 的 <code>parallel_state</code> 文档里可以直接看到 <code>get_tensor_model_parallel_group()</code>、<code>get_pipeline_model_parallel_group()</code>、<code>get_data_parallel_group()</code>、<code>get_context_parallel_group()</code> 等接口。这正好对应我们前面学过的进程组心智模型。</p>
-        <div class="source-note">源码/API参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.parallel_state.html">Megatron Core · core.parallel_state</a>。下一课会正式进入 <code>core.tensor_parallel.layers</code>，对照 <code>ColumnParallelLinear</code> / <code>RowParallelLinear</code>。</div>
+        <div class="source-note">源码/API参考：<a href="https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py"><code>parallel_state.py</code> 源码</a> · <a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.parallel_state.html">Megatron Core · core.parallel_state</a>。下一课会正式进入 <code>core.tensor_parallel.layers</code>，对照 <code>ColumnParallelLinear</code> / <code>RowParallelLinear</code>。</div>
       </section>
 
       <section class="article-section" id="rule">
