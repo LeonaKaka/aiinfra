@@ -55,7 +55,7 @@ print(x.device)                    <span class="comment"># cuda:0</span></code><
       <section class="article-section" id="inside">
         <div class="section-no">02 · GPU 里面有什么</div>
         <h2>GPU 不是“一颗超级核心”，而是大量并行执行资源。</h2>
-        <p>不同 NVIDIA 架构细节会变化，但为了学 Infra，可以先用两个名字：SM（流式多处理器：NVIDIA GPU 上承载线程调度与计算资源的一组执行单元）负责承载大量并行工作；Tensor Core（张量核心：专门加速特定低精度矩阵乘加运算的硬件单元）则服务于大规模矩阵计算。再看下面这个抽象：</p>
+        <p>不同 NVIDIA 架构细节会变化，但为了学 Infra，可以先用两个名字：SM（流式多处理器：NVIDIA GPU 上承载线程调度与计算资源的一组执行单元）负责承载大量并行工作；Tensor Core 则服务于大规模矩阵计算。再看下面这个抽象：</p>
         <div class="gpu-anatomy"><div class="gpu-shell"><small>GPU</small><div class="sm-grid"><div><b>SM</b><span>普通计算单元</span><span>Tensor Cores</span></div><div><b>SM</b><span>普通计算单元</span><span>Tensor Cores</span></div><div><b>SM</b><span>普通计算单元</span><span>Tensor Cores</span></div><div><b>SM</b><span>普通计算单元</span><span>Tensor Cores</span></div><div><b>…</b><span>many more</span></div><div><b>SM</b><span>普通计算单元</span><span>Tensor Cores</span></div></div><div class="hbm-band"><small>GPU DEVICE MEMORY</small><b>HBM / GDDR</b></div></div></div>
         <p><strong>SM</strong> 可以先理解为 GPU 上的一组计算执行资源。大量 threads 会以 warp（线程束：NVIDIA GPU 中一组按同一指令路径并行执行的线程）为基本执行分组被安排到各个 SM 上运行。Tensor Cores 则是其中专门加速某些矩阵乘加运算的硬件单元。</p>
         <p>这也是为什么深度学习特别喜欢大矩阵：同一种规则计算可以拆成大量并行工作，让 GPU 的很多执行单元一起忙起来。</p>
@@ -122,7 +122,7 @@ elapsed = time.perf_counter() - start</code></pre></div>
         <div class="section-no">09 · 把这一课接回整条路线</div>
         <h2>把今天的硬件词，放回我们的两条终点路线。</h2>
         <div class="bridge-grid"><div><small>MEGATRON</small><b>many GPUs</b><span>大 GEMM 分片 → local kernels → NCCL 通信 → 计算通信重叠</span></div><div><small>vLLM</small><b>serving GPUs</b><span>model weights + KV in device memory → 调度器 feeds kernels → KV 传输 across devices/nodes</span></div></div>
-        <p>之后再看到 NCCL、GPUDirect（GPU 直接数据路径：让 GPU 与其他设备更直接交换数据的一组 NVIDIA 技术）、RDMA（远程直接内存访问：允许远端内存传输减少 CPU 数据搬运参与的网络访问机制）和 NIXL（NVIDIA 推理传输库：为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象），不要把它们当成凭空冒出来的新技术。它们都在解决同一个具体问题：<strong>让 data 在正确的时间到达正确的 device / memory location。</strong></p>
+        <p>之后再看到 NCCL、GPUDirect（GPU 直接数据路径：让 GPU 与其他设备更直接交换数据的一组 NVIDIA 技术）、RDMA（远程直接内存访问：允许远端内存传输减少 CPU 数据搬运参与的网络访问机制）和 NIXL（NVIDIA 推理传输库：为推理框架提供跨多类内存 / 存储介质的点对点数据传输抽象），不要把它们当成凭空冒出来的新技术。它们都在解决同一个具体问题：<strong>让数据在正确的时间到达正确的设备 / 存储位置。</strong></p>
       </section>
 
       <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>03.1</span></div><h2>先把 GPU 画成一个系统，而不是一块“加速卡”。</h2><div class="quiz-item"><div class="quiz-q">1. <code>torch.randn(...)</code> 默认在 CPU，为什么要 <code>.to('cuda:0')</code> 才能让 GPU 直接使用？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为常见离散 GPU 系统里 CPU 内存与 GPU device memory 是不同的内存空间，张量必须位于对应 device 可使用的位置；移动数据本身也有成本。</div></div><div class="quiz-item"><div class="quiz-q">2. 为什么一行 <code>X @ W</code> 不等于“Python 在做矩阵乘法”？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">PyTorch 是高层入口。CUDA 张量的矩阵乘法会调用底层 CUDA/library 实现并在 GPU 上执行 kernel；Python 主要负责组织和发起这些操作。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么直接用 CPU timer 量一个 CUDA 操作可能不准？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为 CUDA 工作常异步提交，CPU 可能在 GPU 真正完成前就继续执行。简单计时要控制计时窗口前后的同步；严谨 benchmark 通常使用 CUDA Events、warm-up 等。</div></div></section>
