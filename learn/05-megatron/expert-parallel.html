@@ -93,7 +93,7 @@
         <h2>当前训练配置明确支持 <code>allgather</code>、<code>alltoall</code>、<code>flex</code>。</h2>
         <div class="dispatcher-grid"><div><small>ALLGATHER</small><b>allgather dispatcher</b><span>当前默认值仍是 <code>allgather</code>；实现会跨 TP×EP domain all-gather token/路由 data，本地挑选属于 local expert 的 assignments，合并使用 reduce-scatter。</span></div><div><small>ALLTOALL</small><b>All-to-All dispatcher</b><span>直接表达 destination-specific 交换；当前 workflow 是 A2A(EP)，并在 expert TP&gt;1 时配合 AG/RS(TP)。</span></div><div><small>FLEX</small><b>可插拔 EP backends</b><span>当前 <code>moe_flex_dispatcher_backend</code> 支持 DeepEP（DeepEP 通信后端：用于 MoE token dispatch/combine 的高性能 EP 通信实现）、HybridEP（HybridEP 通信后端：在 flex dispatcher 中融合 token 重排与 all-to-all 的专家并行实现）和 NCCL-EP（NCCL 专家并行后端：通过 Transformer Engine EP API 使用 NVIDIA NCCL Expert Parallelism），默认是 DeepEP。</span></div></div>
         <p>因此更准确的话是：<strong>EP 产生 destination-dependent token traffic；dispatcher contract 决定怎样搬这些 assignments。</strong>All-to-All 是最直观的实现，但不是定义本身。</p>
-        <div class="source-note">当前 <code>TransformerConfig.moe_token_dispatcher_type</code> 类型为 <code>allgather | alltoall | flex</code>、默认 <code>allgather</code>；flex 后端当前为 <code>deepep | hybridep | ncclep</code>。</div>
+        <div class="source-note">当前 <code>TransformerConfig.moe_token_dispatcher_type</code> 类型为 <code>allgather | alltoall | flex</code>、默认 <code>allgather</code>；<code>moe_flex_dispatcher_backend</code> 当前提供 <code>deepep | hybridep | ncclep</code>，并在上游配置中明确标为实验性接口，因此不要把具体后端名当成稳定不变的课程结论。</div>
       </section>
 
       <section class="article-section" id="tp">
