@@ -183,9 +183,9 @@
         </div>
         <div class="source-row">
           <span class="order">11</span>
-          <div><em class="phase-label">SYNC · 传输</em><b>Pull 调度器 + 工作进程</b><code>.../nixl/pull_scheduler.py · pull_worker.py</code></div>
-          <p>最后追一次真实 READ 生命周期：调度器 产生 remote block/expiry 元数据；工作进程 必要时 handshake，rebase TTL，发 心跳，按 TP/DCP mapping 发起 非阻塞读取，并等 完成确认。到这里 B3–B7 才真正串成一条工程链。</p>
-          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py">调度器 ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py">工作进程 ↗</a><a href="../labs/mini-async-kv-transfer.html">B3 →</a><a href="../labs/mini-kv-lease-expiry.html">B7 →</a></div>
+          <div><em class="phase-label">SYNC · 传输</em><b>Pull / Push 执行路径</b><code>pull_scheduler.py · pull_worker.py · push_scheduler.py · push_worker.py</code></div>
+          <p>先追 pull 的真实 READ 生命周期：调度器生成 remote block / expiry 元数据，工作进程完成 handshake、租约/心跳与 TP/DCP mapping 后发起非阻塞读取并收完成结果。再对照 push：producer 主动 WRITE 到 consumer，调度与 ownership 协议不同，而且当前支持边界也不完全等同。这样才能把“传输方向”和“Connector 生命周期”分开理解。</p>
+          <div class="source-actions"><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py">pull 调度器 ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py">pull 工作进程 ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py">push 调度器 ↗</a><a href="https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py">push 工作进程 ↗</a><a href="../labs/mini-async-kv-transfer.html">B3 →</a><a href="../labs/mini-kv-lease-expiry.html">B7 →</a></div>
         </div>
       </div>
     </section>
