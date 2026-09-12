@@ -175,7 +175,7 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
           <div><small>optimizer</small><b>除了参数和梯度，还可能维护额外优化器状态，占据大量显存。</b></div>
           <div><small>DISTRIBUTED</small><b>多张 GPU 各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
         </div>
-        <p>这就是为什么我们先学训练循环再学 AI Infra。以后遇到 activation checkpointing（激活值检查点：不保存全部 activation，而在 backward 时重算以节省显存）、gradient accumulation、分布式 optimizer、Data Parallel（数据并行：不同模型副本处理不同数据，再同步训练状态）等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
+        <p>这就是为什么我们先学训练循环再进入后面的系统基础设施。以后遇到 activation checkpointing（激活值检查点：不保存全部 activation，而在 backward 时重算以节省显存）、gradient accumulation、分布式 optimizer、Data Parallel（数据并行：不同模型副本处理不同数据，再同步训练状态）等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
       </section>
 
       <section class="article-section" id="distributed">
