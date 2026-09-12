@@ -28,8 +28,8 @@
       <div class="mobile-course-bar"><span>04 · Distributed</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Distributed</a><span>/</span><span>Process &amp; Rank</span></div>
       <div class="lesson-kicker"><span>LESSON 04.1 · DISTRIBUTED</span><span>约 50 min</span></div>
-      <h1>process（进程：独立运行程序并拥有自己状态的执行实例）、rank（进程编号：分布式作业中标识一个 process 的编号）与 process group（进程组：定义一组共同参与通信的 ranks）：多张 GPU 先怎么“认识彼此”？</h1>
-      <p class="dek">上一模块已经知道：<code>cuda:0</code> 和 <code>cuda:1</code> 是不同设备，数据不会自动共享。现在第一次真正进入分布式。开始时别急着学 <code>all-reduce</code>；先回答更基础的问题：谁在控制 GPU 0？谁在控制 GPU 1？它们如何获得唯一 rank？哪些 process 属于同一个 process group？Megatron 后面的 TP、Pipeline Parallel 和 Data Parallel 通信，都建立在这套身份系统上。</p>
+      <h1>多张 GPU 先怎么“认识彼此”：进程、编号与通信小组。</h1>
+      <p class="dek">上一模块已经知道：<code>cuda:0</code> 和 <code>cuda:1</code> 是不同设备，数据不会自动共享。现在第一次真正进入分布式。先认识三个对象：process（进程：独立运行程序并拥有自己状态的执行实例）负责执行；rank（进程编号：分布式作业中标识一个 process 的编号）负责区分身份；process group（进程组：定义一组共同参与通信的 ranks）负责限定“谁和谁一起通信”。先把这套身份系统看懂，再进入 all-reduce 等集合通信。</p>
 
       <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>区分 process、global rank（全局进程编号：在整个分布式作业中唯一标识一个 process）、<code>world_size</code>（总进程数：当前分布式作业中参与协作的 process 数量）和 local rank（本地进程编号：标识 process 在当前机器上的本地序号）。</li><li>理解 one-process-per-GPU（每 GPU 一进程：每个 process 主要绑定一张 GPU 的常见部署方式）是部署模式，而不是分布式数学定义。</li><li>看懂 <code>torchrun</code>（PyTorch 分布式启动器：启动多个训练进程并为它们设置分布式身份信息）大致做了什么。</li><li>理解 <code>init_process_group()</code> 为什么需要 peer discovery（对端发现：让分布式 processes 找到需要通信的其它参与者）和初始化。</li><li>解释 process group 为什么是 Megatron 创建不同并行通信域的基础。</li><li>知道 collective 调用如果不同 rank 对 process group 或调用顺序理解不一致，为什么容易卡住。</li></ul></div>
 
