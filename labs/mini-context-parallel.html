@@ -44,7 +44,7 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Context Parallel</span></div>
-    <div class="lab-kicker">LAB A10 · 上下文并行（CP）</div>
+    <div class="lab-kicker">LAB A10 · CP</div>
     <h1>长 context 被切开以后，Attention 仍然要看见全局历史。<br />这个 Lab 让 Q 留在本地，让 KV 去“找”它。</h1>
     <p class="dek">两个 ranks 各持一段 sequence。每个 rank 的 Query 分片始终留在本地；Key/Value chunk 则按 ring 顺序轮转。每一轮，本地 Q 都和当前 KV chunk 计算一部分 attention scores。把所有轮次合起来以后，输出必须和单卡 dense causal attention 完全一致。</p>
 
