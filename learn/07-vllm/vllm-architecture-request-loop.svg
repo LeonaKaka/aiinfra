@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 900" role="img" aria-labelledby="title desc">
-<title id="title">vLLM V1 request lifecycle and 执行 boundary</title>
-<desc id="desc">EngineCore and Scheduler own request planning on the control plane. KVCacheManager provides scheduler-side block state. SchedulerOutput crosses into ModelExecutor and GPU Worker, which selects a V2 or V1 GPUModelRunner implementation. GPU 执行 produces ModelRunnerOutput, then EngineCore and Scheduler update request state.</desc>
+<title id="title">vLLM V1 request lifecycle and execution boundary</title>
+<desc id="desc">EngineCore and Scheduler own request planning on the control plane. KVCacheManager provides scheduler-side block state. SchedulerOutput crosses into ModelExecutor and GPU Worker, which selects a V2 or V1 GPUModelRunner implementation. GPU execution produces ModelRunnerOutput, then EngineCore and Scheduler update request state.</desc>
 <defs>
  <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#747b74"/></marker>
  <marker id="ab" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#315f82"/></marker>
@@ -70,7 +70,7 @@
 <path class="gline" d="M637 706 V746" marker-end="url(#ag)"/>
 
 <path class="pline" d="M659 418 V558 H121 V626" marker-end="url(#ap)"/>
-<text class="mono tiny" x="138" y="550" fill="#7d5d6f">SchedulerOutput crosses into 执行</text>
+<text class="mono tiny" x="138" y="550" fill="#7d5d6f">SchedulerOutput 进入执行侧</text>
 <path class="line" d="M708 778 H720 V454 H574" marker-end="url(#a)"/>
 
 <rect class="box" x="34" y="858" width="692" height="34" rx="8"/>
