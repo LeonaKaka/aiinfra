@@ -33,7 +33,7 @@
       <h1>显存到底花在哪：先学会给 GPU 做一张账本。</h1>
       <p class="dek">“模型 7B，为什么 24GB 显卡还训练不了？”“推理明明不反向传播，为什么上下文一长还是 OOM（内存不足/显存不足：所需内存超过可用容量时的失败状态）？”这类问题都不能只看 parameter 数量。训练和推理会同时占用多种不同 lifetime、不同 shape 的数据。把这些账分清，后面你才看得懂 Megatron 为什么要把 optimizer state 分片、vLLM 为什么如此在意 KV Cache。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 GPU 显存拆成 parameter、gradient、optimizer state、activation、temporary tensor / workspace（工作区：kernel 或 library 为一次计算临时申请的辅助内存）、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个张量或一份模型权重占多少内存。</li><li>理解“每个参数 16 bytes”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释 activation checkpointing、Distributed Optimizer 和 GQA 分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated()</code>（已分配显存：当前仍由 PyTorch tensor 实际占用的显存）与 <code>memory_reserved()</code>（已保留显存：PyTorch allocator 从 CUDA 保留、可供后续复用的显存），不再把 <code>nvidia-smi</code>（NVIDIA GPU 状态工具：查看 GPU、显存和进程状态的命令行工具）的数字直接等同于仍在使用的 tensor。</li></ul></div>
+      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>把 GPU 显存拆成 parameter、gradient、optimizer state、activation、temporary tensor / workspace（工作区：kernel 或 library 为一次计算临时申请的辅助内存）、KV Cache 等主要类别。</li><li>用 <code>元素数量 × 每元素字节数</code> 粗算一个张量或一份模型权重占多少内存。</li><li>理解“每个参数 16 bytes”为什么只能当某些训练配置下的粗略经验值，不能当通用真理。</li><li>解释 activation checkpointing、Distributed Optimizer 和 GQA 分别在省哪一类显存。</li><li>区分 PyTorch 的 <code>memory_allocated()</code>（已分配显存：当前仍由 PyTorch tensor 实际占用的显存）与 <code>memory_reserved()</code>（已保留显存：PyTorch 内存分配器从 CUDA 保留、可供后续复用的显存），不再把 <code>nvidia-smi</code>（NVIDIA GPU 状态工具：查看 GPU、显存和进程状态的命令行工具）的数字直接等同于仍在使用的 tensor。</li></ul></div>
 
       <section class="article-section" id="ledger">
         <div class="section-no">01 · 先建立显存账本</div>
@@ -121,7 +121,7 @@ print(torch.cuda.memory_summary())</code></pre></div>
         <div class="section-no">08 · 推理阶段的显存账本不一样</div>
         <h2>推理省掉 gradients 和 optimizer，却多了一个会越聊越大的 KV Cache。</h2>
         <p>标准 MHA / GQA 的 KV Cache 可以用下面这个简化公式建立数量级直觉。对<strong>单条 sequence</strong>：</p>
-        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有内存块、对齐、metadata 等开销；MLA（多头潜在注意力：通过潜在表示压缩注意力状态的模型结构）等架构的缓存形式也不同。</p></div>
+        <div class="kv-formula"><code>KV bytes ≈ 2 × layers × cached_tokens × n_kv_heads × head_dim × bytes_per_element</code><p>最前面的 2 是 K 和 V 两份。真实实现还会有内存块、对齐、元数据等开销；MLA（多头潜在注意力：通过潜在表示压缩注意力状态的模型结构）等架构的缓存形式也不同。</p></div>
         <p>做一个纯教学例子：32 层、4096 个缓存 token、每个 KV head 的维度为 128、BF16。</p>
         <div class="kv-compare"><div><small>MHA · 32 KV HEADS</small><b>≈ 2.0 GiB（GiB 二进制容量单位：1 GiB = 2^30 bytes）</b><span>2 × 32 × 4096 × 32 × 128 × 2 bytes</span></div><div><small>GQA · 8 KV HEADS</small><b>≈ 0.5 GiB</b><span>其它条件不变，只把 KV heads 从 32 降到 8。</span></div></div>
         <p>这就是上一模块讲 GQA 时那个“KV heads 少了，推理会更省”的具体显存账。服务系统同时跑很多请求时，每个请求都在占一段 KV，KV Cache 很容易从“附属开销”变成<strong>决定并发量的主资源</strong>。</p>
