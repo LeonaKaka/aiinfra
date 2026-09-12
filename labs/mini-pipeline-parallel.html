@@ -44,7 +44,7 @@
 </aside>
   <main class="lab-article" style="width:auto;margin:0;padding:0">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="./index.html">Labs</a><span>/</span><span>Pipeline Parallel</span></div>
-    <div class="lab-kicker">LAB A9 · 流水线并行（PP）</div>
+    <div class="lab-kicker">LAB A9 · PP</div>
     <h1>PP 真正跨阶段搬的不是整套参数。<br />前向计算传 activation，反向传播把 activation 梯度送回来。</h1>
     <p class="dek">这个实验把两层模型硬拆成两个进程：rank 0 只拥有第一段权重，rank 1 只拥有第二段权重和 loss。多个 microbatch 依次穿过阶段边界，再反向把 <code>dL/dh</code> 送回来。最后两边各自的参数梯度必须和单进程 dense model 完全一致。</p>
 
