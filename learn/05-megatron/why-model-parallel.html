@@ -76,7 +76,7 @@
       <section class="article-section" id="more-axes">
         <div class="section-no">05 · Megatron 不只有 TP / PP / DP</div>
         <h2>长上下文和 MoE 又带来了新的切分维度。</h2>
-        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>CONTEXT PARALLEL · CP</small><b>切序列/上下文</b><span>不同 ranks 处理不同 sequence chunks；Attention 仍需交换必要的上下文信息。</span></div><div class="parallel-axis pp"><small>Expert Parallel · EP（专家并行：把 MoE experts 分布到不同 ranks，并路由 token 到对应 expert）</small><b>切 MoE 专家</b><span>Expert Parallel 会让不同 ranks 持有不同专家；token routing 会引入 all-to-all 数据交换。</span></div><div class="parallel-axis dp"><small>SHARDED DATA PARALLEL</small><b>切 model states</b><span>Megatron Distributed Optimizer / Megatron-FSDP 会进一步减少 DP 副本之间重复保存的状态。</span></div></div>
+        <div class="parallel-axis-grid"><div class="parallel-axis tp"><small>CONTEXT PARALLEL · CP</small><b>切序列/上下文</b><span>不同 ranks 处理不同 sequence chunks；Attention 仍需交换必要的上下文信息。</span></div><div class="parallel-axis pp"><small>Expert Parallel · EP（专家并行：把 MoE 中的不同专家分布到不同 ranks，并把 token 路由到对应专家）</small><b>切 MoE 专家</b><span>Expert Parallel 会让不同 ranks 持有不同专家；token routing 会引入 all-to-all 数据交换。</span></div><div class="parallel-axis dp"><small>SHARDED DATA PARALLEL</small><b>切 model states</b><span>Megatron Distributed Optimizer / Megatron-FSDP 会进一步减少 DP 副本之间重复保存的状态。</span></div></div>
         <p>NVIDIA 当前 Megatron Core 的 Parallelism Guide 把 DP、TP、PP、CP、EP 和 Megatron-FSDP 都作为可组合策略。后面课程会按“最能建立系统直觉”的顺序展开，而不是一次把所有开关堆给你。</p>
         <div class="source-note">官方参考：<a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html">Megatron Core · Parallelism Strategies Guide</a>。当前文档明确列出 DP、TP、PP、CP、EP 与 Megatron-FSDP，并说明它们可以组合用于大规模训练。</div>
       </section>
