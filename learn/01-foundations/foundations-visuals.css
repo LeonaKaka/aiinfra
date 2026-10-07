@@ -1,4 +1,4 @@
-/* 01.1 Tensor lesson visuals: [B,S,H] grid, dtype bits, memory bar, split modes, stride. */
+/* Foundations module visuals (01.1–01.4). Shared components: .tv card, controls, readout, legend. */
 .tv{margin:30px 0;border:1px solid var(--line-dark);border-radius:14px;background:var(--paper);padding:20px 22px}
 .tv-title{font:700 10px/1.3 ui-monospace,monospace;letter-spacing:.12em;color:#8b8e86;margin:0 0 14px}
 .tv-controls{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
@@ -83,3 +83,84 @@
   .tv-mstrip{grid-template-columns:repeat(6,1fr)}
   .tv-membar .rest{font-size:11px;padding:0 8px}
 }
+
+/* 01.2 · interactive matmul */
+.tv-mm{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px 12px}
+.tv-mm-block small{display:block;font:700 10px/1.3 ui-monospace,monospace;color:#8b8e86;margin-bottom:6px;text-align:center}
+.tv-mm-grid{display:grid;gap:3px}
+.tv-mm-grid span,.tv-mm-grid button{width:38px;height:34px;display:grid;place-items:center;border:1px solid var(--line-dark);border-radius:6px;background:#fff;font:700 13px/1 ui-monospace,monospace;color:var(--ink);padding:0}
+.tv-mm-grid button{cursor:pointer;background:#f4f7fa}
+.tv-mm-grid .hl{background:#e3c77f;border-color:#b8953f}
+.tv-mm-op{font:700 16px/1 ui-monospace,monospace;color:#8b8e86}
+
+/* 01.2 · flatten [B,S,H] */
+.tv-flat{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px 14px}
+.tv-flat-item small{display:block;font:700 10px/1.3 ui-monospace,monospace;color:#8b8e86;margin-bottom:6px;text-align:center}
+.tv-flat-pair{display:flex;gap:6px}
+.tv-cells{display:grid;gap:1px}
+.tv-cells i{display:block;width:7px;height:7px;border-radius:1px;background:#e3e5df}
+.tv-cells i.s0{background:#8fbfa3}
+.tv-cells i.s1{background:#8fb1cc}
+.tv-flat-op{font:600 11px/1.3 ui-monospace,monospace;color:#8b8e86;text-align:center}
+
+/* 01.2 · column vs row split */
+.tv-split2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.tv-split2>div{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fcfcfa}
+.tv-split2 b{font-size:13px}
+.tv-split2>div>small{display:block;font:700 10px/1.3 ui-monospace,monospace;color:#8b8e86;margin:3px 0 14px}
+.tv-split2 p{font-size:12px!important;line-height:1.65!important;margin:12px 0 0!important;color:#5e615a!important}
+.tv-eq{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tv-eq .op{font:700 12px/1 ui-monospace,monospace;color:#8b8e86}
+.tv-blk{display:flex;flex-direction:column;align-items:center;gap:4px}
+.tv-blk em{font:600 9px/1.2 ui-monospace,monospace;color:#8b8e86;font-style:normal;white-space:nowrap}
+.tv-box{display:flex;border-radius:4px;overflow:hidden;border:1px solid rgba(0,0,0,.12)}
+.tv-box.col{flex-direction:row}
+.tv-box.row{flex-direction:column}
+.tv-box>i{flex:1;display:block}
+
+@media(max-width:760px){
+  .tv-split2{grid-template-columns:1fr}
+  .tv-mm-grid span,.tv-mm-grid button{width:32px;height:30px;font-size:12px}
+}
+
+/* 01.3 · which step reads / writes which state */
+.tv-rw{width:100%;border-collapse:separate;border-spacing:4px;font-size:12px}
+.tv-rw th{font:700 10px/1.3 ui-monospace,monospace;color:#8b8e86;text-align:center;padding:4px;font-weight:700}
+.tv-rw th:first-child{text-align:left}
+.tv-rw td{text-align:center;padding:7px 4px;border-radius:6px;background:#f4f5f1;color:#b4b7af;font-size:12px}
+.tv-rw td:first-child{text-align:left;background:none;color:var(--ink);font:600 12px/1.3 ui-monospace,monospace;white-space:nowrap}
+.tv-rw td.r{background:#e4edf4;color:#1f4a6b;font-weight:650}
+.tv-rw td.w{background:#e3c77f;color:#3d3214;font-weight:700}
+.tv-rw td.c{background:#d9dbd4;color:#454842;font-weight:650}
+.tv-rw-scroll{overflow-x:auto}
+
+/* 01.3 · SGD playground */
+.tv-sgd{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.tv-sgd svg{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:10px;background:#fcfcfa}
+.tv-sgd svg text{font:600 10px ui-monospace,monospace;fill:#8b8e86}
+.tv-sgd-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px}
+.tv-sgd-stats div{background:#f4f5f1;border-radius:8px;padding:8px 10px}
+.tv-sgd-stats small{display:block;font:700 9px/1.2 ui-monospace,monospace;color:#8b8e86;letter-spacing:.06em}
+.tv-sgd-stats b{display:block;font:700 14px/1.4 ui-monospace,monospace;color:var(--ink);margin-top:3px;word-break:break-all}
+.tv-controls .sep{width:1px;background:var(--line-dark);margin:0 4px}
+
+/* 01.3 · data parallel lanes */
+.tv-dp{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:6px 10px;align-items:stretch}
+.tv-dp>div{border-radius:8px;padding:9px 11px;font-size:12px;line-height:1.55;color:#3f423d}
+.tv-dp .h{font:700 11px/1.3 ui-monospace,monospace;text-align:center;padding:4px;color:#fff}
+.tv-dp .h.g0{background:var(--train)}
+.tv-dp .h.g1{background:var(--infer)}
+.tv-dp .lane0{background:var(--train-soft)}
+.tv-dp .lane1{background:var(--infer-soft)}
+.tv-dp .mid{background:#f4f5f1;text-align:center;color:#8b8e86;font:600 11px/1.5 ui-monospace,monospace;display:flex;align-items:center;justify-content:center}
+.tv-dp .sync{background:#e3c77f;color:#3d3214;text-align:center;font-weight:650;grid-column:1/-1}
+.tv-dp small{display:block;font:700 9px/1.2 ui-monospace,monospace;color:#8b8e86;letter-spacing:.06em;margin-bottom:3px}
+.tv-dp code{font-size:12px}
+.tv-dp .bad{color:#a2552d}
+
+@media(max-width:760px){
+  .tv-sgd{grid-template-columns:1fr}
+  .tv-dp{grid-template-columns:1fr 1fr}
+  .tv-dp .mid{display:none}
+}
+.tv-flat .tv-cells i{width:5px;height:5px}

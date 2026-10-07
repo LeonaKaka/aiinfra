@@ -8,6 +8,8 @@
   <title>01.3 PyTorch 的最小训练循环 · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
+  <link rel="stylesheet" href="./foundations-visuals.css" />
+  <style>.dtype-table{min-width:0!important}.lesson-note{font-size:13px!important;color:#6c6f68!important}.lesson-list{font-size:15px;line-height:1.9;color:#454842;padding-left:20px}</style>
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -51,165 +53,234 @@
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>Training Loop</span></div>
 
-      <div class="lesson-kicker"><span>LESSON 01.3 · FOUNDATION</span><span>约35 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 01.3 · FOUNDATION</span><span>约 35 min</span></div>
       <h1>PyTorch 的最小训练循环：参数是怎么真的变掉的？</h1>
-      <p class="dek">前两课我们只看“数据怎么表示”和“Linear 怎么计算”。但模型为什么会越来越会做题？答案并不神秘：先做 <code>forward</code>（前向计算：用当前 parameter 从输入算出模型输出和中间状态），再得到 <code>loss</code>（损失：衡量模型预测与目标之间的误差），接着做 <code>backward</code>（反向传播：沿计算图反向计算各 parameter 的 gradient），最后由 optimizer（优化器：根据 gradient 更新模型 parameter）执行 <code>optimizer.step()</code>。训练就是把这套循环重复很多次。</p>
+      <p class="dek">上一课的 Linear 里，权重一开始是随机数。模型是怎么“学会”的？答案是一个很短的循环：用当前参数算出预测，看错了多少，算出每个参数该往哪边改，改一点，然后重复。这一课用一个只有 2 个参数的模型，把这个循环一步一步跑给你看。</p>
 
       <div class="learning-goals">
-        <strong>这节课结束时，你应该能做到：</strong>
+        <strong>学完这节课，你能：</strong>
         <ul>
-          <li>从头到尾讲清一次训练步骤的数据流。</li>
-          <li>知道 <code>model(x)</code>、<code>loss.backward()</code>、<code>optimizer.step()</code> 分别在做什么。</li>
-          <li>理解为什么每轮通常要先 <code>zero_grad()</code>。</li>
-          <li>看懂“单卡训练循环”以后，分布式训练到底多出来了什么问题。</li>
+          <li>说清楚训练循环里五行代码各自做什么，读写了哪些数据。</li>
+          <li>手算出第一步的 loss 和梯度，看懂参数是怎么变的。</li>
+          <li>知道学习率选大了、选小了分别会出现什么现象。</li>
+          <li>知道为什么每一步要先 <code>zero_grad()</code>，以及什么时候故意不清。</li>
+          <li>明白两张 GPU 各训一半数据时，为什么更新前必须先同步梯度。</li>
         </ul>
       </div>
 
-      <section class="article-section" id="loop">
-        <div class="section-no">01 · 先看完整训练循环</div>
-        <h2>先把训练看成一个不断重复的闭环。</h2>
-        <p>先不碰公式。一次最小训练步骤可以压缩成五件事：</p>
-        <div class="shape-flow training-flow">
-          <div><small>1 · INPUT</small><code>x, target</code></div>
-          <span>→</span>
-          <div><small>2 · forward</small><code>prediction</code></div>
-          <span>→</span>
-          <div><small>3 · 损失</small><code>error</code></div>
-        </div>
-        <div class="shape-flow training-flow second-row">
-          <div><small>4 · backward</small><code>gradients</code>（梯度：表示 loss 对模型参数变化的敏感方向）</div>
-          <span>→</span>
-          <div><small>5 · STEP</small><code>update params</code></div>
-          <span>→</span>
-          <div><small>REPEAT</small><code>next batch</code></div>
-        </div>
-        <p>真正训练一个大模型时，外面会套上数据加载、混合精度、gradient accumulation（梯度累积：多个小批次的 gradient 先累加，再统一更新 parameter）、分布式通信、checkpoint（检查点：保存模型和训练状态，便于中断后继续训练）等复杂系统；但最里面这个闭环没有变。</p>
-        <div class="concept-note"><p><strong>先记住一句：</strong><code>forward</code> 产生预测结果，<code>loss</code> 衡量错误，<code>backward</code> 产生 gradient，<code>optimizer.step()</code> 根据 gradient 修改 parameter（参数：训练中会被 optimizer 更新的可学习数值）。</p></div>
-      </section>
-
       <section class="article-section" id="toy">
-        <div class="section-no">02 · 从一个最小问题开始</div>
-        <h2>我们让一个只有两个 parameter 的模型学会 <code>y = 2x + 1</code>。</h2>
-        <p>模型先完全不知道答案。我们只给它一个最简单的 Linear：</p>
+        <div class="section-no">01 · 一个最小的问题</div>
+        <h2>让一个只有 2 个参数的模型学会 <code>y = 2x + 1</code>。</h2>
+        <p>我们准备 4 个样本：x 是 0、1、2、3，对应的正确答案 y 是 1、3、5、7。模型就是一个最小的 Linear：</p>
         <div class="shape-hero compact-shape">
-          <div class="shape-expression">ŷ = wx + b</div>
+          <div class="shape-expression">ŷ = w·x + b</div>
           <div class="shape-legend">
-            <div><b>w</b><small>一开始是随机值</small></div>
-            <div><b>b</b><small>一开始也是随机值</small></div>
-            <div><b>goal</b><small>最后接近w=2, b=1</small></div>
+            <div><b>w, b</b><small>模型的参数，一开始不知道该是多少</small></div>
+            <div><b>ŷ</b><small>模型的预测</small></div>
+            <div><b>目标</b><small>训练完 w ≈ 2，b ≈ 1</small></div>
           </div>
         </div>
-        <p>训练的工作不是直接把 <code>w=2, b=1</code> 填进去，而是只告诉模型“你刚才预测得有多错”，让它根据 gradient 一步步靠近正确 parameter。</p>
+        <p>注意，我们<strong>不会</strong>直接告诉模型 w 应该是 2。我们只告诉它每次预测错了多少，让它自己一点点调整。大模型训练也是这样，只是参数从 2 个变成了几十亿个。</p>
       </section>
 
       <section class="article-section" id="code">
-        <div class="section-no">03 · 最小 PyTorch 实现</div>
-        <h2>完整代码其实很短，先看全貌再拆。</h2>
+        <div class="section-no">02 · 完整代码</div>
+        <h2>整个训练过程就是这十几行。</h2>
         <div class="code-block">
           <div class="code-head"><span>python</span><span>03_training_loop.py</span></div>
           <pre><code>import torch
 from torch import nn
 
-<span class="comment"># y = 2x + 1 的四个训练样本</span>
 x = torch.tensor([[<span class="num">0.</span>], [<span class="num">1.</span>], [<span class="num">2.</span>], [<span class="num">3.</span>]])
 y = torch.tensor([[<span class="num">1.</span>], [<span class="num">3.</span>], [<span class="num">5.</span>], [<span class="num">7.</span>]])
 
 model = nn.Linear(<span class="num">1</span>, <span class="num">1</span>)
+nn.init.zeros_(model.weight)   <span class="comment"># 为了让结果可复现，先把 w、b 设成 0</span>
+nn.init.zeros_(model.bias)     <span class="comment"># 实际训练里一般是随机初始化</span>
+
 loss_fn = nn.MSELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=<span class="num">0.05</span>)
 
 for step in range(<span class="num">200</span>):
-    prediction = model(x)            <span class="comment"># 1. forward</span>
-    loss = loss_fn(prediction, y)    <span class="comment"># 2. measure error</span>
+    prediction = model(x)            <span class="comment"># 1. 前向：用当前的 w、b 算预测</span>
+    loss = loss_fn(prediction, y)    <span class="comment"># 2. 算 loss：预测错了多少</span>
+    optimizer.zero_grad()            <span class="comment"># 3. 清掉上一步的梯度</span>
+    loss.backward()                  <span class="comment"># 4. 反向：算出每个参数的梯度</span>
+    optimizer.step()                 <span class="comment"># 5. 更新：按梯度改 w、b</span>
 
-    optimizer.zero_grad()            <span class="comment"># 3. clear old gradients</span>
-    loss.backward()                  <span class="comment"># 4. compute gradients</span>
-    optimizer.step()                 <span class="comment"># 5. update w and b</span>
-
-print(model.weight.item(), model.bias.item())
-<span class="comment"># 应该逐渐接近 2 和 1</span></code></pre>
+print(model.weight.item(), model.bias.item())   <span class="comment"># ≈ 2.0  1.0</span></code></pre>
         </div>
-        <p>这里没有魔法。训练200次只是重复同一套数据流。现实里当然会换成成千上万个批次，但核心顺序仍然相同。</p>
+        <p>这五步每一步都有名字，后面会反复出现：</p>
+        <div class="why-grid">
+          <div class="why-card"><b>前向（forward）</b><p>用当前参数从输入算出预测。</p></div>
+          <div class="why-card"><b>损失（loss）</b><p>一个数，表示预测错了多少。这里用 MSE（均方误差）：每个样本“预测减目标”的平方，再取平均。</p></div>
+          <div class="why-card"><b>反向（backward）</b><p>算出每个参数的<strong>梯度</strong>（gradient）：这个参数往哪边改、loss 会下降得多快。</p></div>
+        </div>
+        <p>最后一步由<strong>优化器</strong>（optimizer）完成：它读梯度，按规则改参数。这里用的是最简单的 SGD（随机梯度下降），规则是“参数 −= 学习率 × 梯度”。</p>
+        <p class="lesson-note">这个例子预测的是一个数，所以用 MSE。大语言模型预测的是“下一个 token 是哪个”，用的是交叉熵（cross-entropy）损失。思路一样：预测越错，loss 越大。</p>
+        <figure class="tv">
+          <div class="tv-title">每一行代码读写了哪些数据</div>
+          <div class="tv-rw-scroll"><table class="tv-rw">
+            <thead><tr><th>代码</th><th>参数 w, b</th><th>中间结果</th><th>loss</th><th>梯度 .grad</th></tr></thead>
+            <tbody>
+              <tr><td>model(x)</td><td class="r">读</td><td class="w">写：预测值</td><td>–</td><td>–</td></tr>
+              <tr><td>loss_fn(...)</td><td>–</td><td class="r">读</td><td class="w">写</td><td>–</td></tr>
+              <tr><td>zero_grad()</td><td>–</td><td>–</td><td>–</td><td class="c">清零</td></tr>
+              <tr><td>loss.backward()</td><td class="r">读</td><td class="r">读</td><td class="r">读</td><td class="w">写</td></tr>
+              <tr><td>optimizer.step()</td><td class="w">改</td><td>–</td><td>–</td><td class="r">读</td></tr>
+            </tbody>
+          </table></div>
+          <figcaption class="tv-readout">只有 <code>optimizer.step()</code> 这一行真的改了参数。<code>backward()</code> 只是算出“每个参数该往哪边改、改多少”，写进 <code>.grad</code>；它还要读前向时留下的中间结果，所以这些中间结果必须一直留在显存里，等 backward 用完。</figcaption>
+        </figure>
       </section>
 
-      <section class="article-section" id="steps">
-        <div class="section-no">04 · 跟踪一次训练步骤</div>
-        <h2>把一轮训练逐行追一遍。</h2>
-        <div class="why-grid">
-          <div class="why-card"><b>① <code>forward</code></b><p><code>prediction = model(x)</code>。输入经过 Linear，得到当前 parameter 下的预测。为了之后 backward，PyTorch 还会记录必要的计算关系。</p></div>
-          <div class="why-card"><b>② loss</b><p><code>MSELoss</code>（均方误差损失：把预测值与目标值之差的平方汇总成 loss）把预测和真实 y 比较，压成一个标量 loss。loss 越大，说明当前预测越差。</p></div>
-          <div class="why-card"><b>③ <code>zero_grad()</code>（清零梯度：清掉 parameter 上一次累积的 <code>.grad</code>）</b><p>PyTorch 默认会把新 gradient 累加到已有 <code>.grad</code> 上，所以普通训练步骤通常先清掉上一次的 gradient。</p></div>
-        </div>
-        <div class="why-grid">
-          <div class="why-card"><b>④ <code>backward</code></b><p><code>loss.backward()</code>（执行反向传播：从 loss 沿计算图计算各 parameter 的 gradient）会把结果累积到对应 parameter 的 <code>.grad</code> 中。</p></div>
-          <div class="why-card"><b>⑤ <code>optimizer.step()</code></b><p><code>optimizer.step()</code>（执行参数更新：读取 gradient 并修改 parameter）在这里按 SGD（随机梯度下降：按 gradient 方向更新 parameter 的经典优化方法）规则更新参数。parameter 真的在这一行发生改变。</p></div>
-          <div class="why-card"><b>⑥ repeat</b><p>parameter 变了一点，下一轮 forward 的预测结果就会不同。只要更新方向总体有效，loss 会逐渐下降。</p></div>
-        </div>
+      <section class="article-section" id="by-hand">
+        <div class="section-no">03 · 手算第一步</div>
+        <h2>把第一步的数字算出来，就没有任何神秘感了。</h2>
+        <p>一开始 w = 0，b = 0，所以 4 个预测全是 0：</p>
+        <div class="code-block"><div class="code-head"><span>第 1 步</span><span>前向 + loss</span></div><pre><code>预测   ŷ = 0, 0, 0, 0
+目标   y = 1, 3, 5, 7
+误差 ŷ−y = −1, −3, −5, −7
+
+loss = 平均((ŷ−y)²) = (1 + 9 + 25 + 49) / 4 = 21</code></pre></div>
+        <p>接着 <code>loss.backward()</code> 算梯度。对这个模型，梯度的公式是（怎么来的下一课讲）：</p>
+        <div class="code-block"><div class="code-head"><span>第 1 步</span><span>反向：算梯度</span></div><pre><code>w 的梯度 = 平均(2 × 误差 × x) = 2 × (−1×0 − 3×1 − 5×2 − 7×3) / 4 = −17
+b 的梯度 = 平均(2 × 误差)     = 2 × (−1 − 3 − 5 − 7) / 4       = −8</code></pre></div>
+        <p>梯度是负数，意思是“把这个参数调大，loss 会变小”。最后 <code>optimizer.step()</code> 按 SGD 的规则更新，学习率是 0.05：</p>
+        <div class="code-block"><div class="code-head"><span>第 1 步</span><span>更新</span></div><pre><code>w = 0 − 0.05 × (−17) = 0.85
+b = 0 − 0.05 × (−8)  = 0.4
+
+用新参数再算一次 loss：21 → 7.06</code></pre></div>
+        <p>一步就从 21 降到了 7.06。之后每一步都重复同样的计算，只是数字不同。</p>
       </section>
 
-      <section class="article-section" id="inspect">
-        <div class="section-no">05 · 看参数怎样更新</div>
-        <h2>别只盯损失，直接看参数真的被改了。</h2>
-        <p>你可以在训练前后打印参数：</p>
-        <div class="code-block">
-          <div class="code-head"><span>debug habit</span><span>inspect parameters</span></div>
-          <pre><code>print(<span class="comment">"before"</span>, model.weight.item(), model.bias.item())
+      <section class="article-section" id="lr">
+        <div class="section-no">04 · 学习率</div>
+        <h2>学习率决定每一步走多远：太小走不动，太大会飞出去。</h2>
+        <p>下面这个小程序和上面的代码算法完全一样，在浏览器里实时算。左边是 4 个数据点和模型当前这条直线，右边是 loss 的变化（纵轴是对数刻度）。换几个学习率试试：</p>
+        <figure class="tv" id="sgdViz">
+          <div class="tv-title">自己跑一跑：选一个学习率，点“走 1 步”</div>
+          <div class="tv-controls" role="group" aria-label="训练控制">
+            <button type="button" data-lr="0.01">lr = 0.01</button>
+            <button type="button" data-lr="0.05" aria-pressed="true">lr = 0.05</button>
+            <button type="button" data-lr="0.3">lr = 0.3</button>
+            <span class="sep"></span>
+            <button type="button" data-act="1">走 1 步</button>
+            <button type="button" data-act="10">走 10 步</button>
+            <button type="button" data-act="reset">重置</button>
+          </div>
+          <div class="tv-sgd">
+            <svg id="sgdFit" viewBox="0 0 320 220" role="img" aria-label="数据点和当前直线"></svg>
+            <svg id="sgdLoss" viewBox="0 0 320 220" role="img" aria-label="loss 曲线"></svg>
+          </div>
+          <div class="tv-sgd-stats">
+            <div><small>第几步</small><b id="sgdStep">0</b></div>
+            <div><small>w（目标 2）</small><b id="sgdW">0</b></div>
+            <div><small>b（目标 1）</small><b id="sgdB">0</b></div>
+            <div><small>loss</small><b id="sgdL">21</b></div>
+            <div><small>w 的梯度</small><b id="sgdGW">-17</b></div>
+            <div><small>b 的梯度</small><b id="sgdGB">-8</b></div>
+          </div>
+          <figcaption class="tv-readout" id="sgdReadout"></figcaption>
+        </figure>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+          <thead><tr><th>学习率</th><th>现象</th></tr></thead>
+          <tbody>
+            <tr><td>0.01：太小</td><td>方向是对的，但每步走得太少，要 44 步 loss 才降到 0.01 以下。在大模型上，这意味着白白浪费大量算力。</td></tr>
+            <tr><td>0.05：合适</td><td>8 步 loss 就降到 0.01 以下。</td></tr>
+            <tr><td>0.3：太大</td><td>每一步都冲过头，而且越冲越远：第 10 步 loss 已经涨到约 9 万。这叫<strong>发散</strong>。真实训练里看到的就是 loss 突然暴涨，甚至变成 NaN。</td></tr>
+          </tbody>
+        </table></div>
+        <p>学习率没有通用的默认值，要按模型和优化器来调。大模型一般用 Adam 类优化器（下一课讲），学习率在 10⁻⁴ 这个量级，比如 LLaMA 7B 用的是 3 × 10⁻⁴。而且一开始不直接用这个值，而是从很小慢慢升上去（叫 warmup），训练后期再逐渐降下来，目的都是避免一开始就发散。</p>
+      </section>
 
-<span class="comment"># ... run training loop ...</span>
+      <section class="article-section" id="zero-grad">
+        <div class="section-no">05 · 为什么要 zero_grad()</div>
+        <h2>PyTorch 会把新梯度加到旧梯度上，不清就会越加越多。</h2>
+        <p><code>loss.backward()</code> 不是把梯度<strong>写进</strong> <code>.grad</code>，而是<strong>加到</strong> <code>.grad</code> 上。用上面的例子看看忘了清会怎样：</p>
+        <div class="code-block"><div class="code-head"><span>第 2 步</span><span>w = 0.85，b = 0.4</span></div><pre><code>这一步真正的梯度：         w: −9.85    b: −4.65
 
-print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item())</code></pre>
-        </div>
-        <div class="example-grid">
-          <div class="example-card"><div class="cap">BEFORE</div><p><strong>随机参数。</strong> 例如w≈-0.4、b≈0.2。预测自然很差，损失比较大。</p></div>
-          <div class="example-card"><div class="cap">AFTER</div><p><strong>接近目标。</strong> 经过许多小步更新后，w会逼近2、b会逼近1，预测也越来越准。</p></div>
-        </div>
-        <p>以后调大模型时，“parameter 有没有 <code>.grad</code>”“<code>.grad</code> 是否异常”“optimizer 有没有真的 <code>step()</code>”仍然是最基本的调试思路，只是 parameter 数量从 2 个变成几十亿个。</p>
+清了再 backward：.grad =   w: −9.85    b: −4.65     ✓
+忘了清：        .grad =   w: −17 + (−9.85) = −26.85
+                          b: −8  + (−4.65) = −12.65 ✗ 混进了上一步的梯度</code></pre></div>
+        <p>这样更新的步子会越来越大，而且方向也不对。所以普通训练每一步都要先清零。</p>
+        <p>那 PyTorch 为什么要设计成“累加”？因为有时候是故意的：显存放不下一个大 batch 时，可以把它拆成几小份，每份各做一次 backward，让梯度累加起来，最后只更新一次。这叫<strong>梯度累积</strong>（gradient accumulation），下一课细讲。</p>
       </section>
 
       <section class="article-section" id="infra">
-        <div class="section-no">06 · 从系统角度看训练循环</div>
-        <h2>一旦模型和批次变大，这五步就都变成系统问题。</h2>
-        <div class="cost-panel">
-          <div><small>forward</small><b>需要算大量 GEMM，还要保存反向传播时会用到的激活值。</b></div>
-          <div><small>backward</small><b>通常计算量很大，还会生成与参数相关的梯度。</b></div>
-          <div><small>optimizer</small><b>除了参数和梯度，还可能维护额外优化器状态，占据大量显存。</b></div>
-          <div><small>DISTRIBUTED</small><b>多张 GPU 各自算出梯度以后，哪些梯度必须同步？什么时候同步？</b></div>
-        </div>
-        <p>这就是为什么我们先学训练循环再进入后面的系统基础设施。以后遇到 activation checkpointing（激活值检查点：不保存全部 activation，而在 backward 时重算以节省显存）、gradient accumulation、分布式 optimizer、Data Parallel（数据并行：不同模型副本处理不同数据，再同步训练状态）等技术时，你可以明确知道它们在改造循环的哪一部分，而不是只记名词。</p>
+        <div class="section-no">06 · 从系统角度看</div>
+        <h2>模型变大以后，这五步每一步都变成了系统问题。</h2>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+          <thead><tr><th>步骤</th><th>模型变大以后的问题</th></tr></thead>
+          <tbody>
+            <tr><td>前向</td><td>大量矩阵乘法；还要把中间结果（叫<strong>激活值</strong>，activation）留在显存里给反向用，batch 和序列越长，留得越多。</td></tr>
+            <tr><td>反向</td><td>计算量大约是前向的 2 倍；算出来的梯度和参数一样多，也要占显存。</td></tr>
+            <tr><td>更新</td><td>优化器除了参数和梯度，可能还要存额外的状态（下一课讲 Adam 时会看到，可能比参数本身还大）。</td></tr>
+            <tr><td>多卡</td><td>每张卡算出的梯度不一样，更新前要同步。</td></tr>
+          </tbody>
+        </table></div>
+        <p>后面学到的很多技术，都是在改造这个循环的某一步：</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+          <thead><tr><th>技术</th><th>改的是哪一步</th><th>解决什么问题</th></tr></thead>
+          <tbody>
+            <tr><td>激活值重算（activation checkpointing）</td><td>前向 / 反向</td><td>前向时不留全部激活值，反向用到时再算一遍。多花计算，省显存。</td></tr>
+            <tr><td>梯度累积</td><td>反向 / 更新</td><td>几次 backward 才更新一次，用小显存实现大 batch。</td></tr>
+            <tr><td>数据并行（DP）</td><td>反向之后、更新之前</td><td>多张卡各算一部分数据，同步梯度后再更新。</td></tr>
+            <tr><td>分布式优化器</td><td>更新</td><td>每张卡只存、只更新一部分优化器状态，省显存。</td></tr>
+          </tbody>
+        </table></div>
       </section>
 
       <section class="article-section" id="distributed">
         <div class="section-no">07 · 第一个分布式问题</div>
-        <h2>两张GPU各训练一半批次，会发生什么？</h2>
-        <div class="split-preview">
-          <div class="split-original"><small>GLOBAL BATCH</small><code>8 samples</code></div>
-          <span>split batch →</span>
-          <div class="split-gpus">
-            <div><small>GPU 0</small><code>4 samples → grad₀</code></div>
-            <div><small>GPU 1</small><code>4 samples → grad₁</code></div>
+        <h2>两张 GPU 各训一半数据，为什么必须先同步梯度？</h2>
+        <p>还是这 4 个样本，现在分给两张 GPU，每张卡上都有一份完全一样的模型。各自算完梯度后会发生什么：</p>
+        <figure class="tv">
+          <div class="tv-title">两张 GPU，每张拿 2 个样本（w = b = 0 开始）</div>
+          <div class="tv-dp">
+            <div class="h g0">GPU 0</div><div class="mid" style="background:none"></div><div class="h g1">GPU 1</div>
+            <div class="lane0"><small>拿到的数据</small>x = 0, 1</div><div class="mid">模型完全一样<br>w = 0, b = 0</div><div class="lane1"><small>拿到的数据</small>x = 2, 3</div>
+            <div class="lane0"><small>自己算的梯度</small>w: <code>−3</code>　b: <code>−4</code></div><div class="mid">梯度不一样</div><div class="lane1"><small>自己算的梯度</small>w: <code>−31</code>　b: <code>−12</code></div>
+            <div class="sync">同步：两张卡把梯度求平均 → w: (−3 − 31) / 2 = <code>−17</code>，b: (−4 − 12) / 2 = <code>−8</code><br>和单卡用全部 4 个样本算出来的梯度完全一样</div>
+            <div class="lane0"><small>同步后更新</small>w = 0.85, b = 0.4</div><div class="mid">两张卡仍然一致</div><div class="lane1"><small>同步后更新</small>w = 0.85, b = 0.4</div>
+            <div class="lane0"><small>如果不同步，直接更新</small><span class="bad">w = 0.15, b = 0.2</span></div><div class="mid">第一步就分叉了</div><div class="lane1"><small>如果不同步，直接更新</small><span class="bad">w = 1.55, b = 0.6</span></div>
           </div>
-        </div>
-        <p>如果两张GPU都拥有同一份模型参数，却各自只看一半数据，那么反向传播后会得到不同梯度。为了让两份模型继续保持一致，更新参数前通常要把各卡梯度聚合成一致的结果。</p>
-        <div class="concept-note"><p><strong>先埋一个伏笔：</strong>这就是 Data Parallel 为什么需要梯度同步。具体用什么集合通信操作，后面到 Distributed 再学。</p></div>
+        </figure>
+        <p>两点要记住：</p>
+        <ul class="lesson-list">
+          <li><strong>不同步就会分叉。</strong>两张卡看到的数据不同，梯度不同，各自更新后两份模型就不一样了，而且会越差越远。</li>
+          <li><strong>求平均后的结果和单卡完全一样。</strong>因为 loss 本来就是取平均，两张卡各拿一半（数量相等）样本，梯度的平均就等于全部样本的梯度。所以数据并行在数学上和单卡训练等价，只是更快。</li>
+        </ul>
+        <p>这个“所有卡一起求平均，每张卡都拿到结果”的通信叫 <strong>all-reduce</strong>，04 模块会讲它具体怎么实现、要传多少数据。</p>
       </section>
 
       <section class="checkpoint" id="checkpoint">
         <div class="checkpoint-head"><span>CHECKPOINT</span><span>不要跳过</span></div>
         <h2>你应该能自己把训练循环讲顺。</h2>
         <div class="quiz-item">
-          <div class="quiz-q">1. <code>loss.backward()</code> 和 <code>optimizer.step()</code> 是同一件事吗？</div>
+          <div class="quiz-q">1. <code>loss.backward()</code> 和 <code>optimizer.step()</code> 是一回事吗？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">不是。<code>backward()</code> 负责计算梯度并写到参数的 <code>.grad</code>；<code>optimizer.step()</code> 才读取这些梯度并修改参数。</div>
+          <div class="quiz-a">不是。<code>backward()</code> 只算梯度、写进 <code>.grad</code>；<code>optimizer.step()</code> 才读梯度、真正修改参数。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">2. 为什么普通训练循环里要调用 <code>zero_grad()</code>？</div>
+          <div class="quiz-q">2. w = b = 0 时，如果只用一个样本 (x=1, y=3)，loss 和 b 的梯度是多少？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为PyTorch默认会累加梯度。如果不清零，本轮梯度会叠到之前的 <code>.grad</code> 上。梯度累积是有意利用这个机制，但普通训练步骤通常需要清零。</div>
+          <div class="quiz-a">预测是 0，误差是 −3。loss = (−3)² = 9；b 的梯度 = 2 × (−3) = −6。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">3. 数据并行中，两张GPU各算出自己的梯度以后，为什么通常不能各自直接更新？</div>
+          <div class="quiz-q">3. 训练时 loss 突然暴涨甚至变成 NaN，最先该怀疑什么？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为它们看到的数据不同，梯度也不同。如果各自直接更新，参数副本就会逐渐分叉。通常需要先同步/聚合梯度，再让各卡做一致的参数更新。</div>
+          <div class="quiz-a">学习率太大导致发散。每一步更新冲过头，而且越冲越远。</div>
+        </div>
+        <div class="quiz-item">
+          <div class="quiz-q">4. 忘了写 <code>zero_grad()</code> 会怎样？什么时候是故意不清？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">新梯度会加到旧梯度上，更新用的是混在一起的错误梯度。做梯度累积时才故意连着几次 backward 再清。</div>
+        </div>
+        <div class="quiz-item">
+          <div class="quiz-q">5. 数据并行时，为什么每张卡不能用自己的梯度直接更新？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">各卡数据不同、梯度不同，直接更新会让各卡的模型分叉。要先把梯度求平均（all-reduce），所有卡用同一个梯度更新，结果也和单卡训练一样。</div>
         </div>
       </section>
 
@@ -236,13 +307,13 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
 
     <aside class="toc" aria-label="本页目录">
       <strong>ON THIS PAGE</strong>
-      <a href="#loop">训练闭环</a>
       <a href="#toy">最小问题</a>
       <a href="#code">完整代码</a>
-      <a href="#steps">追踪一轮</a>
-      <a href="#inspect">看参数变化</a>
-      <a href="#infra">Infra 视角</a>
-      <a href="#distributed">分布式伏笔</a>
+      <a href="#by-hand">手算第一步</a>
+      <a href="#lr">学习率</a>
+      <a href="#zero-grad">zero_grad</a>
+      <a href="#infra">系统角度</a>
+      <a href="#distributed">数据并行</a>
       <a href="#checkpoint">Checkpoint</a>
     </aside>
   </div>
@@ -256,6 +327,112 @@ print(<span class="comment">"after"</span>, model.weight.item(), model.bias.item
         button.textContent = item.classList.contains('open') ? '收起答案' : '看答案';
       });
     });
+  </script>
+  <script>
+    (function () {
+      var root = document.getElementById('sgdViz');
+      if (!root) return;
+      var X = [0, 1, 2, 3], Y = [1, 3, 5, 7];
+      var NS = 'http://www.w3.org/2000/svg';
+      var lr = 0.05, w, b, step, hist;
+      var calc = function (w, b) {
+        var L = 0, gw = 0, gb = 0;
+        X.forEach(function (x, i) { var e = w * x + b - Y[i]; L += e * e; gw += 2 * e * x; gb += 2 * e; });
+        return { L: L / 4, gw: gw / 4, gb: gb / 4 };
+      };
+      var fmt = function (v) {
+        if (!isFinite(v)) return '溢出';
+        var a = Math.abs(v);
+        if (a !== 0 && (a >= 1e5 || a < 1e-3)) return v.toExponential(2);
+        return (+v.toFixed(3)).toString();
+      };
+      var el = function (tag, attrs, text) {
+        var e = document.createElementNS(NS, tag);
+        for (var k in attrs) e.setAttribute(k, attrs[k]);
+        if (text != null) e.textContent = text;
+        return e;
+      };
+      var fit = document.getElementById('sgdFit'), lossSvg = document.getElementById('sgdLoss');
+      var drawFit = function () {
+        fit.innerHTML = '';
+        var x0 = 34, x1 = 310, y0 = 196, y1 = 14;
+        var sx = function (x) { return x0 + (x + 0.5) / 4 * (x1 - x0); };
+        var sy = function (y) { return y0 - (y + 2) / 11 * (y0 - y1); };
+        var defs = el('defs'); var cp = el('clipPath', { id: 'sgdClip' }); cp.appendChild(el('rect', { x: x0, y: y1, width: x1 - x0, height: y0 - y1 })); defs.appendChild(cp); fit.appendChild(defs);
+        fit.appendChild(el('line', { x1: x0, y1: sy(0), x2: x1, y2: sy(0), stroke: '#ddded7' }));
+        fit.appendChild(el('line', { x1: sx(0), y1: y1, x2: sx(0), y2: y0, stroke: '#ddded7' }));
+        [0, 1, 2, 3].forEach(function (t) { fit.appendChild(el('text', { x: sx(t), y: y0 + 14, 'text-anchor': 'middle' }, t)); });
+        [0, 3, 6, 9].forEach(function (t) { fit.appendChild(el('text', { x: x0 - 6, y: sy(t) + 3, 'text-anchor': 'end' }, t)); });
+        fit.appendChild(el('text', { x: x1, y: y1 + 10, 'text-anchor': 'end' }, '虚线：目标 y = 2x + 1'));
+        var g = el('g', { 'clip-path': 'url(#sgdClip)' });
+        g.appendChild(el('line', { x1: sx(-0.5), y1: sy(2 * -0.5 + 1), x2: sx(3.5), y2: sy(2 * 3.5 + 1), stroke: '#a0a39b', 'stroke-dasharray': '4 4' }));
+        if (isFinite(w) && isFinite(b)) {
+          var ya = w * -0.5 + b, yb = w * 3.5 + b;
+          if (Math.abs(ya) < 1e6 && Math.abs(yb) < 1e6) g.appendChild(el('line', { x1: sx(-0.5), y1: sy(ya), x2: sx(3.5), y2: sy(yb), stroke: '#b8953f', 'stroke-width': 2.5 }));
+        }
+        fit.appendChild(g);
+        X.forEach(function (x, i) { fit.appendChild(el('circle', { cx: sx(x), cy: sy(Y[i]), r: 5, fill: '#255b46' })); });
+      };
+      var drawLoss = function () {
+        lossSvg.innerHTML = '';
+        var x0 = 40, x1 = 310, y0 = 196, y1 = 14;
+        var logs = hist.filter(isFinite).map(function (v) { return Math.log10(Math.max(v, 1e-6)); });
+        var lo = Math.min(-3, Math.floor(Math.min.apply(null, logs))), hi = Math.max(2, Math.ceil(Math.max.apply(null, logs)));
+        var n = Math.max(10, hist.length - 1);
+        var sx = function (i) { return x0 + i / n * (x1 - x0); };
+        var sy = function (v) { return y0 - (v - lo) / (hi - lo) * (y0 - y1); };
+        var stepTick = Math.ceil((hi - lo) / 5);
+        for (var k = lo; k <= hi; k += stepTick) {
+          lossSvg.appendChild(el('line', { x1: x0, y1: sy(k), x2: x1, y2: sy(k), stroke: '#eceee8' }));
+          lossSvg.appendChild(el('text', { x: x0 - 6, y: sy(k) + 3, 'text-anchor': 'end' }, k === 0 ? '1' : '1e' + k));
+        }
+        lossSvg.appendChild(el('text', { x: x1, y: y0 + 14, 'text-anchor': 'end' }, '第 ' + n + ' 步'));
+        lossSvg.appendChild(el('text', { x: x0, y: y0 + 14 }, '0'));
+        lossSvg.appendChild(el('text', { x: (x0 + x1) / 2, y: y0 + 14, 'text-anchor': 'middle' }, 'loss（对数刻度）'));
+        var pts = [];
+        hist.forEach(function (v, i) { if (isFinite(v)) pts.push(sx(i).toFixed(1) + ',' + sy(Math.log10(Math.max(v, 1e-6))).toFixed(1)); });
+        lossSvg.appendChild(el('polyline', { points: pts.join(' '), fill: 'none', stroke: '#315f82', 'stroke-width': 2 }));
+        var last = pts[pts.length - 1].split(',');
+        lossSvg.appendChild(el('circle', { cx: last[0], cy: last[1], r: 4, fill: '#315f82' }));
+      };
+      var render = function () {
+        var c = calc(w, b);
+        document.getElementById('sgdStep').textContent = step;
+        document.getElementById('sgdW').textContent = fmt(w);
+        document.getElementById('sgdB').textContent = fmt(b);
+        document.getElementById('sgdL').textContent = fmt(c.L);
+        document.getElementById('sgdGW').textContent = fmt(c.gw);
+        document.getElementById('sgdGB').textContent = fmt(c.gb);
+        drawFit(); drawLoss();
+        var msg;
+        if (step === 0) msg = '一开始 w = 0，b = 0，直线是平的，loss = 21。点“走 1 步”。';
+        else if (!isFinite(c.L) || c.L > hist[0]) msg = '<strong>loss 越来越大：学习率太大，发散了。</strong>每一步都冲过头，直线在目标两边越甩越远。';
+        else if (c.L < 0.01) msg = '<strong>学会了。</strong>第 ' + hist.findIndex(function (v) { return v < 0.01; }) + ' 步 loss 降到 0.01 以下，w ≈ ' + w.toFixed(2) + '，b ≈ ' + b.toFixed(2) + '。';
+        else msg = '每一步：w 减去 ' + lr + ' × (w 的梯度)，b 减去 ' + lr + ' × (b 的梯度)。梯度是负的，所以 w、b 都在变大。';
+        document.getElementById('sgdReadout').innerHTML = msg;
+      };
+      var reset = function () { w = 0; b = 0; step = 0; hist = [calc(0, 0).L]; render(); };
+      var go = function (k) {
+        for (var i = 0; i < k; i++) {
+          var c = calc(w, b);
+          if (!isFinite(c.L)) break;
+          w -= lr * c.gw; b -= lr * c.gb; step++;
+          hist.push(calc(w, b).L);
+        }
+        render();
+      };
+      root.querySelectorAll('[data-lr]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          lr = +btn.dataset.lr;
+          root.querySelectorAll('[data-lr]').forEach(function (o) { o.setAttribute('aria-pressed', o === btn); });
+          reset();
+        });
+      });
+      root.querySelectorAll('[data-act]').forEach(function (btn) {
+        btn.addEventListener('click', function () { if (btn.dataset.act === 'reset') reset(); else go(+btn.dataset.act); });
+      });
+      reset();
+    })();
   </script>
 </body>
 </html>
