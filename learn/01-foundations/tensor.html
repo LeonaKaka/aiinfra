@@ -140,14 +140,38 @@ print(X.device)      <span class="comment"># cpu</span></code></pre>
         <p>把各维长度乘起来就是元素总数。shape 还决定了两个张量能不能做矩阵乘法（下一课讲），以及能沿哪一维切开分给多张 GPU。</p>
 
         <h3><code>dtype</code>：每个数用什么格式存，占几个字节</h3>
+        <p>大模型里最常见的是这三种：</p>
         <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
-          <thead><tr><th>dtype</th><th>每个数占</th><th>特点</th></tr></thead>
+          <thead><tr><th>dtype</th><th>每个数占</th><th>能存多大的数</th><th>精度</th></tr></thead>
           <tbody>
-            <tr><td><code>float32</code>（FP32）</td><td>4 字节</td><td>默认格式，精度高。</td></tr>
-            <tr><td><code>float16</code>（FP16）</td><td>2 字节</td><td>省一半显存、算得更快，但能表示的数值范围小，太大或太小的数会溢出。</td></tr>
-            <tr><td><code>bfloat16</code>（BF16）</td><td>2 字节</td><td>同样省一半，但数值范围和 FP32 一样大，只是精度更低。不容易溢出，所以大模型训练里最常用。</td></tr>
+            <tr><td><code>float32</code>（FP32）</td><td>4 字节</td><td>约 3.4 × 10<sup>38</sup></td><td>高</td></tr>
+            <tr><td><code>float16</code>（FP16）</td><td>2 字节</td><td><strong>只到 65504</strong></td><td>中</td></tr>
+            <tr><td><code>bfloat16</code>（BF16）</td><td>2 字节</td><td>和 FP32 一样大</td><td><strong>低</strong></td></tr>
           </tbody>
         </table></div>
+        <p>光看这张表，很难知道该用哪个。先看“能存多大”和“精度”在实际计算里分别会造成什么后果：</p>
+        <div class="code-block">
+          <div class="code-head"><span>python</span><span>范围不够 vs 精度不够</span></div>
+          <pre><code>torch.tensor(<span class="num">70000.0</span>, dtype=torch.float16)    <span class="comment"># inf   ← 超过 65504，直接变成无穷大，后面的计算全废</span>
+torch.tensor(<span class="num">70000.0</span>, dtype=torch.bfloat16)   <span class="comment"># 70144 ← 存得下，只是不太准</span>
+
+torch.tensor(<span class="num">1.0</span>, dtype=torch.bfloat16) + <span class="num">0.001</span>   <span class="comment"># 1.0   ← 加上的 0.001 被直接抹掉了</span>
+torch.tensor(<span class="num">1.0</span>, dtype=torch.float16)  + <span class="num">0.001</span>   <span class="comment"># 1.001 ← FP16 精度够，能保留</span></code></pre>
+        </div>
+        <p>所以两种 16 位格式各有一个坑：<strong>FP16 怕数太大（会变成 inf），BF16 怕变化太小（会被抹掉）。</strong>选哪个，就看你的计算更容易踩哪个坑。</p>
+
+        <p>实际工作中是这样选的：</p>
+        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+          <thead><tr><th>场景</th><th>用什么</th><th>为什么</th></tr></thead>
+          <tbody>
+            <tr><td>写小例子、做实验</td><td>FP32</td><td>PyTorch 默认就是它，数据量小，不用操心。</td></tr>
+            <tr><td>大模型推理</td><td>BF16 或 FP16</td><td>省一半显存、算得更快。7B 模型的权重用 FP32 存要 28 GB，用 BF16 只要 14 GB。推理不更新权重，小变化被抹掉的问题基本碰不到。</td></tr>
+            <tr><td>大模型训练</td><td><strong>BF16 + FP32 混用</strong></td><td>前向、反向这些大计算用 BF16，又快又省；但另外保留一份 FP32 的权重，专门用来做更新。原因就是上面第二个例子：每一步的更新量往往只有 0.0001 这种量级，直接加到 BF16 权重上会被抹掉，模型就学不动了。这种做法叫<strong>混合精度训练</strong>。</td></tr>
+            <tr><td>老显卡（V100 及更早）上训练</td><td>FP16 + loss scaling</td><td>这些卡不支持 BF16。FP16 范围太窄，很小的梯度会直接变成 0，所以先把 loss 乘一个大数把梯度放大，更新前再缩回去。现在的新卡基本不用这招了。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="concept-note"><p><strong>记住一条就够：</strong>现在大模型默认用 BF16 计算；需要把很多小数累加起来的地方（比如更新权重）用 FP32。FP16 主要出现在老显卡和部分推理场景。</p></div>
+        <p>这也说明训练时的显存不只是“参数个数 × 2 字节”：还要再加一份 FP32 权重和优化器的状态。05.5 讲分布式优化器时，要切分的正是这部分。</p>
 
         <h3><code>device</code>：数据现在在哪块内存里</h3>
         <p><code>cpu</code> 表示在普通内存里，<code>cuda:0</code> 表示在 0 号 GPU 的显存里，<code>cuda:1</code> 是 1 号 GPU，以此类推。CPU 主要负责运行 Python 代码、调度和准备数据，GPU 负责大规模的矩阵运算。</p>
@@ -257,12 +281,17 @@ Y = X @ W          <span class="comment"># 矩阵乘法，Y: [B, S, 4H]</span>
           <div class="quiz-a">数字个数一样多，但 float32 每个数占 4 字节，float16 只占 2 字节。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">3. 一个张量在 <code>cuda:0</code>，另一张卡 <code>cuda:1</code> 想用它，会发生什么？</div>
+          <div class="quiz-q">3. 训练大模型时，为什么不能全程只用 BF16，还要留一份 FP32 的权重？</div>
+          <button class="quiz-toggle" type="button">看答案</button>
+          <div class="quiz-a">BF16 精度低，每一步的更新量很小（比如 0.0001），直接加到 BF16 权重上会被抹掉，权重就一直不变。所以更新权重时要用 FP32 那份。</div>
+        </div>
+        <div class="quiz-item">
+          <div class="quiz-q">4. 一个张量在 <code>cuda:0</code>，另一张卡 <code>cuda:1</code> 想用它，会发生什么？</div>
           <button class="quiz-toggle" type="button">看答案</button>
           <div class="quiz-a">得先把数据从 0 号卡搬到 1 号卡。搬数据要花时间，所以做系统的人总在算：哪些数据必须搬、搬多少、什么时候搬。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">4. <code>transpose</code> 之后，数据在内存里挪位置了吗？</div>
+          <div class="quiz-q">5. <code>transpose</code> 之后，数据在内存里挪位置了吗？</div>
           <button class="quiz-toggle" type="button">看答案</button>
           <div class="quiz-a">没有。它只改了 stride，也就是换了一种读法。要真的按新顺序重排，得调用 <code>contiguous()</code>，那才会复制数据。</div>
         </div>
