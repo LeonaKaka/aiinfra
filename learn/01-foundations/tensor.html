@@ -8,6 +8,7 @@
   <title>01.1 Tensor 到底是什么？ · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
+  <link rel="stylesheet" href="./tensor-visuals.css" />
   <style>
     .dtype-table{min-width:0!important}
     .lesson-note{font-size:13px!important;color:#6c6f68!important}
@@ -114,7 +115,20 @@
           </div>
         </div>
 
-        <p>所以 <code>[2, 5, 8]</code> 读出来就是：<strong>2 条样本，每条 5 个 token，每个 token 用 8 个数表示</strong>，一共 2 × 5 × 8 = 80 个数。取 <code>X[1, 3]</code> 就是第 1 条样本的第 3 个 token（“这个”）对应的那 8 个数（下标从 0 开始）。</p>
+        <p>所以 <code>[2, 5, 8]</code> 读出来就是：<strong>2 条样本，每条 5 个 token，每个 token 用 8 个数表示</strong>，一共 2 × 5 × 8 = 80 个数。下面每一个小格就是一个数：</p>
+        <figure class="tv" id="bshViz">
+          <div class="tv-title">X.shape = [2, 5, 8] · 点按钮看看取出来的是哪一块</div>
+          <div class="tv-controls" role="group" aria-label="选择下标">
+            <button type="button" data-sel="b1s3" aria-pressed="true">X[1, 3]</button>
+            <button type="button" data-sel="b1">X[1]</button>
+            <button type="button" data-sel="s0">X[:, 0]</button>
+            <button type="button" data-sel="h0">X[:, :, 0]</button>
+          </div>
+          <div class="tv-bsh-grid"><div class="tv-sample"><div class="tv-sample-cap">样本 0</div><div class="tv-hhead"><span></span><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="tv-row" data-s="0"><span class="tv-tok"><small>0</small>我</span><i data-b="0" data-s="0" data-h="0"></i><i data-b="0" data-s="0" data-h="1"></i><i data-b="0" data-s="0" data-h="2"></i><i data-b="0" data-s="0" data-h="3"></i><i data-b="0" data-s="0" data-h="4"></i><i data-b="0" data-s="0" data-h="5"></i><i data-b="0" data-s="0" data-h="6"></i><i data-b="0" data-s="0" data-h="7"></i></div><div class="tv-row" data-s="1"><span class="tv-tok"><small>1</small>在</span><i data-b="0" data-s="1" data-h="0"></i><i data-b="0" data-s="1" data-h="1"></i><i data-b="0" data-s="1" data-h="2"></i><i data-b="0" data-s="1" data-h="3"></i><i data-b="0" data-s="1" data-h="4"></i><i data-b="0" data-s="1" data-h="5"></i><i data-b="0" data-s="1" data-h="6"></i><i data-b="0" data-s="1" data-h="7"></i></div><div class="tv-row" data-s="2"><span class="tv-tok"><small>2</small>学</span><i data-b="0" data-s="2" data-h="0"></i><i data-b="0" data-s="2" data-h="1"></i><i data-b="0" data-s="2" data-h="2"></i><i data-b="0" data-s="2" data-h="3"></i><i data-b="0" data-s="2" data-h="4"></i><i data-b="0" data-s="2" data-h="5"></i><i data-b="0" data-s="2" data-h="6"></i><i data-b="0" data-s="2" data-h="7"></i></div><div class="tv-row" data-s="3"><span class="tv-tok"><small>3</small>系统</span><i data-b="0" data-s="3" data-h="0"></i><i data-b="0" data-s="3" data-h="1"></i><i data-b="0" data-s="3" data-h="2"></i><i data-b="0" data-s="3" data-h="3"></i><i data-b="0" data-s="3" data-h="4"></i><i data-b="0" data-s="3" data-h="5"></i><i data-b="0" data-s="3" data-h="6"></i><i data-b="0" data-s="3" data-h="7"></i></div><div class="tv-row" data-s="4"><span class="tv-tok"><small>4</small>课程</span><i data-b="0" data-s="4" data-h="0"></i><i data-b="0" data-s="4" data-h="1"></i><i data-b="0" data-s="4" data-h="2"></i><i data-b="0" data-s="4" data-h="3"></i><i data-b="0" data-s="4" data-h="4"></i><i data-b="0" data-s="4" data-h="5"></i><i data-b="0" data-s="4" data-h="6"></i><i data-b="0" data-s="4" data-h="7"></i></div></div><div class="tv-sample"><div class="tv-sample-cap">样本 1</div><div class="tv-hhead"><span></span><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="tv-row" data-s="0"><span class="tv-tok"><small>0</small>GPU</span><i data-b="1" data-s="0" data-h="0"></i><i data-b="1" data-s="0" data-h="1"></i><i data-b="1" data-s="0" data-h="2"></i><i data-b="1" data-s="0" data-h="3"></i><i data-b="1" data-s="0" data-h="4"></i><i data-b="1" data-s="0" data-h="5"></i><i data-b="1" data-s="0" data-h="6"></i><i data-b="1" data-s="0" data-h="7"></i></div><div class="tv-row" data-s="1"><span class="tv-tok"><small>1</small>正在</span><i data-b="1" data-s="1" data-h="0"></i><i data-b="1" data-s="1" data-h="1"></i><i data-b="1" data-s="1" data-h="2"></i><i data-b="1" data-s="1" data-h="3"></i><i data-b="1" data-s="1" data-h="4"></i><i data-b="1" data-s="1" data-h="5"></i><i data-b="1" data-s="1" data-h="6"></i><i data-b="1" data-s="1" data-h="7"></i></div><div class="tv-row" data-s="2"><span class="tv-tok"><small>2</small>计算</span><i data-b="1" data-s="2" data-h="0"></i><i data-b="1" data-s="2" data-h="1"></i><i data-b="1" data-s="2" data-h="2"></i><i data-b="1" data-s="2" data-h="3"></i><i data-b="1" data-s="2" data-h="4"></i><i data-b="1" data-s="2" data-h="5"></i><i data-b="1" data-s="2" data-h="6"></i><i data-b="1" data-s="2" data-h="7"></i></div><div class="tv-row" data-s="3"><span class="tv-tok"><small>3</small>这个</span><i data-b="1" data-s="3" data-h="0"></i><i data-b="1" data-s="3" data-h="1"></i><i data-b="1" data-s="3" data-h="2"></i><i data-b="1" data-s="3" data-h="3"></i><i data-b="1" data-s="3" data-h="4"></i><i data-b="1" data-s="3" data-h="5"></i><i data-b="1" data-s="3" data-h="6"></i><i data-b="1" data-s="3" data-h="7"></i></div><div class="tv-row" data-s="4"><span class="tv-tok"><small>4</small>Tensor</span><i data-b="1" data-s="4" data-h="0"></i><i data-b="1" data-s="4" data-h="1"></i><i data-b="1" data-s="4" data-h="2"></i><i data-b="1" data-s="4" data-h="3"></i><i data-b="1" data-s="4" data-h="4"></i><i data-b="1" data-s="4" data-h="5"></i><i data-b="1" data-s="4" data-h="6"></i><i data-b="1" data-s="4" data-h="7"></i></div></div></div>
+          <div class="tv-axes"><span><b>B = 2</b> 两个面板</span><span><b>S = 5</b> 每个面板 5 行</span><span><b>H = 8</b> 每行 8 格</span></div>
+          <figcaption class="tv-readout" id="bshReadout"></figcaption>
+        </figure>
+        <p>注意取出来的 shape：每固定一个下标，就少一维。<code>X[1, 3]</code> 固定了 B 和 S，只剩 H，所以 shape 是 <code>[8]</code>。下标从 0 开始数。</p>
         <p>真实模型里 H 大得多，比如 4096。这些数分别代表什么，要到 Transformer 那部分才讲。这节课只需要会读形状。</p>
         <p class="lesson-note">实际送进模型的几句话长短一般不一样。通常会把短的补齐到同样长度（padding），这样才能排成一个规整的 <code>[B, S, H]</code>。</p>
       </section>
@@ -149,7 +163,21 @@ print(X.device)      <span class="comment"># cpu</span></code></pre>
             <tr><td><code>bfloat16</code>（BF16）</td><td>2 字节</td><td>和 FP32 一样大</td><td><strong>低</strong></td></tr>
           </tbody>
         </table></div>
-        <p>光看这张表，很难知道该用哪个。先看“能存多大”和“精度”在实际计算里分别会造成什么后果：</p>
+        <figure class="tv">
+          <div class="tv-title">每个数在内存里的 bit 是怎么分配的（每格 = 1 bit）</div>
+          <div class="tv-bits">
+            <div class="tv-bitrow"><span>FP32<small>32 bit · 4 字节</small></span><div class="tv-bitcells"><i class="sg"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i></div></div>
+            <div class="tv-bitrow"><span>FP16<small>16 bit · 2 字节</small></span><div class="tv-bitcells"><i class="sg"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i></div></div>
+            <div class="tv-bitrow"><span>BF16<small>16 bit · 2 字节</small></span><div class="tv-bitcells"><i class="sg"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ex"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i><i class="ma"></i></div></div>
+          </div>
+          <div class="tv-legend">
+            <span><i style="background:#cfd2cb"></i>符号位：正还是负</span>
+            <span><i style="background:var(--train)"></i>指数位：决定能存多大的数</span>
+            <span><i style="background:#9cbbd3"></i>尾数位：决定能存多精确</span>
+          </div>
+          <figcaption class="tv-readout">BF16 就是把 FP32 的后 16 位直接砍掉：<strong>指数位一样是 8 位，所以范围和 FP32 一样大；尾数位只剩 7 位，所以精度最低。</strong>FP16 正好反过来：尾数位有 10 位，精度比 BF16 好，但指数位只有 5 位，最大只能存到 65504。</figcaption>
+        </figure>
+        <p>光知道这些还是很难选。再看“范围不够”和“精度不够”在实际计算里分别会造成什么后果：</p>
         <div class="code-block">
           <div class="code-head"><span>python</span><span>范围不够 vs 精度不够</span></div>
           <pre><code>torch.tensor(<span class="num">70000.0</span>, dtype=torch.float16)    <span class="comment"># inf   ← 超过 65504，直接变成无穷大，后面的计算全废</span>
@@ -205,12 +233,22 @@ BF16: 80 × 2 = 160 字节   <span class="comment"># 同样的形状，换个 dt
 BF16:     86 亿 × 2 ≈ 172 亿字节 ≈ 17 GB</code></pre>
         </div>
         <p>这只是模型在某一层算出来的<strong>一个中间结果</strong>，这种中间结果叫<strong>激活值</strong>（activation）。一张 80 GB 显存的 GPU，光这一块就要占掉五分之一还多，而一个模型有几十层，每层都会产生好几块这样的激活值，还要放模型参数本身。</p>
+        <figure class="tv">
+          <div class="tv-title">一张 80 GB 显存的 GPU</div>
+          <div class="tv-membar"><div class="used">17 GB</div><div class="rest">剩下的要装其他层的激活值、模型参数、优化器状态……</div></div>
+          <div class="tv-scale"><span>0</span><span>80 GB</span></div>
+        </figure>
+
         <div class="concept-note"><p><strong>一张卡放不下，就得把张量切开，分到多张卡上。</strong>沿不同的维度切，就对应后面不同的并行方式：</p></div>
-        <div class="why-grid">
-          <div class="why-card"><b>沿 B 切</b><p>每张卡处理不同的样本：<strong>数据并行</strong>（DP，05 模块）。</p></div>
-          <div class="why-card"><b>沿 S 切</b><p>每张卡处理同一条样本的不同 token 段：<strong>序列并行</strong>（SP）和<strong>上下文并行</strong>（CP，05 模块）。</p></div>
-          <div class="why-card"><b>切模型的权重矩阵</b><p>每张卡只存一部分参数，各算一部分结果：<strong>张量并行</strong>（TP，05 模块）。</p></div>
-        </div>
+        <figure class="tv">
+          <div class="tv-title">同一个张量，三种切法（两张 GPU）</div>
+          <div class="tv-splits">
+            <div class="tv-split"><b>沿 B 切</b><small>数据并行 DP · 05 模块</small><div class="tv-mini"><div class="tv-mini-panel"><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i></div><div class="tv-mini-panel"><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i></div></div><div class="tv-mini-cap"><span>样本 0</span><span>样本 1</span></div><p>每张卡拿不同的样本，各算各的。</p></div>
+            <div class="tv-split"><b>沿 S 切</b><small>序列并行 SP / 上下文并行 CP · 05 模块</small><div class="tv-mini"><div class="tv-mini-panel"><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i></div><div class="tv-mini-panel"><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i></div></div><div class="tv-mini-cap"><span>样本 0</span><span>样本 1</span></div><p>每张卡拿同一条样本的不同 token 段。</p></div>
+            <div class="tv-split"><b>切权重 W</b><small>张量并行 TP · 05 模块</small><div class="tv-mini"><div class="tv-mini-panel"><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i><i class="rep"></i></div><span class="op">@</span><div class="tv-mini-w"><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g0"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i><i class="g1"></i></div></div><div class="tv-mini-cap"><span>X：两张卡都有</span><span>W：按列切成两半</span></div><p>每张卡只存一半参数，各算一半结果。</p></div>
+          </div>
+          <div class="tv-legend"><span><i class="g0"></i>放在 GPU 0</span><span><i class="g1"></i>放在 GPU 1</span><span><i class="rep"></i>两张卡各有一份</span></div>
+        </figure>
         <p>不管哪种切法，都要回答同一个问题：切完以后，卡和卡之间需要传什么、传多少。</p>
       </section>
 
@@ -219,13 +257,21 @@ BF16:     86 亿 × 2 ≈ 172 亿字节 ≈ 17 GB</code></pre>
         <h2>同样的 shape，在内存里可能排得不一样。</h2>
         <p>这一节第一次读可以略读，学到 07、08 模块时会再用到。</p>
         <p>内存地址是一维的，从 0 开始一个接一个往后编号。所以一个 3 行 4 列的张量，在内存里实际是 12 个数按顺序排成一排，先放第 0 行，再放第 1 行，然后是第 2 行：</p>
-        <div class="code-block">
-          <div class="code-head"><span>x = torch.arange(12).reshape(3, 4)</span><span>逻辑形状 vs 内存</span></div>
-          <pre><code>逻辑上（3 行 4 列）        内存里（一排 12 个位置）
- 0  1  2  3                地址: 0 1 2 3 4 5 6 7 8 9 10 11
- 4  5  6  7                数值: 0 1 2 3 4 5 6 7 8 9 10 11
- 8  9 10 11</code></pre>
-        </div>
+        <figure class="tv" id="strideViz">
+          <div class="tv-title">同一块内存，两种读法 · 点左边任意一格</div>
+          <div class="tv-controls" role="group" aria-label="选择张量">
+            <button type="button" data-mode="x" aria-pressed="true">x：3 行 4 列</button>
+            <button type="button" data-mode="y">y = x.transpose(0, 1)：4 行 3 列</button>
+          </div>
+          <div class="tv-stride-body">
+            <div class="tv-logical"><small id="strideLogicalCap">逻辑上</small><div class="tv-lgrid" id="strideGrid"></div></div>
+            <div class="tv-memory"><small>内存里（x 和 y 共用这一块）</small><div class="tv-mstrip" id="strideStrip"></div>
+              <div class="tv-mstrip-label"><span>x 是 arange(12)，所以每个数正好等于它的地址</span><span>蓝圈：按行读时第几个被读到</span></div>
+              <div class="tv-order" id="strideOrder"></div>
+            </div>
+          </div>
+          <figcaption class="tv-readout" id="strideReadout"></figcaption>
+        </figure>
         <p>那么“第 1 行第 2 列”在内存里的哪个位置？PyTorch 靠 <strong>stride</strong>（步长）来算：每一维的下标加 1，内存位置要往后跳几个。这里往下一行跳 4 个，往右一列跳 1 个，所以 stride 是 <code>(4, 1)</code>，位置 = 1×4 + 2×1 = 6。</p>
 
         <div class="code-block"><div class="code-head"><span>python</span><span>stride / transpose / contiguous</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
@@ -238,6 +284,7 @@ print(y.is_contiguous())   <span class="comment"># False：按 y 的行去读，
 z = y.contiguous()         <span class="comment"># 按 y 的顺序重新分配内存、复制一份</span>
 print(z.stride())          <span class="comment"># (3, 1)</span></code></pre></div>
 
+        <p>回到上面的图，切换到 <code>y</code> 看看：按行读 <code>y</code> 时，地址是 0 → 4 → 8 → 1 → … 这样跳着走的，这就是“不连续”。</p>
         <p><code>y</code> 和 <code>x</code> 共用同一块内存（叫 <strong>storage</strong>），<code>y</code> 只是用不同的 stride 去读它，这种张量叫 <strong>view</strong>（视图）。改了 <code>y</code> 里的数，<code>x</code> 也会跟着变。</p>
         <div class="why-grid">
           <div class="why-card"><b>只改读法，不复制</b><p><code>transpose</code>、<code>permute</code>（任意重排维度顺序）、<code>view</code>：只改 shape 和 stride，几乎没有开销。</p></div>
@@ -340,6 +387,78 @@ Y = X @ W          <span class="comment"># 矩阵乘法，Y: [B, S, 4H]</span>
         button.textContent = item.classList.contains('open') ? '收起答案' : '看答案';
       });
     });
+    (function () {
+      var viz = document.getElementById('bshViz');
+      if (viz) {
+        var info = {
+          b1s3: ['X[1, 3]', '[8]', '样本 1 的第 3 个 token（“这个”）对应的 8 个数。', function (b, s, h) { return b === 1 && s === 3; }],
+          b1: ['X[1]', '[5, 8]', '整条样本 1：5 个 token，每个 8 个数。', function (b) { return b === 1; }],
+          s0: ['X[:, 0]', '[2, 8]', '两条样本各自的第 0 个 token。“:” 表示这一维全都要。', function (b, s) { return s === 0; }],
+          h0: ['X[:, :, 0]', '[2, 5]', '每个 token 的第 0 个数，一共 2 × 5 个。', function (b, s, h) { return h === 0; }]
+        };
+        var cells = viz.querySelectorAll('.tv-row i');
+        var out = document.getElementById('bshReadout');
+        var pick = function (key) {
+          var d = info[key];
+          cells.forEach(function (c) { c.classList.toggle('on', d[3](+c.dataset.b, +c.dataset.s, +c.dataset.h)); });
+          viz.querySelectorAll('[data-sel]').forEach(function (btn) { btn.setAttribute('aria-pressed', btn.dataset.sel === key); });
+          out.innerHTML = '<code>' + d[0] + '</code> → shape <code>' + d[1] + '</code>：' + d[2];
+        };
+        viz.querySelectorAll('[data-sel]').forEach(function (btn) { btn.addEventListener('click', function () { pick(btn.dataset.sel); }); });
+        pick('b1s3');
+      }
+
+      var sv = document.getElementById('strideViz');
+      if (!sv) return;
+      var grid = document.getElementById('strideGrid');
+      var strip = document.getElementById('strideStrip');
+      var order = document.getElementById('strideOrder');
+      var readout = document.getElementById('strideReadout');
+      var cap = document.getElementById('strideLogicalCap');
+      var modes = {
+        x: { name: 'x', rows: 3, cols: 4, stride: [4, 1] },
+        y: { name: 'y', rows: 4, cols: 3, stride: [1, 4] }
+      };
+      var mode = modes.x;
+      var addr = function (i, j) { return i * mode.stride[0] + j * mode.stride[1]; };
+      var select = function (i, j) {
+        var a = addr(i, j);
+        grid.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', +b.dataset.i === i && +b.dataset.j === j); });
+        strip.querySelectorAll('div').forEach(function (d) { d.classList.toggle('on', +d.dataset.a === a); });
+        readout.innerHTML = '<code>' + mode.name + '[' + i + ', ' + j + ']</code> 在内存地址 = ' + i + ' × ' + mode.stride[0] + ' + ' + j + ' × ' + mode.stride[1] + ' = <strong>' + a + '</strong>。stride 是 <code>(' + mode.stride.join(', ') + ')</code>：行号加 1 跳 ' + mode.stride[0] + ' 个，列号加 1 跳 ' + mode.stride[1] + ' 个。';
+      };
+      var render = function () {
+        cap.textContent = '逻辑上：' + mode.name + '，' + mode.rows + ' 行 ' + mode.cols + ' 列';
+        grid.style.gridTemplateColumns = 'repeat(' + mode.cols + ', 40px)';
+        grid.innerHTML = '';
+        var seq = [];
+        for (var i = 0; i < mode.rows; i++) {
+          for (var j = 0; j < mode.cols; j++) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.dataset.i = i; b.dataset.j = j; b.textContent = addr(i, j);
+            b.addEventListener('click', select.bind(null, i, j));
+            grid.appendChild(b);
+            seq.push(addr(i, j));
+          }
+        }
+        strip.innerHTML = '';
+        for (var k = 0; k < 12; k++) {
+          var d = document.createElement('div');
+          d.dataset.a = k;
+          d.innerHTML = '<b>' + k + '</b><span>' + (seq.indexOf(k) + 1) + '</span>';
+          strip.appendChild(d);
+        }
+        var contiguous = mode.name === 'x';
+        order.innerHTML = '按行读 ' + mode.name + ' 时依次访问的地址：' + seq.map(function (a, n) {
+          return (n && a !== seq[n - 1] + 1) ? '<span class="jump">' + a + '</span>' : a;
+        }).join(' → ') + (contiguous ? '<br>一格一格往后走：连续（contiguous）。' : '<br><span class="jump">跳着走</span>：不连续，<code>y.is_contiguous()</code> 是 False。');
+        sv.querySelectorAll('[data-mode]').forEach(function (btn) { btn.setAttribute('aria-pressed', btn.dataset.mode === mode.name); });
+        select(1, 2);
+      };
+      sv.querySelectorAll('[data-mode]').forEach(function (btn) { btn.addEventListener('click', function () { mode = modes[btn.dataset.mode]; render(); }); });
+      render();
+    })();
+
   </script>
 </body>
 </html>
