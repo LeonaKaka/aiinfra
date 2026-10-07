@@ -68,14 +68,13 @@
         <tr><td><code>MiB</code></td><td>Mebibyte</td><td>MiB 二进制容量单位</td><td>二进制容量单位，1 MiB = 2^20 bytes。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>UCX</code></td><td>Unified Communication X</td><td>统一通信 X</td><td>为 HPC/AI 提供多种传输后端抽象的通信框架。</td></tr>
-        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>NIC</code></td><td>Network Interface Card</td><td>网络接口卡</td><td>主机连接网络 fabric 的硬件接口。</td></tr>
-        <tr><td><code>IB</code></td><td>InfiniBand</td><td>InfiniBand 高速互连</td><td>HPC/AI 集群常见的低延迟高带宽网络技术。</td></tr>
         <tr><td><code>RoCE</code></td><td>RDMA over Converged Ethernet</td><td>基于融合以太网的 RDMA</td><td>在以太网上承载 RDMA 语义的网络技术。</td></tr>
         <tr><td><code>PCIe</code></td><td>Peripheral Component Interconnect Express</td><td>高速外设组件互连</td><td>CPU、GPU、NIC 等设备之间常见的主机互连总线。</td></tr>
         <tr><td><code>MLA</code></td><td>Multi-head Latent Attention</td><td>多头潜在注意力</td><td>通过潜在表示压缩注意力状态的模型结构；会影响 KV 表示与兼容性。</td></tr>
         <tr><td><code>LBHNC</code></td><td>LBHNC KV layout</td><td>LBHNC KV 布局</td><td>当前 NIXL/vLLM 文档中的 KV cache 维度布局记号，本身不是需要强行展开的英文缩写。</td></tr>
         <tr><td><code>NCCL</code></td><td>NVIDIA Collective Communications Library</td><td>NVIDIA 集体通信库</td><td>GPU 集群中常用的 collective / P2P 通信软件库。</td></tr>
+        <tr><td><code>IB</code></td><td>InfiniBand</td><td>InfiniBand 高速互连</td><td>HPC/AI 集群常见的低延迟高带宽网络技术。</td></tr>
         <tr><td><code>VRAM</code></td><td>Video Random Access Memory</td><td>显存</td><td>工程语境里常泛指 GPU device memory；不等于特指 HBM。</td></tr>
         <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>DRAM</code></td><td>Dynamic Random-Access Memory</td><td>动态随机存取存储器</td><td>主机内存和部分设备内存常用的易失性存储技术；容量层级与带宽特征要和缓存、设备显存区分。</td></tr>
@@ -84,6 +83,7 @@
         <tr><td><code>NUMA</code></td><td>Non-Uniform Memory Access</td><td>非一致内存访问</td><td>多插槽系统里不同 CPU/内存位置具有不同访问代价的拓扑特征。</td></tr>
         <tr><td><code>MTU</code></td><td>Maximum Transmission Unit</td><td>最大传输单元</td><td>网络链路一次可承载的数据包大小上限，配置不当会影响 RoCE/RDMA 网络效率与连通性。</td></tr>
         <tr><td><code>IPC</code></td><td>Inter-Process Communication</td><td>进程间通信</td><td>同机或跨边界进程交换控制/数据的通用机制。</td></tr>
+        <tr><td><code>AI</code></td><td>Artificial Intelligence</td><td>人工智能</td><td>本课程讨论的大模型训练、推理与系统基础设施所服务的计算领域。</td></tr>
         <tr><td><code>P/D</code></td><td>Prefill/Decode Disaggregation</td><td>Prefill/Decode 分离</td><td>把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>LBNHC</code></td><td>LBNHC KV layout</td><td>LBNHC KV 布局</td><td>另一种 KV cache 维度布局记号，本身是维度顺序代码。</td></tr>

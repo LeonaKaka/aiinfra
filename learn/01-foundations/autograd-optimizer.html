@@ -8,6 +8,7 @@
   <title>01.4 autograd 与 Optimizer · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
+  <link rel="stylesheet" href="./foundations-visuals.css" />
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -28,45 +29,247 @@
     <main class="article">
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>autograd &amp; 优化器</span></div>
-      <div class="lesson-kicker"><span>LESSON 01.4 · FOUNDATION</span><span>约40 min</span></div>
-      <h1>自动求导与优化器：gradient 从哪里来，显存又花在哪里？</h1>
-      <p class="dek">上一课你已经会写 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。现在把这两个黑盒拆开一点：autograd（自动求导：PyTorch 自动记录计算关系并计算 gradient 的机制）怎样把 gradient 算回来？gradient 到底表达什么？Adam（Adam 优化器：利用一阶和二阶动量统计更新 parameter 的常用 optimizer）为什么会比“只存 parameter”多吃很多显存？这些问题后面会自然变成一个系统问题：当训练状态大到每张设备都重复保存很浪费时，哪些状态可以安全地分片保存和更新？</p>
+      <div class="lesson-kicker"><span>LESSON 01.4 · FOUNDATION</span><span>约 40 min</span></div>
+      <h1>自动求导与优化器：梯度从哪里来，显存又花在哪里？</h1>
+      <p class="dek">上一课的训练循环里，<code>loss.backward()</code> 和 <code>optimizer.step()</code> 还是两个黑盒。这一课把它们打开：梯度到底是什么，PyTorch 怎么把它算出来，Adam 优化器比 SGD 好在哪、又多花了多少显存。最后你会算出一个 7B 模型训练时光训练状态就要 112 GB，并看到多张卡怎样分摊这笔账。</p>
 
-      <div class="learning-goals"><strong>这节课结束时，你应该能做到：</strong><ul><li>用直觉解释“梯度”而不是只背“导数”。</li><li>看懂一个最小 autograd 计算图，以及 <code>.grad</code> 是什么时候出现的。</li><li>区分 autograd 负责计算 gradient，而 optimizer 负责用 gradient 更新 parameter。</li><li>理解 Adam 为什么需要额外 optimizer state（优化器状态：optimizer 为更新 parameter 额外保存的历史量），以及为什么它们值得被分片。</li></ul></div>
+      <div class="learning-goals"><strong>学完这节课，你能：</strong><ul>
+        <li>用一个具体数字说清楚梯度的含义，不需要微积分。</li>
+        <li>手算一个最小计算图的反向传播，知道为什么训练要存激活值。</li>
+        <li>知道推理时为什么要关掉梯度计算。</li>
+        <li>正确地做梯度累积（loss 要除以累积次数）。</li>
+        <li>说清楚 SGD 和 Adam 的区别、各自用在哪、Adam 多花多少显存。</li>
+        <li>算出一个模型训练时的显存账，以及分片后每张卡要放多少。</li>
+      </ul></div>
 
-      <section class="article-section" id="gradient"><div class="section-no">01 · 梯度到底告诉你什么</div><h2>梯度先理解成：“参数轻轻动一下，损失会往哪边变？”</h2><p>假设只有一个参数 <code>w</code>。当前损失是由 <code>w</code> 决定的。梯度 <code>dL/dw</code> 告诉你：如果w增加一点，损失大约会增加还是减少，以及变化有多敏感。</p><div class="equation-card"><code>w = current parameter</code><span>→</span><code>gradient = dL/dw</code><b>梯度 &gt; 0：把w往小方向推一点，通常能让损失降低</b></div><p>所以最朴素的 SGD 更新可以写成：</p><div class="shape-rule"><code>w_new</code><span>=</span><code>w_old</code><span>−</span><code>lr × gradient</code></div><p><code>lr</code> 是学习率。它控制每次沿“降低损失的方向”走多大一步。</p><div class="concept-note"><p><strong>现在不需要微积分证明。</strong>你只需要建立方向感：梯度是优化器的导航信息；没有梯度，优化器就不知道参数该怎么改。</p></div></section>
+      <section class="article-section" id="gradient">
+        <div class="section-no">01 · 梯度是什么</div>
+        <h2>梯度就是：参数动一点点，loss 跟着变多少。</h2>
+        <p>还用上一课那种最小模型，只看一个样本 x = 3，y = 7，参数只有 w。那么 loss 就是 w 的函数：</p>
+        <div class="shape-rule"><code>loss = (3w − 7)²</code></div>
+        <p>现在 w = 2，loss = (6 − 7)² = 1。把 w 加一点点，变成 2.001，再算一次：</p>
+        <div class="code-block"><div class="code-head"><span>算一下</span><span>w 从 2 变到 2.001</span></div><pre><code>w = 2      → loss = (6     − 7)² = 1
+w = 2.001  → loss = (6.003 − 7)² = 0.994009
 
-      <section class="article-section" id="graph"><div class="section-no">02 · 计算图</div><h2>autograd 为什么能知道每个 parameter 的 gradient？因为前向计算时留下了计算关系。</h2><p>看一个极小例子：</p><div class="shape-flow"><div><small>参数</small><code>w</code></div><span>→</span><div><small>前向计算</small><code>ŷ = w × x</code></div><span>→</span><div><small>损失</small><code>(ŷ-y)²</code></div></div><p>当参与计算的 tensor 需要 gradient 时，PyTorch 会跟踪这些操作之间的关系。执行 <code>loss.backward()</code> 后，它从 loss 往回走，利用链式法则把影响一路传回 <code>w</code>。</p><div class="code-block"><div class="code-head"><span>python</span><span>autograd_minimal.py</span></div><pre><code>import torch
+loss 变化 / w 变化 = (0.994009 − 1) / 0.001 ≈ −6</code></pre></div>
+        <p>这个 −6 就是 w 的<strong>梯度</strong>：w 每增加一点，loss 大约减少它的 6 倍。所以：</p>
+        <div class="why-grid">
+          <div class="why-card"><b>符号：往哪边改</b><p>梯度是负的，说明 w 变大 loss 会变小，所以应该增大 w。梯度是正的就减小。</p></div>
+          <div class="why-card"><b>大小：有多敏感</b><p>梯度绝对值越大，这个参数对 loss 的影响越大。离最优点越远，梯度通常越大。</p></div>
+          <div class="why-card"><b>更新规则</b><p>SGD 就是 <code>w = w − lr × 梯度</code>：梯度负就往大走，梯度正就往小走。</p></div>
+        </div>
+        <figure class="tv tv-curve" id="gradViz">
+          <div class="tv-title">loss = (3w − 7)² · 拖动 w，看梯度怎么变</div>
+          <svg id="gradSvg" viewBox="0 0 640 260" role="img" aria-label="loss 关于 w 的曲线和切线"></svg>
+          <div class="tv-slider"><span>w</span><input type="range" id="gradW" min="0.8" max="3.8" step="0.01" value="2"><b id="gradWVal">2.00</b></div>
+          <div class="tv-controls" style="margin-top:12px"><button type="button" id="gradStep">按梯度走一步（lr = 0.02）</button><button type="button" id="gradReset">回到 w = 2</button></div>
+          <figcaption class="tv-readout" id="gradReadout"></figcaption>
+        </figure>
+        <p>梯度在数学上叫导数（多个参数时叫偏导数），但你不需要会求导：PyTorch 会自动算，而且算出来的值就是上面这种“动一点点、看变化”的比值的精确版本。</p>
+      </section>
 
-w = torch.tensor(<span class="num">2.0</span>, requires_grad=True)
+      <section class="article-section" id="graph">
+        <div class="section-no">02 · 计算图与反向传播</div>
+        <h2>PyTorch 前向时记下每一步，反向时倒着乘回去。</h2>
+        <p>前向计算 <code>loss = (w × x − y)²</code> 其实是三步：乘、减、平方。PyTorch 在前向时把这三步按顺序记下来，这个记录叫<strong>计算图</strong>。<code>loss.backward()</code> 时，它从 loss 出发倒着走，每经过一步就乘上这一步的“本地变化率”：</p>
+        <figure class="tv">
+          <div class="tv-title">w = 2, x = 3, y = 7 · 前向从左往右，反向从右往左</div>
+          <div class="tv-graph">
+            <div class="lab"></div>
+            <div class="node"><b>w</b><small>参数</small></div>
+            <div class="node"><b>ŷ = w × x</b><small>预测</small></div>
+            <div class="node"><b>e = ŷ − y</b><small>误差</small></div>
+            <div class="node"><b>loss = e²</b><small>损失</small></div>
+            <div class="lab">前向：算值</div>
+            <div class="node fw"><b>2</b></div>
+            <div class="node fw"><b>2 × 3 = 6</b></div>
+            <div class="node fw"><b>6 − 7 = −1</b></div>
+            <div class="node fw"><b>(−1)² = 1</b></div>
+            <div class="arrow f">────────── 前向 ──────────▶</div>
+            <div class="lab">每步的本地规则</div>
+            <div class="node"><small>ŷ 对 w 的变化率</small><b>× x = × 3</b></div>
+            <div class="node"><small>e 对 ŷ 的变化率</small><b>× 1</b></div>
+            <div class="node"><small>loss 对 e 的变化率</small><b>× 2e = × (−2)</b></div>
+            <div class="node"><small>起点</small><b>1</b></div>
+            <div class="lab">反向：算梯度</div>
+            <div class="node bw"><b>−2 × 3 = −6</b><small>w.grad</small></div>
+            <div class="node bw"><b>−2 × 1 = −2</b></div>
+            <div class="node bw"><b>1 × (−2) = −2</b></div>
+            <div class="node bw"><b>1</b></div>
+            <div class="arrow b">◀────────── 反向 ──────────</div>
+          </div>
+          <figcaption class="tv-readout">反向时从 loss 出发，每经过一步就乘上这一步的本地规则，最后乘到 w 就是它的梯度 −6。注意最左边那一步要乘 <code>x = 3</code>：<strong>反向要用到前向时的输入，所以前向的中间结果必须先存着。</strong>这就是训练时激活值占显存的根本原因。</figcaption>
+        </figure>
+        <p>每一步只需要知道自己的本地规则，整条链乘起来就是最终的梯度，这叫<strong>链式法则</strong>。模型再大，几十层、几十亿参数，原理也一样，只是图更大。用代码验证：</p>
+        <div class="code-block"><div class="code-head"><span>python</span><span>autograd_minimal.py</span></div><pre><code>import torch
+
+w = torch.tensor(<span class="num">2.0</span>, requires_grad=True)   <span class="comment"># 告诉 PyTorch：这个要算梯度</span>
 x = torch.tensor(<span class="num">3.0</span>)
 y = torch.tensor(<span class="num">7.0</span>)
 
-prediction = w * x
-loss = (prediction - y) ** <span class="num">2</span>
-
-print(w.grad)       <span class="comment"># None: 还没 backward</span>
+loss = (w * x - y) ** <span class="num">2</span>
+print(w.grad)       <span class="comment"># None：还没 backward</span>
 loss.backward()
-print(w.grad)       <span class="comment"># tensor(-6.)</span></code></pre></div><p>这里 <code>w=2</code>、<code>x=3</code>，预测是6，目标是7。当前梯度为 -6，意味着在这个点把w稍微增大，会让损失下降；SGD的 <code>w -= lr * grad</code> 也确实会把w往更大的方向推。</p></section>
+print(w.grad)       <span class="comment"># tensor(-6.)  和手算一样</span></code></pre></div>
+        <p><code>requires_grad=True</code> 表示“这个张量要算梯度”。<code>nn.Linear</code> 这类层里的参数默认就是 True，输入数据默认是 False。</p>
+        <h3>推理时要关掉：<code>torch.no_grad()</code></h3>
+        <p>记录计算图、保存中间结果都要占显存。推理只做前向、不需要梯度，所以要关掉：</p>
+        <div class="code-block"><div class="code-head"><span>python</span><span>推理</span></div><pre><code>with torch.no_grad():        <span class="comment"># 或 torch.inference_mode()，更快一点</span>
+    output = model(x)        <span class="comment"># 不记计算图，不存中间结果</span></code></pre></div>
+        <p>训练时千万不能这样写，否则 backward 时没有计算图，会直接报错。推理时忘了写，结果不会错，但会白白多占显存。</p>
+      </section>
 
-      <section class="article-section" id="grad"><div class="section-no">03 · 梯度存在哪里</div><h2><code>.grad</code> 是 parameter 旁边真实存在的一块 tensor。</h2><p>这件事对Infra很重要。梯度不是“一个抽象概念算完就没了”，训练时通常要把很多参数对应的梯度实际存下来。</p><div class="why-grid"><div class="why-card"><b>parameter</b><p>例如一个 Linear 的 <code>weight</code>。它是模型当前学到的数值。</p></div><div class="why-card"><b><code>parameter.grad</code></b><p>backward 后产生的 gradient tensor，通常与对应 parameter 有相同的 shape。</p></div><div class="why-card"><b>optimizer state</b><p>取决于 optimizer。SGD 可以很简单；带动量或 Adam 会再维护额外 state。</p></div></div><p>这也解释了为什么一个“parameter 文件大小 14 GB（十进制容量单位：1 GB = 10^9 bytes）”的模型，训练时绝不会只需要 14 GB 显存。parameter 只是账单的一部分。</p></section>
+      <section class="article-section" id="grad">
+        <div class="section-no">03 · 梯度存在哪</div>
+        <h2>每个参数旁边都有一个一样大的 <code>.grad</code>。</h2>
+        <p>backward 算出的梯度会存在参数的 <code>.grad</code> 里，shape 和参数完全一样：</p>
+        <div class="code-block"><div class="code-head"><span>python</span><span>.grad 的大小</span></div><pre><code>linear = nn.Linear(<span class="num">4096</span>, <span class="num">4096</span>)
+linear(torch.randn(<span class="num">8</span>, <span class="num">4096</span>)).sum().backward()
 
-      <section class="article-section" id="accumulation"><div class="section-no">04 · 为什么梯度会累积</div><h2>PyTorch 默认是“累加到 <code>.grad</code> 上”，不是每次自动覆盖。</h2><p>如果连续做两次 <code>backward()</code>，又没有清空 parameter 的 <code>.grad</code>，新 gradient 通常会累加进去。这就是上一课为什么要写 <code>zero_grad()</code>。</p><div class="code-block"><div class="code-head"><span>concept</span><span>梯度累积</span></div><pre><code>optimizer.zero_grad()
+print(linear.weight.shape)        <span class="comment"># [4096, 4096]</span>
+print(linear.weight.grad.shape)   <span class="comment"># [4096, 4096]  一样大</span></code></pre></div>
+        <p>所以训练时显存里至少要放两份一样大的东西：参数和梯度。再加上优化器自己的状态，就是后面要算的显存账。一个参数文件 14 GB 的模型，训练时需要的显存远不止 14 GB。</p>
+      </section>
 
-loss_batch_1.backward()   <span class="comment"># grad = g1</span>
-loss_batch_2.backward()   <span class="comment"># grad = g1 + g2</span>
+      <section class="article-section" id="accumulation">
+        <div class="section-no">04 · 梯度累积</div>
+        <h2>显存放不下大 batch：拆成几小份，梯度加起来再更新。</h2>
+        <p>上一课说过，<code>backward()</code> 是把梯度<strong>加到</strong> <code>.grad</code> 上的。利用这一点：想用 batch = 32 训练，但显存只放得下 8，就拆成 4 份，每份做一次 backward，最后只更新一次：</p>
+        <div class="code-block"><div class="code-head"><span>python</span><span>梯度累积</span></div><pre><code>steps = <span class="num">4</span>
+optimizer.zero_grad()
+for micro_x, micro_y in zip(x.chunk(steps), y.chunk(steps)):   <span class="comment"># 每份 8 个样本</span>
+    loss = loss_fn(model(micro_x), micro_y) / steps   <span class="comment"># ← 要除以份数</span>
+    loss.backward()                                   <span class="comment"># 梯度累加到 .grad</span>
+optimizer.step()                                      <span class="comment"># 4 份都算完才更新一次</span></code></pre></div>
+        <p>拆出来的每一小份叫 <strong>microbatch</strong>（微批次）。为什么要除以份数？用上一课的数字验证：4 个样本拆成 2 份，每份 2 个：</p>
+        <div class="code-block"><div class="code-head"><span>验证</span><span>w = b = 0</span></div><pre><code>第 1 份（x = 0, 1）的梯度：  w: −3     b: −4
+第 2 份（x = 2, 3）的梯度：  w: −31    b: −12
 
-optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一个有用特性：显存放不下大批次时，可以用多个小 microbatch（微批次：把一个 batch 再切小后逐个执行的小批次）累积 gradient，再更新一次 parameter。但要注意：<strong>“累积多个 microbatch”不自动等于“一次大 batch”。</strong>如果每个 microbatch 的 loss 都用均值归约，等大 microbatch 常见做法是先除以 accumulation steps 再做 <code>backward</code>；如果 microbatch 大小不同，则要按样本 / token 数正确加权。否则累计 gradient 的整体尺度或样本权重会和一次大 batch 不同。以后你在 Megatron 里看到 microbatch 和 gradient accumulation，这个基础会再次出现。</p></section>
+直接累加：                  w: −34    b: −16    ✗ 是正确值的 2 倍
+每份 loss 先除以 2 再累加：   w: −17    b: −8     ✓ 和一次用 4 个样本算的一样</code></pre></div>
+        <p>因为每份的 loss 已经是那一份的平均，直接加起来就多算了几倍，相当于偷偷把学习率放大了。如果每份大小不一样（比如最后一份不满），要按样本数（大模型里常按 token 数）加权，不能简单除以份数。</p>
+        <p><strong>什么时候用：</strong>想要的 batch 大小放不进显存时。代价是速度：几份是一份一份串行算的，不会更快，只是省显存。后面 05 模块的流水线并行也会用到 microbatch。</p>
+      </section>
 
-      <section class="article-section" id="optimizer"><div class="section-no">05 · 优化器做的是另一件事</div><h2>autograd 计算 gradient；optimizer 决定怎么利用它。</h2><p>SGD的核心想法很简单：沿负梯度方向走一点。Adam则会为每个参数维护关于梯度的一阶、二阶统计状态，常见地叫 <code>m</code> 和 <code>v</code>，用它们自适应调整更新。</p><div class="example-grid"><div class="example-card"><div class="cap">SGD · SIMPLE VIEW</div><p><code>parameter + gradient</code> 就能理解最基础的更新；若启用动量，还会多一份 momentum state（动量状态：记录历史 gradient 趋势以平滑 parameter 更新）。</p></div><div class="example-card"><div class="cap">ADAM · SIMPLE VIEW</div><p>除了 parameter 和 gradient，通常还会有两份与 parameter 规模相近的状态：一阶矩 <code>m</code> 与二阶矩 <code>v</code>。</p></div></div><div class="concept-note"><p><strong>注意：</strong>实际训练的数据类型、混合精度、高精度权重副本、优化器实现会改变精确显存数字。这里先建立“优化器状态可能和参数本身一样巨大”的结构性直觉。</p></div></section>
+      <section class="article-section" id="optimizer">
+        <div class="section-no">05 · 优化器</div>
+        <h2>梯度由 autograd 算，怎么用梯度改参数由优化器决定。</h2>
+        <p>不同优化器的区别在于“拿到梯度之后怎么走这一步”，以及为此要额外记住什么：</p>
+        <div class="lesson-terms-scroll"><table class="tv-table">
+          <thead><tr><th>优化器</th><th>怎么走</th><th>每个参数额外存</th></tr></thead>
+          <tbody>
+            <tr><td>SGD</td><td><code>w −= lr × 梯度</code></td><td>无</td></tr>
+            <tr><td>SGD + 动量（momentum）</td><td>记住过去梯度的平均方向 m，按 m 走。梯度方向来回抖动时更稳。</td><td>1 份（m）</td></tr>
+            <tr><td>Adam / AdamW</td><td>除了 m，还记住梯度平方的平均 v。按 <code>lr × m / √v</code> 走：每个参数的步长会按它自己梯度的大小自动调整。</td><td>2 份（m 和 v）</td></tr>
+          </tbody>
+        </table></div>
+        <p>“按自己梯度的大小自动调整”是 Adam 最关键的地方。看一个例子：两个参数，一个梯度是 100，一个是 0.01，学习率都是 0.001：</p>
+        <div class="code-block"><div class="code-head"><span>第一步走多远</span><span>lr = 0.001</span></div><pre><code>            梯度 = 100      梯度 = 0.01
+SGD         0.1             0.00001        ← 差了 1 万倍
+Adam        0.001           0.001          ← m / √v 把梯度大小“除掉”了</code></pre></div>
+        <p>用 SGD 时只有一个学习率：调到适合大梯度的参数，小梯度的参数几乎不动；调到适合小梯度的参数，大梯度的参数会冲过头。大模型里不同层、不同参数的梯度大小差别很大，所以 Adam 好调得多。</p>
+        <div class="lesson-terms-scroll"><table class="tv-table">
+          <thead><tr><th>场景</th><th>用什么</th><th>为什么</th></tr></thead>
+          <tbody>
+            <tr><td>大语言模型、Transformer</td><td><strong>AdamW</strong></td><td>几乎是标准选择。AdamW 是 Adam 加上正确实现的权重衰减（防止参数变得过大）。实践中用纯 SGD 很难把 Transformer 训好。</td></tr>
+            <tr><td>传统图像模型（比如 ResNet）</td><td>SGD + 动量 也很常见</td><td>这类模型用 SGD 能训得很好，而且省显存。</td></tr>
+            <tr><td>显存特别紧张</td><td>考虑更省状态的优化器</td><td>Adam 的 m 和 v 是真金白银的显存开销，下一节会算到底有多大。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
-      <section class="article-section" id="memory"><div class="section-no">06 · 训练状态的显存账本</div><h2>从这一刻开始，学会给训练显存记账。</h2><p>一个非常粗略但重要的心智模型：</p><div class="cost-panel"><div><small>模型状态</small><b>parameter：模型权重本身</b></div><div><small>梯度状态</small><b>gradient：parameter 对应的梯度</b></div><div><small>优化器状态</small><b>例如 Adam 的 m / v，以及某些混合精度方案里的额外高精度副本</b></div><div><small>激活值</small><b>前向计算为反向传播保留的中间结果，大小强烈依赖批次 / sequence / model形状</b></div></div><p>这四类东西后面会反复被系统技术“拆、丢、重算、分片”：activation（激活值：forward 产生并可能在 backward 中复用的中间结果）可以通过重算来省显存；多设备训练需要同步必要的 gradient；parameter、gradient 和 optimizer state 也可以按不同策略减少重复保存。现在先把“有哪些状态”记清，不需要提前背这些策略的名字。</p></section>
+      <section class="article-section" id="memory">
+        <div class="section-no">06 · 显存账本</div>
+        <h2>算一笔账：训练一个 7B 模型，光训练状态就要 112 GB。</h2>
+        <p>把前面讲的都放在一起。大模型训练最常见的配置是混合精度（01.1 讲过）加 Adam，每个参数要存这些东西：</p>
+        <figure class="tv">
+          <div class="tv-title">7B 模型，混合精度 + Adam：每个参数 16 字节</div>
+          <div class="tv-ledger">
+            <div class="tv-ledger-bar" style="width:93.33%">
+              <div class="p" style="width:12.5%">参数</div>
+              <div class="g" style="width:12.5%">梯度</div>
+              <div class="m" style="width:25%">FP32 权重</div>
+              <div class="mo" style="width:25%">Adam m</div>
+              <div class="v" style="width:25%">Adam v</div>
+            </div>
+            <div class="tv-ledger-limit" style="left:66.67%"><span>一张 80 GB 的卡</span></div>
+          </div>
+          <div class="tv-ledger-scale"><span>0</span><span>120 GB</span></div>
+          <div class="lesson-terms-scroll" style="margin-top:16px"><table class="tv-table">
+            <thead><tr><th>内容</th><th>格式</th><th>每个参数</th><th>7B 模型</th></tr></thead>
+            <tbody>
+              <tr><td>参数（前向、反向用）</td><td>BF16</td><td>2 字节</td><td>14 GB</td></tr>
+              <tr><td>梯度</td><td>BF16</td><td>2 字节</td><td>14 GB</td></tr>
+              <tr><td>FP32 权重副本（01.1 讲过，更新用）</td><td>FP32</td><td>4 字节</td><td>28 GB</td></tr>
+              <tr><td>Adam 的 m</td><td>FP32</td><td>4 字节</td><td>28 GB</td></tr>
+              <tr><td>Adam 的 v</td><td>FP32</td><td>4 字节</td><td>28 GB</td></tr>
+              <tr><td><strong>合计</strong></td><td></td><td><strong>16 字节</strong></td><td><strong>112 GB</strong></td></tr>
+            </tbody>
+          </table></div>
+          <figcaption class="tv-readout">还没算激活值，就已经超过一张 80 GB 的卡了。其中 <strong>优化器相关的部分（FP32 权重 + m + v）占了 12 字节，是参数本身的 6 倍</strong>。不同实现会有出入（比如有的把梯度也存成 FP32），但“每个参数 16 字节”是最常用的估算方法。</figcaption>
+        </figure>
+        <p>除了这些，还有第四类：<strong>激活值</strong>。它和参数量无关，而是由 batch 大小、序列长度和模型宽度决定，长序列时可能比上面这些还大。</p>
+        <div class="lesson-terms-scroll"><table class="tv-table">
+          <thead><tr><th>类别</th><th>大小由什么决定</th><th>后面怎么省</th></tr></thead>
+          <tbody>
+            <tr><td>参数、梯度、优化器状态</td><td>参数量（每个参数约 16 字节）</td><td>分片到多张卡（下一节）</td></tr>
+            <tr><td>激活值</td><td>batch × 序列长度 × 模型宽度 × 层数</td><td>重算（反向时再算一遍）、沿序列切分（05 模块）</td></tr>
+          </tbody>
+        </table></div>
+      </section>
 
-      <section class="article-section" id="shard"><div class="section-no">07 · 为什么要分片优化器状态</div><h2>如果每张GPU都存一整份Adam状态，重复会非常贵。</h2><p>先做最朴素的数据并行思想实验：4 张 GPU 都拥有完整模型副本。</p><div class="split-preview"><div class="split-original"><small>EACH GPU · DP</small><code>full params + full optimizer states</code></div><span>replica（副本：在不同进程或 GPU 上保存的同一逻辑模型或 state）</span><div class="split-gpus"><div><small>GPU 0 / 1</small><code>same state copies</code></div><div><small>GPU 2 / 3</small><code>same state copies</code></div></div></div><p>如果优化器状态很大，这种复制非常浪费显存。于是很自然会问：</p><div class="shape-rule"><code>Can we shard</code><span>→</span><code>optimizer states</code><span>across</span><code>DP 进程?</code></div><p>答案就是后面会遇到的 ZeRO（零冗余优化器：通过数据并行进程分片 optimizer state、gradient 或 parameter 来减少重复存储）与 Megatron Distributed Optimizer（分布式优化器：沿数据并行域分片训练状态和更新责任）的核心方向之一。现在不用学实现，只要知道它解决的根本矛盾：<strong>多卡训练需要协作，但不代表每张卡都应该重复保存全部训练状态。</strong></p></section>
+      <section class="article-section" id="shard">
+        <div class="section-no">07 · 分片</div>
+        <h2>每张卡都存一整份完全一样的训练状态，太浪费了。</h2>
+        <p>上一课的数据并行里，每张卡都有一份完整的模型。现在知道了训练状态有多大：8 张卡就存了 8 份一模一样的 112 GB。既然各卡更新时用的梯度是一样的（同步过了），那每张卡其实只需要负责<strong>一部分参数的更新</strong>，只存这部分的优化器状态就够了。试试看：</p>
+        <figure class="tv" id="shardViz">
+          <div class="tv-title">7B 模型做数据并行，每张卡要放多少（不含激活值）</div>
+          <div class="tv-controls" role="group" aria-label="GPU 数量">
+            <button type="button" data-n="1">1 张卡</button><button type="button" data-n="2">2 张</button><button type="button" data-n="4">4 张</button><button type="button" data-n="8" aria-pressed="true">8 张</button>
+          </div>
+          <div class="tv-controls" role="group" aria-label="分片方式">
+            <button type="button" data-mode="0" aria-pressed="true">不分片</button><button type="button" data-mode="1">分片优化器状态</button><button type="button" data-mode="2">再分片梯度</button><button type="button" data-mode="3">再分片参数</button>
+          </div>
+          <div class="tv-shard-rows" id="shardRows"></div>
+          <div class="tv-legend"><span><i style="background:#255b46"></i>参数</span><span><i style="background:#5d8d74"></i>梯度</span><span><i style="background:#315f82"></i>优化器状态（FP32 权重 + m + v）</span><span><i style="border:0;border-left:2px dashed #a2552d;border-radius:0;width:6px"></i>80 GB</span></div>
+          <figcaption class="tv-readout" id="shardReadout"></figcaption>
+        </figure>
+        <div class="lesson-terms-scroll"><table class="tv-table">
+          <thead><tr><th>分片方式</th><th>什么时候用</th><th>代价</th></tr></thead>
+          <tbody>
+            <tr><td>不分片</td><td>模型小，单卡放得下</td><td>最简单，通信最少</td></tr>
+            <tr><td>分片优化器状态</td><td>最常用的第一步，省得最多（占大头的 12 字节被分掉了）</td><td>几乎没有额外通信：原来要做的梯度同步换一种方式做，总通信量不变</td></tr>
+            <tr><td>再分片梯度</td><td>还想再省一些</td><td>通信量仍然基本不变</td></tr>
+            <tr><td>再分片参数</td><td>模型大到连参数都放不下</td><td>每次前向、反向都要临时把参数从其他卡收集回来，通信量约为原来的 1.5 倍</td></tr>
+          </tbody>
+        </table></div>
+        <p>这几种做法统称 <strong>ZeRO</strong>（Zero Redundancy Optimizer，零冗余优化器），三档依次叫 ZeRO-1、ZeRO-2、ZeRO-3；PyTorch 自带的 FSDP 相当于 ZeRO-3。Megatron 的<strong>分布式优化器</strong>也是这个思路，05.5 会详细讲它的通信怎么安排。</p>
+        <div class="concept-note"><p><strong>核心思路：</strong>多卡训练需要协作，但不代表每张卡都要存一整份训练状态。存什么、分给谁、什么时候通信，是后面整个 Megatron 模块反复要回答的问题。</p></div>
+      </section>
 
-      <section class="article-section" id="bridge"><div class="section-no">08 · 基础模块收尾</div><h2>到这里，第一层系统地基已经搭好。</h2><p>四节 Foundations 串起来是这样的：</p><div class="shape-flow"><div><small>01.1</small><code>Tensor / shape</code></div><span>→</span><div><small>01.2</small><code>Linear / GEMM</code></div><span>→</span><div><small>01.3–01.4</small><code>training states</code></div></div><p>下一模块进入 Transformer。到那里我们不会把 Attention 当成一张公式图，而是继续沿着现在的视角追踪：Q/K/V 是哪些 Linear 产生的？每一步 shape 怎么变？训练和推理分别要保存什么？这些东西以后又为什么需要被切到多张 GPU。</p></section>
+      <section class="article-section" id="bridge">
+        <div class="section-no">08 · 基础模块小结</div>
+        <h2>四课学完，你手里已经有了这些工具。</h2>
+        <div class="lesson-terms-scroll"><table class="tv-table">
+          <thead><tr><th>课</th><th>学到的</th><th>以后用来回答</th></tr></thead>
+          <tbody>
+            <tr><td>01.1 Tensor</td><td>shape、dtype、device，算一个张量多大</td><td>这块数据占多少显存、在哪张卡上</td></tr>
+            <tr><td>01.2 Linear</td><td>矩阵乘法的 shape 规则和计算量，按列 / 按行切</td><td>这一步要算多久、怎么拆给多张卡</td></tr>
+            <tr><td>01.3 训练循环</td><td>前向、反向、更新，学习率，数据并行要同步梯度</td><td>每一步读写了什么、多卡要同步什么</td></tr>
+            <tr><td>01.4 本课</td><td>梯度、计算图、优化器、显存账本、分片</td><td>训练状态有多大、怎么分摊</td></tr>
+          </tbody>
+        </table></div>
+        <p>下一模块进入 Transformer。我们会用同样的方法看 Attention：Q、K、V 是哪几个 Linear 算出来的，每一步 shape 怎么变，训练和推理时各要存什么。</p>
+      </section>
 
-      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>FOUNDATIONS</span></div><h2>过这一关，再进入Transformer。</h2><div class="quiz-item"><div class="quiz-q">1. <code>loss.backward()</code> 之后，梯度通常存在哪里？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">对需要 gradient 的可训练 parameter 来说，gradient 会累积在 <code>.grad</code> tensor 中。它通常与对应 parameter 具有相同 shape。</div></div><div class="quiz-item"><div class="quiz-q">2. Adam为什么会比只保存模型参数多占很多状态内存？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为它通常为每个参数维护额外的一阶、二阶统计状态（常称m、v）；实际混合精度实现还可能存在额外高精度参数副本，因此精确占用依实现而异。</div></div><div class="quiz-item"><div class="quiz-q">3. 为什么分布式优化器 / ZeRO类思路对大模型重要？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">因为普通数据并行如果让每张GPU都重复保存完整的参数/梯度/优化器状态，会浪费大量显存。把其中一些状态按 DP 进程分片，可以显著减少每卡重复存储。</div></div></section>
+      <section class="checkpoint" id="checkpoint"><div class="checkpoint-head"><span>CHECKPOINT</span><span>FOUNDATIONS</span></div><h2>过这一关，再进入 Transformer。</h2>
+        <div class="quiz-item"><div class="quiz-q">1. loss = (3w − 7)²，w = 2 时梯度是 −6。这告诉你什么？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">w 增加一点，loss 会减少大约 6 倍那么多。所以应该增大 w，SGD 的 <code>w − lr × (−6)</code> 正好让 w 变大。</div></div>
+        <div class="quiz-item"><div class="quiz-q">2. 为什么训练时必须保存前向的中间结果？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">反向时每一步的本地规则要用到前向的值，比如乘法 ŷ = w × x 反向时要乘 x。不存就没法算梯度（除非反向时重新算一遍前向，也就是激活值重算）。</div></div>
+        <div class="quiz-item"><div class="quiz-q">3. 推理时为什么要用 <code>torch.no_grad()</code>？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">推理不需要梯度。关掉后不记录计算图、不保存中间结果，省显存也更快。</div></div>
+        <div class="quiz-item"><div class="quiz-q">4. 梯度累积分 4 份，每份的 loss 为什么要除以 4？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">每份的 loss 已经是那一份的平均，4 份的梯度直接相加会是一次大 batch 的 4 倍。除以 4 后才和一次大 batch 的梯度一样。</div></div>
+        <div class="quiz-item"><div class="quiz-q">5. 用混合精度 + Adam 训练一个 13B 模型，参数、梯度和优化器状态大约要多少显存？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">13B × 16 字节 = 208 GB，还不算激活值。</div></div>
+        <div class="quiz-item"><div class="quiz-q">6. 上题的模型用 8 张卡做数据并行，只分片优化器状态，每张卡要放多少？</div><button class="quiz-toggle" type="button">看答案</button><div class="quiz-a">参数 2 + 梯度 2 + 优化器状态 12 / 8 = 5.5 字节/参数，13B × 5.5 = 71.5 GB。</div></div>
+      </section>
 
       <section class="lesson-terms" id="lesson-terms">
         <div class="section-no">术语表 · 本课词汇</div>
@@ -77,10 +280,10 @@ optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一
           <tbody>
         <tr><td><code>SGD</code></td><td>Stochastic Gradient Descent</td><td>随机梯度下降</td><td>按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。</td></tr>
         <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
-        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
-        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
-        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>FP32</code></td><td>32-bit Floating Point</td><td>32 位浮点</td><td>常见高精度浮点格式，元素通常占 4 bytes。</td></tr>
+        <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
         <tr><td><code>ZeRO</code></td><td>Zero Redundancy Optimizer</td><td>零冗余优化器</td><td>通过数据并行 ranks 分片优化器状态、梯度或参数来减少训练状态冗余的一类方法。</td></tr>
+        <tr><td><code>FSDP</code></td><td>Fully Sharded Data Parallel</td><td>全分片数据并行</td><td>在数据并行域进一步分片参数、梯度或优化器状态的训练方式。</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -88,8 +291,89 @@ optimizer.step()</code></pre></div><p>这不是 PyTorch 的坏习惯，而是一
       <a class="next-lesson" href="../02-transformer/attention.html"><div><small>NEXT · 02.1</small><br /><strong>Attention数据流：Q、K、V到底从哪里来？</strong></div><span>→</span></a>
     </main>
 
-    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#gradient">梯度直觉</a><a href="#graph">计算图</a><a href="#grad">.grad在哪里</a><a href="#accumulation">梯度累积</a><a href="#optimizer">优化器</a><a href="#memory">显存记账</a><a href="#shard">为什么分片</a><a href="#bridge">地基完成</a><a href="#checkpoint">Checkpoint</a></aside>
+    <aside class="toc" aria-label="本页目录"><strong>ON THIS PAGE</strong><a href="#gradient">梯度是什么</a><a href="#graph">计算图</a><a href="#grad">.grad</a><a href="#accumulation">梯度累积</a><a href="#optimizer">优化器</a><a href="#memory">显存账本</a><a href="#shard">分片</a><a href="#bridge">小结</a><a href="#checkpoint">Checkpoint</a></aside>
   </div>
   <script src="../../app.js"></script><script>document.querySelectorAll('.quiz-toggle').forEach((button)=>{button.addEventListener('click',()=>{const item=button.closest('.quiz-item');item.classList.toggle('open');button.textContent=item.classList.contains('open')?'收起答案':'看答案';});});</script>
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var el = function (tag, attrs, text) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+
+  var svg = document.getElementById('gradSvg');
+  if (svg) {
+    var slider = document.getElementById('gradW'), wVal = document.getElementById('gradWVal'), out = document.getElementById('gradReadout');
+    var L = function (w) { return Math.pow(3 * w - 7, 2); }, G = function (w) { return 18 * w - 42; };
+    var W0 = 0.8, W1 = 3.8, x0 = 44, x1 = 624, y0 = 228, y1 = 16;
+    var sx = function (w) { return x0 + (w - W0) / (W1 - W0) * (x1 - x0); };
+    var sy = function (l) { return y0 - (l + 1) / 23 * (y0 - y1); };
+    var draw = function (w) {
+      svg.innerHTML = '';
+      [0, 5, 10, 15, 20].forEach(function (t) { svg.appendChild(el('line', { x1: x0, y1: sy(t), x2: x1, y2: sy(t), stroke: '#eceee8' })); svg.appendChild(el('text', { x: x0 - 8, y: sy(t) + 3, 'text-anchor': 'end' }, t)); });
+      [1, 1.5, 2, 2.5, 3, 3.5].forEach(function (t) { svg.appendChild(el('text', { x: sx(t), y: y0 + 16, 'text-anchor': 'middle' }, t)); });
+      svg.appendChild(el('text', { x: x1, y: y0 + 16, 'text-anchor': 'end' }, 'w →'));
+      svg.appendChild(el('text', { x: x0 + 4, y: y1 + 4 }, 'loss'));
+      var pts = []; for (var t = W0; t <= W1 + 1e-9; t += 0.02) pts.push(sx(t).toFixed(1) + ',' + sy(L(t)).toFixed(1));
+      svg.appendChild(el('polyline', { points: pts.join(' '), fill: 'none', stroke: '#315f82', 'stroke-width': 2 }));
+      var wm = 7 / 3;
+      svg.appendChild(el('line', { x1: sx(wm), y1: y1 + 20, x2: sx(wm), y2: sy(0), stroke: '#a0a39b', 'stroke-dasharray': '3 3' }));
+      svg.appendChild(el('text', { x: sx(wm), y: y1 + 12, 'text-anchor': 'middle' }, '最低点 w = 7/3'));
+      var g = G(w), d = 0.35;
+      svg.appendChild(el('line', { x1: sx(w - d), y1: sy(L(w) - g * d), x2: sx(w + d), y2: sy(L(w) + g * d), stroke: '#b8953f', 'stroke-width': 2.5 }));
+      svg.appendChild(el('circle', { cx: sx(w), cy: sy(L(w)), r: 6, fill: '#b8953f', stroke: '#fff', 'stroke-width': 2 }));
+      if (Math.abs(g) > 0.3) {
+        var dir = g < 0 ? 1 : -1, ax = sx(w), ay = sy(L(w)) + 26;
+        svg.appendChild(el('line', { x1: ax, y1: ay, x2: ax + dir * 46, y2: ay, stroke: '#255b46', 'stroke-width': 2.5 }));
+        svg.appendChild(el('path', { d: 'M' + (ax + dir * 54) + ' ' + ay + ' l' + (-dir * 9) + ' -5 v10 z', fill: '#255b46' }));
+      }
+    };
+    var set = function (w) {
+      w = Math.min(W1, Math.max(W0, w));
+      slider.value = w; wVal.textContent = w.toFixed(2);
+      draw(w);
+      var g = G(w);
+      var msg = 'w = ' + w.toFixed(2) + '，loss = ' + L(w).toFixed(3) + '，梯度 = 18w − 42 = <strong>' + g.toFixed(2) + '</strong>（金色线的斜率）。';
+      if (Math.abs(g) < 0.3) msg += '梯度接近 0：已经在最低点附近，往哪边走 loss 都不会再明显下降。';
+      else if (g < 0) msg += '梯度为负：w 变大 loss 会下降，所以应该往右走（绿色箭头）。';
+      else msg += '梯度为正：w 变小 loss 才会下降，所以应该往左走（绿色箭头）。';
+      out.innerHTML = msg;
+      return w;
+    };
+    var cur = set(2);
+    slider.addEventListener('input', function () { cur = set(+slider.value); });
+    document.getElementById('gradStep').addEventListener('click', function () { cur = set(cur - 0.02 * G(cur)); });
+    document.getElementById('gradReset').addEventListener('click', function () { cur = set(2); });
+  }
+
+  var sv = document.getElementById('shardViz');
+  if (sv) {
+    var rows = document.getElementById('shardRows'), sout = document.getElementById('shardReadout');
+    var n = 8, mode = 0, SCALE = 120;
+    var names = ['不分片', '分片优化器状态', '再分片梯度', '再分片参数'];
+    var render = function () {
+      var p = 14, g = 14, o = 84;
+      if (mode >= 1) o /= n; if (mode >= 2) g /= n; if (mode >= 3) p /= n;
+      var tot = p + g + o;
+      rows.innerHTML = '';
+      for (var i = 0; i < n; i++) {
+        var r = document.createElement('div'); r.className = 'tv-shard-row';
+        r.innerHTML = '<span>GPU ' + i + '</span><div class="tv-shard-track"><div class="tv-shard-fill" style="width:' + (tot / SCALE * 100) + '%">' +
+          '<div style="background:#255b46;width:' + (p / tot * 100) + '%"></div><div style="background:#5d8d74;width:' + (g / tot * 100) + '%"></div><div style="background:#315f82;width:' + (o / tot * 100) + '%"></div></div>' +
+          '<div class="tv-shard-limit" style="left:' + (80 / SCALE * 100) + '%"></div></div><em>' + (+tot.toFixed(2)) + ' GB</em>';
+        rows.appendChild(r);
+      }
+      sv.querySelectorAll('[data-n]').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.n === n); });
+      sv.querySelectorAll('[data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.mode === mode); });
+      var msg;
+      if (n === 1) msg = '只有 1 张卡，分片没有意义：112 GB 全在这张卡上，放不进 80 GB。';
+      else if (mode === 0) msg = n + ' 张卡每张都存一整份 112 GB，一模一样，而且每张都放不下。';
+      else msg = names[mode] + '：每张卡只负责 1/' + n + '，每张卡 <strong>' + (+tot.toFixed(2)) + ' GB</strong>，' + (tot <= 80 ? '放得下了（还要给激活值留空间）。' : '还是放不下。');
+      sout.innerHTML = msg;
+    };
+    sv.querySelectorAll('[data-n]').forEach(function (b) { b.addEventListener('click', function () { n = +b.dataset.n; render(); }); });
+    sv.querySelectorAll('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { mode = +b.dataset.mode; render(); }); });
+    render();
+  }
+})();
+</script>
 </body>
 </html>

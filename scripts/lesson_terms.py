@@ -113,6 +113,8 @@ TERMS = {
     "NIXL": ("NVIDIA Inference Xfer Library", "NVIDIA 推理传输库", "为 AI 推理框架提供跨多类 memory/storage 的点对点数据传输抽象。", True),
     "P/D": ("Prefill/Decode Disaggregation", "Prefill/Decode 分离", "把 Prefill 与 Decode 放到不同资源池/实例并协调 KV handoff。", True),
     "DCP": ("Decode Context Parallelism", "Decode 上下文并行", "在 Decode 阶段沿上下文维并行 Attention 的执行策略。", True),
+    "FLOP": ("Floating-Point Operation", "浮点运算", "一次浮点乘法或加法；矩阵乘法 [M,K]@[K,N] 约需 2×M×K×N 次。", False),
+    "TFLOP": ("Tera Floating-Point Operations", "万亿次浮点运算", "10^12 次浮点运算；GPU 峰值算力常用 TFLOP/秒 表示。", False),
     "GB": ("Gigabyte", "GB 十进制容量单位", "十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。", False),
     "GiB": ("Gibibyte", "GiB 二进制容量单位", "二进制容量单位，1 GiB = 2^30 bytes。", False),
     "MiB": ("Mebibyte", "MiB 二进制容量单位", "二进制容量单位，1 MiB = 2^20 bytes。", False),

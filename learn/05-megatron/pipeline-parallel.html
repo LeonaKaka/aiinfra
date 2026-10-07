@@ -143,12 +143,12 @@
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
+        <tr><td><code>PP</code></td><td>Pipeline Parallel</td><td>流水线并行</td><td>沿模型深度切成多个 pipeline stages，并用 microbatch 流水。</td></tr>
         <tr><td><code>P2P</code></td><td>Peer-to-Peer</td><td>点对点通信</td><td>两个 peer/rank 之间直接发送和接收数据的通信模式。</td></tr>
-        <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
         <tr><td><code>API</code></td><td>Application Programming Interface</td><td>应用程序编程接口</td><td>软件组件之间约定的调用接口；源码阅读时先看 contract，再看实现。</td></tr>
+        <tr><td><code>1F1B</code></td><td>One Forward One Backward</td><td>一前向一反向</td><td>Pipeline steady state 中交替执行 forward/backward microbatch 的调度方式。</td></tr>
           </tbody>
         </table></div>
       </section>

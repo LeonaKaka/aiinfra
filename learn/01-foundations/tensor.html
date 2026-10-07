@@ -9,10 +9,6 @@
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./foundations-visuals.css" />
-  <style>
-    .dtype-table{min-width:0!important}
-    .lesson-note{font-size:13px!important;color:#6c6f68!important}
-  </style>
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -155,7 +151,7 @@ print(X.device)      <span class="comment"># cpu</span></code></pre>
 
         <h3><code>dtype</code>：每个数用什么格式存，占几个字节</h3>
         <p>大模型里最常见的是这三种：</p>
-        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+        <div class="lesson-terms-scroll"><table class="tv-table">
           <thead><tr><th>dtype</th><th>每个数占</th><th>能存多大的数</th><th>精度</th></tr></thead>
           <tbody>
             <tr><td><code>float32</code>（FP32）</td><td>4 字节</td><td>约 3.4 × 10<sup>38</sup></td><td>高</td></tr>
@@ -189,7 +185,7 @@ torch.tensor(<span class="num">1.0</span>, dtype=torch.float16)  + <span class="
         <p>所以两种 16 位格式各有一个坑：<strong>FP16 怕数太大（会变成 inf），BF16 怕变化太小（会被抹掉）。</strong>选哪个，就看你的计算更容易踩哪个坑。</p>
 
         <p>实际工作中是这样选的：</p>
-        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+        <div class="lesson-terms-scroll"><table class="tv-table">
           <thead><tr><th>场景</th><th>用什么</th><th>为什么</th></tr></thead>
           <tbody>
             <tr><td>写小例子、做实验</td><td>FP32</td><td>PyTorch 默认就是它，数据量小，不用操心。</td></tr>
@@ -352,10 +348,15 @@ Y = X @ W          <span class="comment"># 矩阵乘法，Y: [B, S, 4H]</span>
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
-        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
         <tr><td><code>FP32</code></td><td>32-bit Floating Point</td><td>32 位浮点</td><td>常见高精度浮点格式，元素通常占 4 bytes。</td></tr>
         <tr><td><code>FP16</code></td><td>16-bit Floating Point</td><td>16 位浮点</td><td>半精度浮点格式，常用于降低显存与提升矩阵计算吞吐。</td></tr>
         <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
+        <tr><td><code>GB</code></td><td>Gigabyte</td><td>GB 十进制容量单位</td><td>十进制容量单位，1 GB = 10^9 bytes；与 GiB 不同。</td></tr>
+        <tr><td><code>CPU</code></td><td>Central Processing Unit</td><td>中央处理器</td><td>主要承担 Python 控制流、调度、数据准备与部分通信控制。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
+        <tr><td><code>SP</code></td><td>Sequence Parallel</td><td>序列并行</td><td>在 TP 域内沿 sequence 维分片部分 activation，减少重复保存。</td></tr>
+        <tr><td><code>CP</code></td><td>Context Parallel</td><td>上下文并行</td><td>让 Attention 沿 context/sequence 维跨 ranks 工作并交换必要上下文。</td></tr>
+        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
           </tbody>
         </table></div>
       </section>

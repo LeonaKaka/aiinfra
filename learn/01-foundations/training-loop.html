@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./foundations-visuals.css" />
-  <style>.dtype-table{min-width:0!important}.lesson-note{font-size:13px!important;color:#6c6f68!important}.lesson-list{font-size:15px;line-height:1.9;color:#454842;padding-left:20px}</style>
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -183,7 +182,7 @@ b = 0 − 0.05 × (−8)  = 0.4
           </div>
           <figcaption class="tv-readout" id="sgdReadout"></figcaption>
         </figure>
-        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+        <div class="lesson-terms-scroll"><table class="tv-table">
           <thead><tr><th>学习率</th><th>现象</th></tr></thead>
           <tbody>
             <tr><td>0.01：太小</td><td>方向是对的，但每步走得太少，要 44 步 loss 才降到 0.01 以下。在大模型上，这意味着白白浪费大量算力。</td></tr>
@@ -210,7 +209,7 @@ b = 0 − 0.05 × (−8)  = 0.4
       <section class="article-section" id="infra">
         <div class="section-no">06 · 从系统角度看</div>
         <h2>模型变大以后，这五步每一步都变成了系统问题。</h2>
-        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+        <div class="lesson-terms-scroll"><table class="tv-table">
           <thead><tr><th>步骤</th><th>模型变大以后的问题</th></tr></thead>
           <tbody>
             <tr><td>前向</td><td>大量矩阵乘法；还要把中间结果（叫<strong>激活值</strong>，activation）留在显存里给反向用，batch 和序列越长，留得越多。</td></tr>
@@ -220,7 +219,7 @@ b = 0 − 0.05 × (−8)  = 0.4
           </tbody>
         </table></div>
         <p>后面学到的很多技术，都是在改造这个循环的某一步：</p>
-        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+        <div class="lesson-terms-scroll"><table class="tv-table">
           <thead><tr><th>技术</th><th>改的是哪一步</th><th>解决什么问题</th></tr></thead>
           <tbody>
             <tr><td>激活值重算（activation checkpointing）</td><td>前向 / 反向</td><td>前向时不留全部激活值，反向用到时再算一遍。多花计算，省显存。</td></tr>
@@ -291,10 +290,10 @@ b = 0 − 0.05 × (−8)  = 0.4
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
+        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
         <tr><td><code>MSE</code></td><td>Mean Squared Error</td><td>均方误差</td><td>用预测值与目标值之差的平方衡量误差；基础训练课用它作为最小 loss 示例。</td></tr>
         <tr><td><code>SGD</code></td><td>Stochastic Gradient Descent</td><td>随机梯度下降</td><td>按梯度更新参数的经典优化方法；基础课用 PyTorch SGD 展示 optimizer step。</td></tr>
-        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
-        <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
+        <tr><td><code>DP</code></td><td>Data Parallel</td><td>数据并行</td><td>不同 replica 处理不同数据，再同步训练状态；它主要切数据而不是切单层模型。</td></tr>
           </tbody>
         </table></div>
       </section>

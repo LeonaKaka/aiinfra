@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
   <link rel="stylesheet" href="./foundations-visuals.css" />
-  <style>.dtype-table{min-width:0!important}</style>
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -130,7 +129,7 @@ print(torch.allclose(Y, Y2))  <span class="comment"># True</span></code></pre></
         <p>数学上写 <code>X @ W</code> 时，W 是 <code>[8, 32]</code>。但 PyTorch 把 weight 存成 <code>[32, 8]</code>，计算时再转置（<code>.T</code>）。结果完全一样，只是存法不同。读源码看到 weight 的 shape 和你推的反过来，就是这个原因。本课程讲原理时一律用数学写法 <code>[输入, 输出]</code>。</p>
         <h3>bias：默认有，大模型里通常不要</h3>
         <p>bias 的 shape 是 <code>[32]</code>：每个输出特征加一个数，所有 token 共用同一组。</p>
-        <div class="lesson-terms-scroll"><table class="lesson-terms-table dtype-table">
+        <div class="lesson-terms-scroll"><table class="tv-table">
           <thead><tr><th>场景</th><th>bias</th><th>为什么</th></tr></thead>
           <tbody>
             <tr><td>自己写小模型、做实验</td><td>用默认值（有）</td><td><code>nn.Linear</code> 默认 <code>bias=True</code>，不用改。</td></tr>
@@ -190,10 +189,13 @@ GPU 1：x 的第 3 个数 · W 第 0 列的第 3 个数 = (−1)×5    = −5
         <div class="lesson-terms-scroll"><table class="lesson-terms-table">
           <thead><tr><th>缩写</th><th>English full name</th><th>中文名</th><th>本课怎么理解</th></tr></thead>
           <tbody>
-        <tr><td><code>TP</code></td><td>Tensor Parallel</td><td>张量并行</td><td>把单层内部的大矩阵/计算沿张量维度分到多个 ranks。</td></tr>
         <tr><td><code>GPU</code></td><td>Graphics Processing Unit</td><td>图形处理器</td><td>大模型训练与推理中执行 GEMM、Attention 等高并行计算的主要设备。</td></tr>
-        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
+        <tr><td><code>FLOP</code></td><td>Floating-Point Operation</td><td>浮点运算</td><td>一次浮点乘法或加法；矩阵乘法 [M,K]@[K,N] 约需 2×M×K×N 次。</td></tr>
+        <tr><td><code>TFLOP</code></td><td>Tera Floating-Point Operations</td><td>万亿次浮点运算</td><td>10^12 次浮点运算；GPU 峰值算力常用 TFLOP/秒 表示。</td></tr>
+        <tr><td><code>BF16</code></td><td>Brain Floating Point 16</td><td>BF16 16 位浮点</td><td>与 FP16 同为 16 位，但指数范围更接近 FP32，训练中很常见。</td></tr>
         <tr><td><code>MLP</code></td><td>Multi-Layer Perceptron</td><td>多层感知机</td><td>Transformer block 中常见的前馈子层。</td></tr>
+        <tr><td><code>FP32</code></td><td>32-bit Floating Point</td><td>32 位浮点</td><td>常见高精度浮点格式，元素通常占 4 bytes。</td></tr>
+        <tr><td><code>GEMM</code></td><td>General Matrix Multiply</td><td>通用矩阵乘法</td><td>Linear、MLP 等大量计算最终会落到的矩阵乘核心操作。</td></tr>
           </tbody>
         </table></div>
       </section>
