@@ -8,6 +8,10 @@
   <title>01.1 Tensor 到底是什么？ · AI Infra from Zero</title>
   <link rel="stylesheet" href="../../styles.css" />
   <link rel="stylesheet" href="../../lesson.css" /><link rel="stylesheet" href="../../lesson-terms.css" />
+  <style>
+    .optional-deep{border:1px solid var(--line);border-radius:12px;background:#fff;padding:4px 20px;margin:20px 0}
+    .optional-deep summary{cursor:pointer;font-size:14px;font-weight:650;padding:14px 0}
+  </style>
 </head>
 <body class="lesson-body">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
@@ -51,171 +55,174 @@
       <div class="mobile-course-bar"><span>01 · Foundations</span><a href="../../index.html#roadmap">查看课程地图 →</a></div>
       <div class="breadcrumb"><a href="../../index.html">首页</a><span>/</span><a href="../../index.html#roadmap">Foundations</a><span>/</span><span>Tensor</span></div>
 
-      <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约35 min</span></div>
+      <div class="lesson-kicker"><span>LESSON 01.1 · FOUNDATION</span><span>约 25 min</span></div>
       <h1>张量到底是什么？</h1>
-      <p class="dek">第一课只学一件事：看懂 tensor（张量：多维数组，也是模型中数据和参数的基本载体）。先看 shape（形状：表示 tensor 各维度的长度），知道这块数据“有几维、每一维多长”。暂时不用先记框架接口，也不用先理解多设备并行；后面需要时再一层层加上。</p>
+      <p class="dek">一句话：<strong>张量就是一堆排得整整齐齐的数字。</strong>这节课只教你一件事：看到 <code>[2, 5, 8]</code> 这样的写法，能马上说出“这堆数字长什么样、有多大”。其他的都可以先不管。</p>
 
       <div class="learning-goals">
-        <strong>这节课结束时，你应该能做到：</strong>
+        <strong>学完这节课，你能：</strong>
         <ul>
-          <li>看到 <code>[B, S, H]</code> 不再把它当成神秘缩写。</li>
-          <li>区分标量、向量、矩阵与更高维张量。</li>
-          <li>用一个实际句子解释批次、序列长度、隐藏维度。</li>
-          <li>区分 tensor 的逻辑 shape 与底层存储方式，理解“怎么看数据”和“数据实际怎么放”为什么会影响后面的计算与数据搬运。</li>
-          <li>理解为什么以后学习模型并行时，“沿哪个维度切张量、让不同设备各保存哪一部分”会成为核心问题。</li>
+          <li>把 <code>[B, S, H]</code> 读成一句人话：“几句话、每句几个字、每个字几个数”。</li>
+          <li>看到一个张量的形状，算出它大概要占多少显存。</li>
+          <li>明白为什么“把大张量切开、分给好几张显卡”是后面整门课的主线。</li>
         </ul>
       </div>
 
       <section class="article-section" id="tensor">
         <div class="section-no">01 · 什么是张量</div>
-        <h2>先把张量想成“带形状的一块数字”。</h2>
-        <p>如果你只记一句话，就记这句。张量不需要一开始就从抽象数学定义理解。对这条基础设施学习路线来说，它首先是一块被组织成某种形状的数据。</p>
+        <h2>从一个数，到一摞表格。</h2>
+        <p>用 Excel 来想最直观：</p>
 
         <div class="dimension-ladder" aria-label="不同维度的数据示例">
-          <div class="dim-card"><small>0D</small><b>标量</b><code>3.14</code></div>
-          <div class="dim-card"><small>1D</small><b>向量</b><code>[0.2, 0.8, -1.1]</code></div>
-          <div class="dim-card"><small>2D</small><b>矩阵</b><code>[[1,2],[3,4]]</code></div>
-          <div class="dim-card"><small>3D+</small><b>张量</b><code>[B, S, H]</code></div>
+          <div class="dim-card"><small>0 维</small><b>一个格子</b><code>3.14</code></div>
+          <div class="dim-card"><small>1 维</small><b>一行格子</b><code>[0.2, 0.8, -1.1]</code></div>
+          <div class="dim-card"><small>2 维</small><b>一张表</b><code>[[1,2],[3,4]]</code></div>
+          <div class="dim-card"><small>3 维</small><b>一摞表</b><code>[B, S, H]</code></div>
         </div>
 
-        <p>严格说，标量、向量、矩阵也都可以看作张量，只是维数分别是0、1、2。深度学习里我们经常处理3维、4维甚至更高维的数据，所以大家统一叫张量。</p>
-        <div class="concept-note"><p><strong>Infra 视角：</strong>tensor 里的数值当然重要，但系统工程里会频繁直接检查 <code>shape</code>、<code>dtype</code>（数据类型：表示 tensor 元素用什么数值格式存储）和 <code>device</code>（设备位置：表示数据位于哪类计算设备）。GPU（图形处理器：执行大规模并行计算的主要设备）和 CPU（中央处理器：主要承担 Python 控制流、调度、数据准备与部分通信控制）的职责不同，因此“数据在哪里”会直接影响后面的计算与通信。这些名字和下面代码中的属性名完全一致。</p></div>
+        <p>一个格子叫<strong>标量</strong>，一行叫<strong>向量</strong>，一张表叫<strong>矩阵</strong>。再往上摞，比如一个 Excel 文件里有好几张一样大的表，那就是 3 维。数学家懒得给每一种都起名字，所以统一叫<strong>张量</strong>（tensor）。</p>
+        <p>所以别被这个词吓到。<strong>张量 = 多维的表格</strong>，仅此而已。</p>
       </section>
 
       <section class="article-section" id="shape">
-        <div class="section-no">02 · 第一件事：看形状</div>
-        <h2><code>[B, S, H]</code> 是以后最常见的三维形状。</h2>
-        <p>先看 Transformer（Transformer 模型：现代大语言模型常用的基础网络结构）里非常典型的一块数据。再认识四个名字：token（词元：模型处理文本时使用的离散序列单位）、batch（批次：一次共同送入模型执行的一组数据）、sequence（序列：按顺序排列的一串 token）和 hidden dimension（隐藏维度：每个 token 隐藏表示的向量宽度）。假设这块 tensor 的 shape 是：</p>
-
-        <div class="shape-hero">
-          <div class="shape-expression">X.shape = [<span class="b">B</span>, <span class="s">S</span>, <span class="h">H</span>]</div>
-          <div class="shape-legend">
-            <div class="b"><b>B · batch</b><small>一次同时处理多少条样本</small></div>
-            <div class="s"><b>S · sequence</b><small>每条样本有多少个token</small></div>
-            <div class="h"><b>H · hidden</b><small>每个token用多少个数字表示</small></div>
-          </div>
-        </div>
-
-        <p>比如 <code>[2, 5, 8]</code>，你可以把它读成：这批数据有2条句子；每条句子暂时统一成5个token；每个token当前由8个数字表示。</p>
+        <div class="section-no">02 · 形状</div>
+        <h2><code>[B, S, H]</code>：几句话 × 每句几个字 × 每个字几个数。</h2>
+        <p>大模型处理文字时，最常见的张量形状就是这三个字母。先看一个具体例子，假设我们一次喂给模型两句话：</p>
 
         <div class="example-grid">
           <div class="example-card">
-            <div class="cap">BATCH ITEM 0</div>
+            <div class="cap">第 1 句</div>
             <div class="token-row"><span>我</span><span>在</span><span>学</span><span>系统</span><span>课程</span></div>
-            <p>5个token，每个token背后不是一个数字，而是一条长度为H的向量。</p>
+            <p>被切成 5 小块。模型眼里的“字”就是这样的小块，叫 <b>token</b>。</p>
           </div>
           <div class="example-card">
-            <div class="cap">BATCH ITEM 1</div>
+            <div class="cap">第 2 句</div>
             <div class="token-row"><span>GPU</span><span>正在</span><span>计算</span><span>这个</span><span>Tensor</span></div>
-            <p>把两条样本叠在一起，于是最外层多出 batch 这个维度。</p>
+            <p>也是 5 个 token。两句一起送进去，就是一“批”。</p>
           </div>
         </div>
 
-        <p>如果 <code>H = 8</code>，那么每个token对应8个浮点数；如果现实模型里 <code>H = 4096</code>，每个token就会对应4096个数。现在先不要管这些数到底代表什么，只要先把形状读顺。</p>
+        <p>模型不认识汉字，它只认数字。所以每个 token 会被换成一串数字，你可以把它想成这个字的“身份卡”，比如上面写着 8 个数。</p>
+
+        <div class="shape-hero">
+          <div class="shape-expression">[<span class="b">2</span>, <span class="s">5</span>, <span class="h">8</span>]</div>
+          <div class="shape-legend">
+            <div class="b"><b>B = 2 · batch（批）</b><small>一次送进去几句话</small></div>
+            <div class="s"><b>S = 5 · sequence（序列长度）</b><small>每句话有几个 token</small></div>
+            <div class="h"><b>H = 8 · hidden（隐藏维度）</b><small>每个 token 的身份卡上有几个数</small></div>
+          </div>
+        </div>
+
+        <p>所以 <code>[2, 5, 8]</code> 读出来就是：<strong>2 句话，每句 5 个字，每个字用 8 个数表示</strong>，一共 2 × 5 × 8 = 80 个数。</p>
+        <p>真实模型里 H 会大得多，比如 4096：每个字的身份卡上写着 4096 个数。这些数具体是什么意思？现在不用管，后面讲 Transformer 时会讲。这节课你只要会“读形状”就够了。</p>
       </section>
 
       <section class="article-section" id="pytorch">
         <div class="section-no">03 · 在代码里看张量</div>
-        <h2>用4行代码亲手造出它。</h2>
-        <p>这里用 PyTorch（深度学习框架：本课程用它演示 tensor、自动求导和训练代码）把刚才的概念变成一个可以运行的对象。代码不用背，只看 shape、dtype 和 device 怎样对应到前面的三个问题。</p>
+        <h2>做系统的人，拿到张量先问三件事。</h2>
+        <p>用 PyTorch（最常用的深度学习库）造一个刚才那样的张量：</p>
 
         <div class="code-block">
           <div class="code-head"><span>python</span><span>01_tensor.py</span></div>
-          <pre><code><span class="comment"># shape = [batch, sequence, hidden]</span>
-import torch
+          <pre><code>import torch
 
-X = torch.randn(<span class="num">2</span>, <span class="num">5</span>, <span class="num">8</span>)
-print(X.shape)       <span class="comment"># torch.Size([2, 5, 8])</span>
-print(X.dtype)       <span class="comment"># usually torch.float32</span>
-print(X.device)      <span class="comment"># cpu, or cuda:0 on GPU</span></code></pre>
+X = torch.randn(<span class="num">2</span>, <span class="num">5</span>, <span class="num">8</span>)   <span class="comment"># 2 句话 × 5 个字 × 每字 8 个数，先随便填点数</span>
+print(X.shape)       <span class="comment"># torch.Size([2, 5, 8])  → 有多大</span>
+print(X.dtype)       <span class="comment"># torch.float32          → 每个数占多少字节</span>
+print(X.device)      <span class="comment"># cpu                    → 现在放在哪</span></code></pre>
         </div>
 
-        <p>现在你第一次看到了刚才说的三个 PyTorch 属性：</p>
+        <p>打印出来的这三样，正好对应做系统的人最关心的三个问题。打个比方：<strong>搬家公司不关心箱子里装的是书还是衣服，只关心箱子多大、多重、现在在哪个房间</strong>，因为这决定了要搬多久、要几辆车。</p>
         <div class="why-grid">
-          <div class="why-card"><b><code>shape</code></b><p>给出各个维度的长度；总元素数由这些维度长度的乘积决定。它决定后面矩阵乘法怎么做，也决定能不能沿某一维切分。</p></div>
-          <div class="why-card"><b><code>dtype</code></b><p>常见格式包括 <code>FP32</code>（32 位浮点：常见高精度浮点格式，每个元素通常占 4 bytes）、<code>FP16</code>（16 位浮点：常用于降低显存占用并提升矩阵计算吞吐）和 <code>BF16</code>（16 位脑浮点：同为 16 位，但指数范围更接近 FP32，训练中很常见）。dtype 会直接影响显存占用和计算性能。</p></div>
-          <div class="why-card"><b><code>device</code></b><p>这块数据现在在 CPU、GPU 0 还是 GPU 1。分布式系统里，“数据在哪里”会极其重要。</p></div>
+          <div class="why-card"><b><code>shape</code> · 多大</b><p>有几维、每一维多长。把它们乘起来，就是一共有多少个数。</p></div>
+          <div class="why-card"><b><code>dtype</code> · 每个数多重</b><p>每个数用几个字节存。最常见的是 4 字节（<code>float32</code>）和 2 字节（<code>float16</code> / <code>bfloat16</code>）。</p></div>
+          <div class="why-card"><b><code>device</code> · 在哪</b><p>在 CPU 的内存里，还是在某张显卡上（<code>cuda:0</code> 就是 0 号显卡）。要用另一张卡上的数据，就得先搬过来。</p></div>
         </div>
       </section>
 
       <section class="article-section" id="memory">
-        <div class="section-no">04 · 从系统角度看张量</div>
-        <h2>为什么 Infra 工程师这么在意 shape？</h2>
-        <p>因为形状一旦确定，很多系统问题就开始可以计算了。假设 <code>X.shape = [2, 5, 8]</code>，总元素数就是：</p>
+        <div class="section-no">04 · 算一算有多大</div>
+        <h2>知道形状，就能算出占多少显存。</h2>
+        <p>公式很简单：<strong>数字个数 × 每个数的字节数</strong>。拿刚才的例子：</p>
         <div class="code-block">
-          <div class="code-head"><span>mental math</span><span>内存</span></div>
-          <pre><code>elements = 2 × 5 × 8 = 80
+          <div class="code-head"><span>算一下</span><span>[2, 5, 8]</span></div>
+          <pre><code>数字个数 = 2 × 5 × 8 = 80
 
-if FP32: 80 × 4 bytes = 320 bytes
-if FP16: 80 × 2 bytes = 160 bytes</code></pre>
+float32（4 字节）: 80 × 4 = 320 字节
+float16（2 字节）: 80 × 2 = 160 字节   <span class="comment"># 同样的数，换个格式就省一半</span></code></pre>
         </div>
-        <p>这个玩具例子当然很小。但当形状变成 <code>[8, 131072, 8192]</code> 时，你会立刻意识到：只是激活值就可能非常大。以后学习上下文并行、序列并行时，本质上都在继续问一个熟悉的问题：</p>
-        <div class="concept-note"><p><strong>这块大张量，能不能沿某个维度切开，让不同 GPU 各保存一部分？</strong></p></div>
-      </section>
-
-      <section class="article-section" id="storage-layout">
-        <div class="section-no">05 · 存储、视图与步长</div>
-        <h2>同一个 shape，不一定以同一种内存布局躺在内存里。</h2>
-        <p>到目前为止，我们一直把 tensor 当成“带 shape 的数字块”。读系统实现还差一层：<code>storage</code>（底层存储：真正承载 tensor 数据的内存区域）决定数据实际放在哪里；<code>layout</code>（内存布局：描述逻辑元素怎样映射到底层 storage）描述数据怎样排布；<code>stride</code>（步长：表示某一维索引增加 1 时底层地址跨多少元素）描述怎样从逻辑坐标走到物理位置。两块 tensor 可以拥有相同 <code>shape</code>，却有不同 <code>stride</code>，甚至共享同一块 <code>storage</code>。</p>
-        <p>下面代码还会遇到 <code>reshape</code>（重塑形状：改变 tensor 的逻辑 shape，必要时可能发生数据重排）、<code>transpose</code>（转置维度：交换 tensor 的维度顺序而通常不立即复制数据）和 <code>contiguous</code>（连续存储：表示数据是否按当前逻辑维度顺序紧密排列）。</p><div class="code-block"><div class="code-head"><span>python</span><span>shape vs layout</span></div><pre><code>x = torch.arange(12).reshape(3, 4)
-y = x.transpose(0, 1)
-
-print(x.shape, x.stride())  <span class="comment"># [3,4], (4,1)</span>
-print(y.shape, y.stride())  <span class="comment"># [4,3], (1,4)</span>
-print(y.is_contiguous())    <span class="comment"># False</span>
-
-z = y.contiguous()
-print(z.stride())           <span class="comment"># materialize a contiguous layout</span></code></pre></div>
-        <div class="why-grid">
-          <div class="why-card"><b><code>storage</code></b><p>多个 tensor 可以通过 <code>view</code>（视图：在不复制数据时用另一种逻辑 shape 解释同一块 storage）引用同一块 storage，而不是每次都复制数据。</p></div>
-          <div class="why-card"><b><code>stride</code></b><p>某一维索引增加 1 时，在底层 storage 里要跨过多少个元素。它把“逻辑坐标”映射到“物理位置”。</p></div>
-          <div class="why-card"><b><code>contiguous</code></b><p>元素是否按当前逻辑维度顺序紧密排列。某些 kernel（GPU 内核：提交到 GPU 上执行的一段并行计算）可以直接处理任意 stride；某些 transfer（传输：把数据从一个位置移动到另一个位置） path 会要求或更偏好 contiguous buffer（缓冲区：暂存 tensor 或传输数据的一块内存）。</p></div>
+        <p>320 字节，小到可以忽略。但真实场景下数字会变得很吓人。比如一次处理 8 段文字，每段 13 万个 token（相当于一本小说），每个 token 8192 个数：</p>
+        <div class="code-block">
+          <div class="code-head"><span>算一下</span><span>[8, 131072, 8192]</span></div>
+          <pre><code>数字个数 = 8 × 131072 × 8192 ≈ 86 亿
+2 字节一个: 86 亿 × 2 ≈ 172 亿字节 ≈ 17 GB</code></pre>
         </div>
-        <p><code>transpose</code> 常常只改变 view 的 shape/stride，而不立即复制 storage；<code>contiguous()</code> 则可能真的分配新内存并重排数据。以后看到 <code>permute</code>（维度重排：改变 tensor 各维度的顺序）和 <code>copy</code>（复制：真正生成或写入一份新的数据副本）时，要开始问：<strong>这是只改了“怎么看”，还是实际搬了数据？</strong></p>
-        <div class="concept-note"><p><strong>为什么这对后面重要：</strong>07.4 的块表和 08.4 的 transfer region（内存区域：传输层注册或操作的一段内存范围）都会把“逻辑 tensor”继续落到更具体的地址、偏移、stride 与生命周期。现在先建立一个底线：<strong>logical shape ≠ physical layout</strong>。</p></div>
+        <p>这还只是模型<strong>中间某一步</strong>的一块数据。一张 80 GB 的顶级显卡，光这一块就要占掉五分之一还多，而模型里这样的数据有很多很多块。</p>
+        <div class="concept-note"><p><strong>一张卡装不下怎么办？切开，分给好几张卡。</strong>沿 B 切、沿 S 切，还是沿 H 切？切完以后卡和卡之间要传什么？这就是后面整门课一直在回答的问题。</p></div>
       </section>
 
       <section class="article-section" id="megatron">
-        <div class="section-no">06 · 这些概念后面会用到哪里</div>
-        <h2>这就是它和模型并行源码的第一条连接线。</h2>
-        <p>这里先认识 Megatron（大模型训练框架：用于学习多维并行和分布式训练的源码实现）。现在你还不用学正式的张量并行，只先偷看一个 Linear（线性层：对输入做矩阵乘法，并可再加偏置项）。</p>
+        <div class="section-no">05 · 预告</div>
+        <h2>下一课你会看到第一个“切”的问题。</h2>
+        <p>模型里最常见的计算是拿输入张量 X 去乘一个权重矩阵 W：</p>
         <div class="code-block">
-          <div class="code-head"><span>next concept</span><span>linear algebra</span></div>
-          <pre><code>X: [B, S, H]
-W: [H, 4H]
+          <div class="code-head"><span>下一课</span><span>01.2</span></div>
+          <pre><code>X: [B, S, H]       <span class="comment"># 输入</span>
+W: [H, 4H]         <span class="comment"># 权重，可能非常大</span>
 
-Y = X @ W
+Y = X @ W          <span class="comment"># 矩阵乘法</span>
 
-<span class="comment"># Megatron 的问题：</span>
-<span class="comment"># W 太大时，能不能把它切给 GPU 0 和 GPU 1？</span>
-<span class="comment"># 如果切了，X / Y 要不要跟着切？</span>
-<span class="comment"># 中间需要 all-reduce 还是 all-gather？</span></code></pre>
+<span class="comment"># 如果 W 大到一张卡放不下：</span>
+<span class="comment">#   能不能把 W 劈成两半，分给两张卡？</span>
+<span class="comment">#   劈完之后，两张卡算出来的结果怎么拼回去？</span></code></pre>
         </div>
-        <p>所以我们今天学 <code>[B,S,H]</code> 不是为了记符号。它是在搭后面所有“怎么切、怎么搬、怎么通信”的地基。</p>
+        <p>NVIDIA 的训练框架 Megatron 干的就是这件事。不过别急，下一课先把矩阵乘法本身讲清楚。</p>
+      </section>
+
+      <section class="article-section" id="storage-layout">
+        <div class="section-no">选读 · 可以先跳过</div>
+        <h2>同样的形状，在内存里可能排得不一样。</h2>
+        <p>这部分零基础可以先跳过，学到 07、08 模块需要时再回来看。</p>
+        <details class="optional-deep">
+          <summary>展开：stride、transpose 和 contiguous 是什么</summary>
+          <p>内存其实不是表格，而是<strong>一条长队</strong>。一张 3 行 4 列的表，在内存里是 12 个数一个挨一个排着：先第 1 行的 4 个，再第 2 行的 4 个……</p>
+          <p>那电脑怎么知道“第 2 行第 3 个”在队伍的哪个位置？靠 <strong>stride（步长）</strong>：往右走一格，在队伍里跳 1 个；往下走一行，在队伍里跳 4 个。所以这张表的 stride 是 <code>(4, 1)</code>。</p>
+          <div class="code-block"><div class="code-head"><span>python</span><span>stride</span></div><pre><code>x = torch.arange(12).reshape(3, 4)   <span class="comment"># 3 行 4 列</span>
+print(x.stride())          <span class="comment"># (4, 1)：往下跳 4，往右跳 1</span>
+
+y = x.transpose(0, 1)      <span class="comment"># 转置成 4 行 3 列</span>
+print(y.stride())          <span class="comment"># (1, 4)：数据没动，只是换了读法</span>
+print(y.is_contiguous())   <span class="comment"># False：不再是“按行一个挨一个”</span>
+
+z = y.contiguous()         <span class="comment"># 真的按新顺序重新抄一份</span>
+print(z.stride())          <span class="comment"># (3, 1)</span></code></pre></div>
+          <p>关键点：<code>transpose</code> <strong>没有搬任何数据</strong>，只是换了一种读法，就像把一本书横过来看。而 <code>contiguous()</code> 是<strong>真的重新抄了一遍</strong>，要花时间、占内存。</p>
+          <p>以后读源码时，看到一个操作，养成习惯问一句：<strong>这是只换了读法，还是真的搬了数据？</strong>搬数据就有成本。</p>
+        </details>
       </section>
 
       <section class="checkpoint" id="checkpoint">
-        <div class="checkpoint-head"><span>CHECKPOINT</span><span>不要跳过</span></div>
-        <h2>能答出来，再进下一课。</h2>
+        <div class="checkpoint-head"><span>CHECKPOINT</span><span>自测一下</span></div>
+        <h2>能答出来，就可以进下一课。</h2>
         <div class="quiz-item">
-          <div class="quiz-q">1. <code>[4, 1024, 4096]</code> 里的4096是什么意思？</div>
+          <div class="quiz-q">1. <code>[4, 1024, 4096]</code> 用人话怎么读？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">它是隐藏维度：当前每个token用一个长度为4096的向量表示。</div>
+          <div class="quiz-a">4 句话，每句 1024 个 token，每个 token 用 4096 个数表示。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">2. 为什么 FP16 张量通常比同形状的 FP32 张量少一半显存？</div>
+          <div class="quiz-q">2. 同样形状的张量，为什么 float16 比 float32 少占一半显存？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为元素数量完全相同，但每个FP32元素通常占4 bytes，FP16占2 bytes。</div>
+          <div class="quiz-a">数字个数一样多，但 float32 每个数占 4 字节，float16 只占 2 字节。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">3. 为什么“这块张量在cuda:0还是cuda:1”以后会很重要？</div>
+          <div class="quiz-q">3. 一个张量在 <code>cuda:0</code>，另一张卡 <code>cuda:1</code> 想用它，会发生什么？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">因为跨 GPU 使用数据往往意味着通信或拷贝。系统性能问题里很重要的一类，就是研究哪些数据必须移动、移动多少、什么时候移动。</div>
+          <div class="quiz-a">得先把数据从 0 号卡搬到 1 号卡。搬数据要花时间，所以做系统的人总在算：哪些数据必须搬、搬多少、什么时候搬。</div>
         </div>
         <div class="quiz-item">
-          <div class="quiz-q">4. 两个张量的形状一样，是否意味着它们的底层内存布局也一定一样？</div>
+          <div class="quiz-q">4.（选读）<code>transpose</code> 之后，数据在内存里挪位置了吗？</div>
           <button class="quiz-toggle" type="button">看答案</button>
-          <div class="quiz-a">不一定。形状只说明各维长度；transpose/视图等操作可以让张量拥有不同步长，甚至共享同一存储。是否连续存储、是否需要实际copy，是另一层问题。</div>
+          <div class="quiz-a">没有。它只改了 stride，也就是换了一种读法。要真的按新顺序重排，得调用 <code>contiguous()</code>，那才会复制数据。</div>
         </div>
       </section>
 
@@ -246,9 +253,9 @@ Y = X @ W
       <a href="#tensor">张量是什么</a>
       <a href="#shape">[B,S,H]</a>
       <a href="#pytorch">PyTorch</a>
-      <a href="#memory">Infra 视角</a>
-      <a href="#storage-layout">storage / stride</a>
-      <a href="#megatron">连接 Megatron</a>
+      <a href="#memory">算显存</a>
+      <a href="#megatron">预告</a>
+      <a href="#storage-layout">选读：stride</a>
       <a href="#checkpoint">Checkpoint</a>
     </aside>
   </div>
