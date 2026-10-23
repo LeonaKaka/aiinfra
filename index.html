@@ -7,8 +7,9 @@
   <meta name="theme-color" content="#f7f7f3" />
   <title>AI Infra from Zero</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./design/award-home.css" />
 </head>
-<body>
+<body class="award-home">
   <div class="reading-progress" aria-hidden="true"><span id="readingProgress"></span></div>
 
   <header class="site-header">
@@ -27,10 +28,10 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy">
-        <div class="eyebrow"><span></span> AI INFRA 自学路线</div>
+        <div class="eyebrow"><span></span> THE SYSTEMS ATLAS · 01—08</div>
         <h1>从零基础开始，<br />直到你敢打开 <em>Megatron</em> 和 <em>vLLM</em> 的源码。</h1>
         <p class="hero-lead">
-          这不是一份名词表，也不是“七天速通”。这里的“从零”指 AI Infra 零基础：只默认你能看懂最基础的变量、函数和循环，不要求预先会 PyTorch、分布式训练或 vLLM。课程从张量、GPU、通信这些地基开始，一层一层搭到分布式训练与现代推理系统；每学一个概念，都知道它最终会落到哪段真实源码和哪个可运行实验里。
+          不是七天速通，也不是名词堆砌。从 Tensor（张量）与 Transformer 开始，顺着数据流、GPU 内存和通信，一步步走到 Megatron Core 与 vLLM。每个概念都有图解、最小实验和对应的真实源码。只需要会最基础的变量、函数和循环。
         </p>
         <div class="hero-actions">
           <a class="button primary" href="./learn/01-foundations/tensor.html">从第一课开始 <span>→</span></a>
@@ -43,8 +44,8 @@
         </div>
       </div>
 
-      <div class="hero-map" aria-label="AI Infra 学习路线示意图">
-        <div class="map-caption">学习路线</div>
+      <div class="hero-map" data-focus="training" aria-label="AI Infra 学习路线示意图">
+        <div class="map-topbar"><div class="map-caption">SYSTEM ARCHITECTURE / 001</div><div class="map-status">INTERACTIVE MAP</div></div>
         <div class="map-node foundation">
           <span class="node-index">01–04</span>
           <div><strong>基础</strong><small>PyTorch · Transformer · GPU · 分布式</small></div>
@@ -72,6 +73,10 @@
 <span class="muted">$</span> read kv_connector
 <span class="ok">✓</span> follow KV from prefill → decode</pre>
         </div>
+        <div class="route-switch" role="group" aria-label="切换学习主线">
+          <button type="button" data-focus="training" aria-pressed="true">TRAINING ↗<small>Megatron Core / A1–A12</small></button>
+          <button type="button" data-focus="inference" aria-pressed="false">INFERENCE ↗<small>vLLM · KV / B1–B8</small></button>
+        </div>
       </div>
     </section>
 
@@ -82,6 +87,12 @@
         <div><span>02</span>再画数据怎么流</div>
         <div><span>03</span>最后进入真实源码</div>
       </div>
+    </section>
+
+    <section class="quick-links shell" aria-label="学习资源快捷入口">
+      <a href="./labs/index.html"><span>01 / PRACTICE</span><strong>动手实验 <i>↗</i></strong><small>20 个可运行 Lab，从概念走到代码</small></a>
+      <a href="./source-map/index.html"><span>02 / TRACE</span><strong>源码地图 <i>↗</i></strong><small>Control → State → Data → Sync</small></a>
+      <a href="./glossary/index.html"><span>03 / REFERENCE</span><strong>核心术语 <i>↗</i></strong><small>把技术语言真正读懂</small></a>
     </section>
 
     <section class="section shell" id="destinations">
@@ -284,5 +295,6 @@ H  → hidden size
   </footer>
 
   <script src="./app.js"></script>
+  <script src="./design/award-home.js"></script>
 </body>
 </html>
