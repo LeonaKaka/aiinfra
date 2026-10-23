@@ -258,7 +258,7 @@
 .award-home .site-footer { border-top:1px solid #34463d; min-height:185px; color:#8ca297; }
 .award-home .site-footer strong { color:#eaf1e8; font-size:16px; }
 .award-home .site-footer span, .award-home .site-footer p { font-size:12px; }
-.award-home .motion-ready .reveal { opacity:0; transform:translateY(26px); transition:opacity .65s ease,transform .65s cubic-bezier(.2,.7,.2,1); }
+.award-home.motion-ready .reveal { opacity:0; transform:translateY(26px); transition:opacity .65s ease,transform .65s cubic-bezier(.2,.7,.2,1); }
 .award-home.motion-ready .reveal.is-visible { opacity:1; transform:none; }
 @media (min-width:1550px) {
   .award-home .hero h1 { font-size:88px; }
@@ -339,4 +339,37 @@
 @media (prefers-reduced-motion:reduce) {
   .award-home *, .award-home *::before, .award-home *::after { animation:none !important; scroll-behavior:auto !important; transition:none !important; }
   .award-home .reveal { opacity:1 !important; transform:none !important; }
+}
+
+/* The three true destinations of the learning experience */
+.award-home .quick-links {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px;
+  margin-top:0; margin-bottom:0;
+  padding:55px 0; border-bottom:1px solid #40534b;
+}
+.award-home .quick-links a {
+  min-width:0; display:flex; flex-direction:column;
+  min-height:174px; padding:25px 28px; position:relative;
+  border:1px solid #354a40; margin-right:-1px;
+  background:#182522;
+  transition:background .25s,border-color .25s,transform .25s;
+}
+.award-home .quick-links a:hover { background:#263d32; border-color:#c9fc67; transform:translateY(-4px); z-index:1; }
+.award-home .quick-links a > span { color:#93ab9b; font:700 10px ui-monospace,monospace; letter-spacing:.12em; }
+.award-home .quick-links strong {
+  display:flex; justify-content:space-between; align-items:center;
+  color:#eef4e9; font-size:clamp(22px,2.3vw,34px); letter-spacing:-.05em; margin-top:28px;
+}
+.award-home .quick-links strong i { color:#c9fc67; font-style:normal; font-weight:400; transition:transform .2s; }
+.award-home .quick-links a:hover strong i { transform:translate(4px,-4px); }
+.award-home .quick-links small { color:#95a99b; font-size:11px; margin-top:8px; line-height:1.5; }
+@media(max-width:900px) {
+  .award-home .quick-links { padding:38px 0; }
+  .award-home .quick-links a { padding:23px 16px; min-height:155px; }
+  .award-home .quick-links strong { margin-top:25px; font-size:23px; }
+}
+@media(max-width:620px) {
+  .award-home .quick-links { grid-template-columns:1fr; gap:9px; padding:32px 0; }
+  .award-home .quick-links a { min-height:110px; padding:18px 20px; margin:0; }
+  .award-home .quick-links strong { margin-top:12px; font-size:25px; }
 }
