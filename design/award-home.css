@@ -57,7 +57,7 @@
   font: 600 10px ui-monospace,monospace;
 }
 .award-home .hero::after {
-  content: ""; position: absolute; width: 600px; height: 600px; right: -170px; top: 7%;
+  content: ""; position: absolute; width: min(600px, 70vw); height: 600px; right: 0; top: 7%;
   border: 1px solid rgba(201,252,103,.075); border-radius: 50%;
   box-shadow: 0 0 0 78px rgba(201,252,103,.015), 0 0 0 162px rgba(201,252,103,.013);
   z-index: 0; pointer-events: none;
